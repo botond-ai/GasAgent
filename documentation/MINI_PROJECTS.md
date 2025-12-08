@@ -36,6 +36,22 @@ Előnyei:
 - LangGraph-barát: szép pipeline (intent → retrieve → re-rank → generate → policy check).
 - Könnyű demo: „Bejött egy panasz e-mail → a rendszer kategorizál, prioritást ad, és válasz-tervezetet küld hivatkozásokkal.”
 
+A termék fő célja
+1. Csökkenteni az ügyfélszolgálat terhelését
+  - Kevesebb „kézi triage” (melyik osztály / kategória / sürgősség?).
+  - Az operátoroknak nem nulláról kell választ írni, csak finomítani egy draftot.
+2. Gyorsítani a válaszidőt (SLA javítás)
+  - A rendszer másodpercek alatt:
+    - felismeri a problématípust,
+    - kiválasztja a megfelelő FAQ / tudásbázis cikket (RAG),
+    - és generál egy jól megfogalmazott választervezetet.
+3. Egységesíteni a kommunikációt
+  - Mindig a jó hangnem,
+  - mindig a jó policy / szabályzat alapján válaszol,
+  - kevesebb „félrement” vagy túl ígérő válasz.
+4. Tehermentesíteni a senior supportosokat
+  - A rutinosabb kollégák komplex ügyekre fókuszálhatnak,
+  - az egyszerűbb, ismétlődő kérdéseket fél-automatán kezeli az AI
 
 
 Mit csinál az agent?
@@ -43,7 +59,6 @@ Mit csinál az agent?
 -Prioritás + SLA javaslat (pl. P1/P2, 4h/24h)
 -RAG: releváns tudásbázis cikkek visszakeresése (top-k + re-rank)
 -Válasz-tervezet generálása citációkkal (doc_id, chunk_id, score)
-
 
 
 
@@ -62,9 +77,6 @@ Egy agent, amely képes:
 - kikeresni a releváns információt RAG-gal
 - végrehajtani egy workflow-lépést(pl. Jira ticket, Slack üzenet, meeting generálás, dokumentum előkeresése, approval)
 - szépített, strukturált választ adni citációkkal
-
-
-
 
 
 1. Minden cég szenved attól, hogy:
