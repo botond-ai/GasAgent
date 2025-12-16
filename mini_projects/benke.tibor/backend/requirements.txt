@@ -18,6 +18,11 @@ qdrant-client==1.7.0
 httpx==0.25.2
 requests==2.31.0
 
+# Google Drive API
+google-api-python-client==2.111.0
+google-auth-httplib2==0.2.0
+google-auth-oauthlib==1.2.0
+
 # Async
 aiofiles==23.2.1
 

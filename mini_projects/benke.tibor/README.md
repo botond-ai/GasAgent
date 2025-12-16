@@ -11,6 +11,7 @@ KnowledgeRouter egy vállalati belső tudásbázis rendszer, amely:
 ✅ **6 domain-re** szétválasztott tudásbázisokból keres (HR, IT, Finance, Legal, Marketing, General)  
 ✅ **Intent detection** segítségével felismeri, melyik domain-hez tartozik a kérdés  
 ✅ **RAG (Retrieval-Augmented Generation)** használ releváns dokumentumok megtalálásához  
+✅ **Google Drive integráció** marketing dokumentumok eléréséhez  
 ✅ **Workflow-okat** futtat (HR szabadság igénylés, IT ticket, stb.)  
 ✅ **Citációkkal** ellátott válaszokat ad (dokumentum referenciák)  
 ✅ **Konverzáció előzményt** mentesít JSON-ban  
@@ -64,6 +65,11 @@ docker-compose up --build
 - **Frontend**: http://localhost:3000
 - **Backend API**: http://localhost:8001/api/
 - **Qdrant Dashboard**: http://localhost:6334 (vector DB)
+- **Google Drive Files API**: http://localhost:8001/api/google-drive/files/
+
+### 5. Google Drive Setup (opcionális)
+
+A marketing domain Google Drive integrációhoz lásd: [docs/GOOGLE_DRIVE_SETUP.md](docs/GOOGLE_DRIVE_SETUP.md)
 
 ## 🎮 Próba Kérések
 

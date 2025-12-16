@@ -120,3 +120,78 @@ class ResetContextAPIView(APIView):
                 {"success": False, "error": str(e)},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+
+class GoogleDriveFilesAPIView(APIView):
+    """
+    GET /api/google-drive/files/ - List files from Google Drive shared folder.
+    Query params:
+        - folder_id: Google Drive folder ID (optional, defaults to marketing folder)
+        - mime_type: Filter by MIME type (optional)
+    """
+
+    def get(self, request: Request) -> Response:
+        """List files in Google Drive folder."""
+        try:
+            from infrastructure.google_drive_client import get_drive_client
+            
+            # Get folder ID from query params or use default marketing folder
+            folder_id = request.query_params.get(
+                'folder_id', 
+                '1Jo5doFrRgTscczqR0c6bsS2H0a7pS2ZR'  # Default marketing folder
+            )
+            mime_type_filter = request.query_params.get('mime_type', None)
+            
+            # Get Google Drive client
+            drive_client = get_drive_client()
+            
+            # Authenticate if not already authenticated
+            if not drive_client.service:
+                drive_client.authenticate()
+            
+            # List files
+            files = drive_client.list_files_in_folder(
+                folder_id=folder_id,
+                mime_type_filter=mime_type_filter
+            )
+            
+            # Format response
+            files_data = [
+                {
+                    'id': f['id'],
+                    'name': f['name'],
+                    'mimeType': f.get('mimeType', 'unknown'),
+                    'size': f.get('size', 'N/A'),
+                    'createdTime': f.get('createdTime', ''),
+                    'modifiedTime': f.get('modifiedTime', ''),
+                    'webViewLink': f.get('webViewLink', '')
+                }
+                for f in files
+            ]
+            
+            return Response(
+                {
+                    "success": True,
+                    "folder_id": folder_id,
+                    "file_count": len(files_data),
+                    "files": files_data
+                },
+                status=status.HTTP_200_OK
+            )
+            
+        except FileNotFoundError as e:
+            logger.error(f"Google Drive credentials error: {e}")
+            return Response(
+                {
+                    "success": False,
+                    "error": "Google Drive credentials not found. Please add client_secret.json to backend/credentials/"
+                },
+                status=status.HTTP_404_NOT_FOUND
+            )
+        except Exception as e:
+            logger.error(f"Google Drive API error: {e}", exc_info=True)
+            return Response(
+                {"success": False, "error": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+

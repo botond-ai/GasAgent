@@ -564,8 +564,58 @@
           }
         ]
       }
+    },
+    {
+      "role": "user",
+      "content": "Nem m\u0171k\u00f6dik a VPN-em, hogyan lehet megoldani?",
+      "timestamp": "2025-12-11T20:18:23.719721",
+      "metadata": null
+    },
+    {
+      "role": "assistant",
+      "content": "A dokumentumban, az [IT-KB-234] VPN Hibaelh\u00e1r\u00edt\u00e1si \u00datmutat\u00f3ban tal\u00e1lhat\u00f3 inform\u00e1ci\u00f3k alapj\u00e1n \u00edme n\u00e9h\u00e1ny l\u00e9p\u00e9s, amely seg\u00edthet a VPN probl\u00e9m\u00e1k megold\u00e1s\u00e1ban:\n\n1. **Kapcsol\u00f3d\u00e1si be\u00e1ll\u00edt\u00e1sok ellen\u0151rz\u00e9se**: Gy\u0151z\u0151dj meg r\u00f3la, hogy a VPN szerver c\u00edme \u00e9s a felhaszn\u00e1l\u00f3i azonos\u00edt\u00f3/jelsz\u00f3 helyesen van megadva.\n\n2. **Internetkapcsolat ellen\u0151rz\u00e9se**: Ellen\u0151rizd, hogy van-e akt\u00edv internetkapcsolatod. Pr\u00f3b\u00e1lj meg b\u00f6ng\u00e9szni m\u00e1s weboldalakat.\n\n3. **T\u0171zfal be\u00e1ll\u00edt\u00e1sok**: Ellen\u0151rizd, hogy a t\u0171zfal nem blokkolja a VPN kapcsolatot. Ha sz\u00fcks\u00e9ges, \u00e1ll\u00edtsd be \u00fagy, hogy enged\u00e9lyezze a VPN forgalmat.\n\n4. **VPN szoftver friss\u00edt\u00e9se**: Gy\u0151z\u0151dj meg r\u00f3la, hogy a VPN kliens szoftvered a legfrissebb verzi\u00f3ra van friss\u00edtve.\n\n5. **\u00dajraind\u00edt\u00e1s**: Ind\u00edtsd \u00fajra a sz\u00e1m\u00edt\u00f3g\u00e9pedet \u00e9s a VPN alkalmaz\u00e1st, hogy ezzel is pr\u00f3b\u00e1ld meg megoldani a probl\u00e9m\u00e1t.\n\n6. **K\u00e9rj seg\u00edts\u00e9get**: Ha a fenti l\u00e9p\u00e9sek nem seg\u00edtenek, javaslom, hogy vedd fel a kapcsolatot az IT t\u00e1mogat\u00e1si csapattal.\n\nRem\u00e9lem, ez seg\u00edt a VPN probl\u00e9m\u00e1d megold\u00e1s\u00e1ban!",
+      "timestamp": "2025-12-11T20:18:34.493611",
+      "metadata": {
+        "domain": "it",
+        "citations": [
+          {
+            "doc_id": "IT-KB-234",
+            "title": "VPN Troubleshooting Guide",
+            "score": 0.91,
+            "url": null
+          }
+        ]
+      }
+    },
+    {
+      "role": "user",
+      "content": "Szeretn\u00e9k szabads\u00e1got ig\u00e9nyelni okt\u00f3ber 3-4-re.",
+      "timestamp": "2025-12-16T15:50:05.855041",
+      "metadata": null
+    },
+    {
+      "role": "assistant",
+      "content": "A \"HR-POL-001\" Szabads\u00e1g Szab\u00e1lyzat dokumentumban tal\u00e1lhat\u00f3 inform\u00e1ci\u00f3k alapj\u00e1n, k\u00e9rlek, n\u00e9zd meg a szabads\u00e1g ig\u00e9nyl\u00e9s\u00e9nek folyamat\u00e1t. \u00c1ltal\u00e1ban sz\u00fcks\u00e9ges kit\u00f6lteni egy \u0171rlapot, \u00e9s a k\u00f6zvetlen felettesednek is j\u00f3v\u00e1 kell hagynia a k\u00e9r\u00e9st. \n\nK\u00e9rlek, hogy az ig\u00e9nyl\u00e9sedet min\u00e9l el\u0151bb ny\u00fajtsd be, figyelembe v\u00e9ve, hogy az okt\u00f3ber 3-4-i id\u0151szak k\u00f6zel van. Ha tov\u00e1bbi inform\u00e1ci\u00f3ra van sz\u00fcks\u00e9ged, javaslom, hogy keresd meg HR oszt\u00e1lyunkat, akik tov\u00e1bbi \u00fatmutat\u00e1st tudnak adni.",
+      "timestamp": "2025-12-16T15:50:12.514361",
+      "metadata": {
+        "domain": "hr",
+        "citations": [
+          {
+            "doc_id": "HR-POL-001",
+            "title": "Vacation Policy",
+            "score": 0.94,
+            "url": null
+          },
+          {
+            "doc_id": "HR-POL-002",
+            "title": "Benefits Package",
+            "score": 0.88,
+            "url": null
+          }
+        ]
+      }
     }
   ],
   "created_at": "2025-12-10T10:41:04.697762",
-  "updated_at": "2025-12-11T20:06:43.864628"
+  "updated_at": "2025-12-16T15:50:12.517706"
 }

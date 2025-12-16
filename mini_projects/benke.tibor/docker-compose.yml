@@ -19,6 +19,7 @@ services:
       - DJANGO_SETTINGS_MODULE=core.settings
     volumes:
       - ./backend/data:/app/data
+      - ./backend/credentials:/app/credentials
     depends_on:
       - qdrant
     networks:
