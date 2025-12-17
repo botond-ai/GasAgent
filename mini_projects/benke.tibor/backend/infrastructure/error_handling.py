@@ -266,7 +266,7 @@ class TokenUsageTracker:
             "prompt_tokens": self.total_prompt_tokens,
             "completion_tokens": self.total_completion_tokens,
             "total_tokens": self.total_prompt_tokens + self.total_completion_tokens,
-            "total_cost_usd": round(self.total_cost, 4),
+            "total_cost_usd": round(self.total_cost, 6),  # 6 decimals for micro-costs
         }
         
     def reset(self) -> None:

@@ -206,6 +206,10 @@ class TestUsageStats:
 class TestClientReset:
     """Tests for client reset functionality."""
     
+    def setup_method(self):
+        """Reset factory before each test."""
+        OpenAIClientFactory.reset()
+    
     @patch.dict(os.environ, {"OPENAI_API_KEY": "test-key-123"})
     @patch('infrastructure.openai_clients.ChatOpenAI')
     @patch('infrastructure.openai_clients.OpenAIEmbeddings')
@@ -251,6 +255,12 @@ class TestClientReset:
     @patch('infrastructure.openai_clients.OpenAIEmbeddings')
     def test_reset_clears_both_instances(self, mock_embeddings, mock_chat):
         """Test reset() clears both LLM and Embeddings instances."""
+        # Setup mocks
+        mock_llm = Mock(spec=ChatOpenAI)
+        mock_emb = Mock(spec=OpenAIEmbeddings)
+        mock_chat.return_value = mock_llm
+        mock_embeddings.return_value = mock_emb
+        
         # Create both instances
         OpenAIClientFactory.get_llm()
         OpenAIClientFactory.get_embeddings()
@@ -272,10 +282,17 @@ class TestClientReset:
 class TestTemperatureHandling:
     """Tests for temperature parameter handling."""
     
+    def setup_method(self):
+        """Reset factory before each test."""
+        OpenAIClientFactory.reset()
+    
     @patch.dict(os.environ, {"OPENAI_API_KEY": "test-key-123", "LLM_TEMPERATURE": "0.9"})
     @patch('infrastructure.openai_clients.ChatOpenAI')
     def test_temperature_from_env(self, mock_chat):
         """Test temperature is read from LLM_TEMPERATURE env variable."""
+        mock_instance = Mock(spec=ChatOpenAI)
+        mock_chat.return_value = mock_instance
+        
         OpenAIClientFactory.get_llm()
         
         call_kwargs = mock_chat.call_args[1]
@@ -285,6 +302,9 @@ class TestTemperatureHandling:
     @patch('infrastructure.openai_clients.ChatOpenAI')
     def test_temperature_zero(self, mock_chat):
         """Test temperature=0.0 is handled correctly."""
+        mock_instance = Mock(spec=ChatOpenAI)
+        mock_chat.return_value = mock_instance
+        
         OpenAIClientFactory.get_llm(temperature=0.0)
         
         call_kwargs = mock_chat.call_args[1]
@@ -294,6 +314,9 @@ class TestTemperatureHandling:
     @patch('infrastructure.openai_clients.ChatOpenAI')
     def test_temperature_one(self, mock_chat):
         """Test temperature=1.0 is handled correctly."""
+        mock_instance = Mock(spec=ChatOpenAI)
+        mock_chat.return_value = mock_instance
+        
         OpenAIClientFactory.get_llm(temperature=1.0)
         
         call_kwargs = mock_chat.call_args[1]
