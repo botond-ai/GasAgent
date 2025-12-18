@@ -143,6 +143,33 @@ Content-Type: application/json
       "type": "information_query",
       "status": "completed",
       "next_step": null
+    },
+    "telemetry": {
+      "total_latency_ms": 3918.93,
+      "chunk_count": 5,
+      "max_similarity_score": 0.89,
+      "retrieval_latency_ms": null,
+      "request": {
+        "user_id": "emp_001",
+        "session_id": "session_12345",
+        "query": "Mi a brand guideline sorhossz?"
+      },
+      "response": {
+        "domain": "marketing",
+        "answer_length": 245,
+        "citation_count": 5,
+        "workflow_triggered": false
+      },
+      "rag": {
+        "context": "[Doc 1: Aurora_Digital_Brand_Guidelines]\nMaximális sorhossz...",
+        "chunk_count": 5
+      },
+      "llm": {
+        "prompt": "You are a helpful assistant...\n\nRetrieved documents:\n[Doc 1]...",
+        "response": "A brand guideline sorhosszra vonatkozó javaslat...",
+        "prompt_length": 2847,
+        "response_length": 245
+      }
     }
   }
 }
@@ -166,6 +193,15 @@ Content-Type: application/json
 | `data.workflow.type` | string | Workflow típus |
 | `data.workflow.status` | string | Workflow státusz (`draft`, `pending`, `completed`) |
 | `data.workflow.next_step` | string\|null | Következő lépés leírása |
+| `data.telemetry` | object | **🆕 Telemetria adatok (debug & analytics)** |
+| `data.telemetry.total_latency_ms` | float | Teljes pipeline futásidő (ms) |
+| `data.telemetry.chunk_count` | integer | Visszaadott chunk-ok száma |
+| `data.telemetry.max_similarity_score` | float | Legmagasabb relevancia score |
+| `data.telemetry.retrieval_latency_ms` | float\|null | RAG keresés ideje (TODO) |
+| `data.telemetry.request` | object | Request payload (debug) |
+| `data.telemetry.response` | object | Response metadata (debug) |
+| `data.telemetry.rag` | object | RAG context (LLM bemenet) |
+| `data.telemetry.llm` | object | LLM prompt/response (debug) |
 
 **Error Responses:**
 

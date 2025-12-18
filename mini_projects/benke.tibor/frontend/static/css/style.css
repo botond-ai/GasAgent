@@ -677,7 +677,8 @@ main {
             font-size: 0.8rem;
             color: #ccc;
             width: 15%;
-            min-height: 180px;
+            max-height: 85vh;
+            overflow-y: auto;
             z-index: 10;
             box-shadow: 0 10px 30px rgba(0,0,0,0.35);
         }

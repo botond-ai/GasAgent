@@ -248,11 +248,16 @@ POST /api/regenerate/
 
 ### 📈 Monitoring & Observability
 
-#### Usage Statistics
+#### Monitoring
 - **Token Tracking**: Input + output tokens per request
 - **Cost Calculation**: $0.15/1M input, $0.60/1M output (gpt-4o-mini)
 - **API Endpoint**: `GET /api/usage-stats/`
 - **Reset Capability**: `DELETE /api/usage-stats/`
+- **Telemetry API** (NEW v2.2): Performance & debug data in `/api/query/` response
+  - `total_latency_ms` - End-to-end pipeline time
+  - `chunk_count` - RAG retrieval count
+  - `max_similarity_score` - Top relevance score
+  - `request/response/rag/llm` - Full debug payloads
 
 #### Cache Monitoring
 - **Hit Rate Tracking**: Cache hits vs misses
@@ -288,11 +293,25 @@ POST /api/regenerate/
 - **History Retrieval**: `GET /api/sessions/{session_id}/`
 - **Context Reset**: Clear conversation context
 
-#### Debug Panel
-- **Domain Detection**: Show detected domain
-- **Citation Count**: Number of retrieved docs
-- **Token Usage**: Input/output token counts
-- **Workflow Status**: Display triggered workflows
+#### Debug Panel (NEW in v2.2)
+- **Real-Time Telemetry**: Live performance & pipeline metrics (bottom-right corner)
+- **Performance Metrics**:
+  - ⏱️ **Pipeline Latency** - Total request-response time (milliseconds)
+  - 📦 **Chunk Count** - Number of retrieved RAG documents
+  - 🎯 **Max Similarity Score** - Highest relevance score (0.0-1.0)
+- **Collapsible Debug Sections** (scrollable, max 85vh):
+  - 📤 **Request JSON** - Sent payload (user_id, session_id, query)
+  - 📥 **Response JSON** - Complete API response structure
+  - 🔍 **RAG Context** - Full document context sent to LLM
+  - 🤖 **LLM Prompt** - Complete prompt with system message + context
+  - 💬 **LLM Response** - Raw LLM output before processing
+- **Auto-Update**: Refreshes on every query (new, cached ⚡, full refresh 🔄)
+- **Graceful Degradation**: Shows "No RAG context" for general domain queries
+- **Use Cases**: 
+  - 🐛 Debug LLM prompt engineering
+  - 📊 Performance monitoring & latency tracking
+  - 🔬 RAG chunk quality validation
+  - 🧪 End-to-end pipeline inspection
 
 ---
 
@@ -333,6 +352,7 @@ POST /api/regenerate/
 - **Health Checks**: Startup validation, config checks (10 tests ✅ NEW)
 - **Debug CLI**: Citation formatting, feedback stats (17 tests ✅ NEW)
 - **Interfaces**: ABC contracts, implementation validation (15 tests ✅ NEW)
+- **Telemetry**: Pipeline metrics, RAG/LLM capture (9 tests ✅ NEW v2.2)
 
 #### Test Execution
 ```bash
@@ -472,5 +492,5 @@ docker-compose exec backend python -m utils.debug_cli "szabadság igénylés" hr
 
 ---
 
-**Last Updated:** 2025-12-17  
-**Version:** 2.1 (Feedback System Release)
+**Last Updated:** 2025-12-18  
+**Version:** 2.2 (Telemetry & Observability Release)

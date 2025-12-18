@@ -8,8 +8,16 @@ const resetBtn = document.getElementById('resetBtn');
 const debugSession = document.getElementById('debugSession');
 const debugDomain = document.getElementById('debugDomain');
 const debugCitations = document.getElementById('debugCitations');
+const debugChunkCount = document.getElementById('debugChunkCount');
+const debugMaxScore = document.getElementById('debugMaxScore');
+const debugLatency = document.getElementById('debugLatency');
 const debugWorkflow = document.getElementById('debugWorkflow');
 const debugNextStep = document.getElementById('debugNextStep');
+const debugRequestJson = document.getElementById('debugRequestJson');
+const debugResponseJson = document.getElementById('debugResponseJson');
+const debugRagContext = document.getElementById('debugRagContext');
+const debugLlmPrompt = document.getElementById('debugLlmPrompt');
+const debugLlmResponse = document.getElementById('debugLlmResponse');
 let typingEl = null;
 
 function clearEmptyState() {
@@ -231,11 +239,19 @@ async function refreshQuery(question, useCache = true) {
         debugSession.textContent = sessionId;
         debugDomain.textContent = payload.domain || 'general';
         
-        if (payload.citations && payload.citations.length > 0) {
-            const avgScore = (payload.citations.reduce((sum, c) => sum + (c.score || 0), 0) / payload.citations.length).toFixed(3);
-            debugCitations.textContent = `${payload.citations.length} (avg: ${avgScore})`;
+        // Chunk count and max score
+        const chunkCount = payload.citations ? payload.citations.length : 0;
+        debugChunkCount.textContent = chunkCount;
+        
+        if (payload.telemetry) {
+            debugMaxScore.textContent = payload.telemetry.max_similarity_score || '-';
+            debugLatency.textContent = payload.telemetry.total_latency_ms ? `${payload.telemetry.total_latency_ms}ms` : '-';
+        } else if (payload.citations && payload.citations.length > 0) {
+            const maxScore = Math.max(...payload.citations.map(c => c.score || 0));
+            debugMaxScore.textContent = maxScore.toFixed(3);
         } else {
-            debugCitations.textContent = '0';
+            debugMaxScore.textContent = '-';
+            debugLatency.textContent = '-';
         }
         
         if (payload.workflow) {
@@ -246,6 +262,33 @@ async function refreshQuery(question, useCache = true) {
         } else {
             debugWorkflow.textContent = 'none';
             debugNextStep.textContent = '-';
+        }
+        
+        // Update JSON debug info
+        if (payload.telemetry && payload.telemetry.request) {
+            debugRequestJson.textContent = JSON.stringify(payload.telemetry.request, null, 2);
+        } else {
+            debugRequestJson.textContent = '-';
+        }
+        if (payload.telemetry && payload.telemetry.response) {
+            debugResponseJson.textContent = JSON.stringify(payload.telemetry.response, null, 2);
+        } else {
+            debugResponseJson.textContent = '-';
+        }
+        if (payload.telemetry && payload.telemetry.rag && payload.telemetry.rag.context) {
+            debugRagContext.textContent = payload.telemetry.rag.context;
+        } else {
+            debugRagContext.textContent = 'No RAG context (general domain or no retrieval)';
+        }
+        if (payload.telemetry && payload.telemetry.llm && payload.telemetry.llm.prompt) {
+            debugLlmPrompt.textContent = payload.telemetry.llm.prompt;
+        } else {
+            debugLlmPrompt.textContent = '-';
+        }
+        if (payload.telemetry && payload.telemetry.llm && payload.telemetry.llm.response) {
+            debugLlmResponse.textContent = payload.telemetry.llm.response;
+        } else {
+            debugLlmResponse.textContent = '-';
         }
         
         hideTyping();
@@ -322,12 +365,19 @@ queryForm.addEventListener('submit', async (e) => {
         debugSession.textContent = sessionId;
         debugDomain.textContent = payload.domain || 'general';
         
-        // Show citation count with average score
-        if (payload.citations && payload.citations.length > 0) {
-            const avgScore = (payload.citations.reduce((sum, c) => sum + (c.score || 0), 0) / payload.citations.length).toFixed(3);
-            debugCitations.textContent = `${payload.citations.length} (avg: ${avgScore})`;
+        // Chunk count and max score
+        const chunkCount = payload.citations ? payload.citations.length : 0;
+        debugChunkCount.textContent = chunkCount;
+        
+        if (payload.telemetry) {
+            debugMaxScore.textContent = payload.telemetry.max_similarity_score || '-';
+            debugLatency.textContent = payload.telemetry.total_latency_ms ? `${payload.telemetry.total_latency_ms}ms` : '-';
+        } else if (payload.citations && payload.citations.length > 0) {
+            const maxScore = Math.max(...payload.citations.map(c => c.score || 0));
+            debugMaxScore.textContent = maxScore.toFixed(3);
         } else {
-            debugCitations.textContent = '0';
+            debugMaxScore.textContent = '-';
+            debugLatency.textContent = '-';
         }
         
         if (payload.workflow) {
@@ -338,6 +388,33 @@ queryForm.addEventListener('submit', async (e) => {
         } else {
             debugWorkflow.textContent = 'none';
             debugNextStep.textContent = '-';
+        }
+        
+        // Update JSON debug info
+        if (payload.telemetry && payload.telemetry.request) {
+            debugRequestJson.textContent = JSON.stringify(payload.telemetry.request, null, 2);
+        } else {
+            debugRequestJson.textContent = '-';
+        }
+        if (payload.telemetry && payload.telemetry.response) {
+            debugResponseJson.textContent = JSON.stringify(payload.telemetry.response, null, 2);
+        } else {
+            debugResponseJson.textContent = '-';
+        }
+        if (payload.telemetry && payload.telemetry.rag && payload.telemetry.rag.context) {
+            debugRagContext.textContent = payload.telemetry.rag.context;
+        } else {
+            debugRagContext.textContent = 'No RAG context (general domain or no retrieval)';
+        }
+        if (payload.telemetry && payload.telemetry.llm && payload.telemetry.llm.prompt) {
+            debugLlmPrompt.textContent = payload.telemetry.llm.prompt;
+        } else {
+            debugLlmPrompt.textContent = '-';
+        }
+        if (payload.telemetry && payload.telemetry.llm && payload.telemetry.llm.response) {
+            debugLlmResponse.textContent = payload.telemetry.llm.response;
+        } else {
+            debugLlmResponse.textContent = '-';
         }
 
         hideTyping();
@@ -484,9 +561,16 @@ if (resetBtn) {
         queryInput.value = '';
         if (debugSession) debugSession.textContent = sessionIdInput.value;
         if (debugDomain) debugDomain.textContent = '-';
-        if (debugCitations) debugCitations.textContent = '0';
+        if (debugChunkCount) debugChunkCount.textContent = '0';
+        if (debugMaxScore) debugMaxScore.textContent = '-';
+        if (debugLatency) debugLatency.textContent = '-';
         if (debugWorkflow) debugWorkflow.textContent = 'none';
         if (debugNextStep) debugNextStep.textContent = '-';
+        if (debugRequestJson) debugRequestJson.textContent = '-';
+        if (debugResponseJson) debugResponseJson.textContent = '-';
+        if (debugRagContext) debugRagContext.textContent = '-';
+        if (debugLlmPrompt) debugLlmPrompt.textContent = '-';
+        if (debugLlmResponse) debugLlmResponse.textContent = '-';
     });
 }
 

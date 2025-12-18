@@ -26,6 +26,10 @@ class AgentState(TypedDict, total=False):
     citations: list
     workflow: Dict[str, Any]
     user_id: str
+    # Telemetry fields
+    rag_context: str  # Full RAG context sent to LLM
+    llm_prompt: str   # Complete prompt sent to LLM
+    llm_response: str # Raw LLM response
 
 
 class QueryAgent:
@@ -120,6 +124,16 @@ Category:"""
 
         state["citations"] = [c.model_dump() for c in citations]
         state["retrieved_docs"] = citations
+        
+        # Build RAG context for telemetry
+        context_parts = []
+        for i, c in enumerate(citations, 1):
+            if hasattr(c, 'content') and c.content:
+                context_parts.append(f"[Doc {i}: {c.title}]\n{c.content[:500]}...")
+            else:
+                context_parts.append(f"[Doc {i}: {c.title}]")
+        state["rag_context"] = "\n\n".join(context_parts)
+        
         logger.info(f"Retrieved {len(citations)} documents")
 
         return state
@@ -182,6 +196,10 @@ Answer in Hungarian if the query is in Hungarian, otherwise in English.
 
         response = await self.llm.ainvoke([HumanMessage(content=prompt)])
         answer = response.content
+        
+        # Save telemetry data
+        state["llm_prompt"] = prompt
+        state["llm_response"] = answer
 
         state["output"] = {
             "domain": state["domain"],
@@ -272,12 +290,15 @@ Answer in Hungarian if the query is in Hungarian, otherwise in English.
 
         final_state = await self.workflow.ainvoke(initial_state)
 
-        # Build response
+        # Build response with telemetry
         response = QueryResponse(
             domain=final_state["domain"],
             answer=final_state["output"]["answer"],
             citations=[Citation(**c) for c in final_state["citations"]],
             workflow=final_state.get("workflow"),
+            rag_context=final_state.get("rag_context"),
+            llm_prompt=final_state.get("llm_prompt"),
+            llm_response=final_state.get("llm_response"),
         )
 
         logger.info("Agent run completed")

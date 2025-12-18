@@ -21,7 +21,8 @@ KnowledgeRouter egy vállalati belső tudásbázis rendszer, amely:
 ✅ **Docker-ben** futtatható  
 🆕 **SOLID architektúra** ABC interfészekkel  
 🆕 **Health check rendszer** startup validálással  
-🆕 **Debug CLI** vizuális RAG testing eszközökkel
+🆕 **Debug CLI** vizuális RAG testing eszközökkel  
+🆕 **Telemetria debug panel** - Pipeline latency, RAG context, LLM prompt/response monitoring
 
 ## 📋 Tech Stack
 
@@ -1147,6 +1148,33 @@ docker-compose exec backend python -m utils.debug_cli "szabadság igénylés" hr
       Content: "Brand colors are #0066CC (primary blue)..."
 
 📊 FEEDBACK STATISTICS (3 citations):
+
+### 🔍 Telemetria Debug Panel (Frontend)
+
+**Real-time observability** a frontend-en (jobb alsó sarokban):
+
+**Megjelenített metrikák:**
+- ⏱️ **Pipeline Latency** - Teljes kérés-válasz idő (ms)
+- 📦 **Chunk Count** - Visszaadott RAG dokumentumok száma
+- 🎯 **Max Similarity Score** - Legmagasabb relevancia érték
+- 📤 **Request JSON** - Küldött payload (collapsible)
+- 📥 **Response JSON** - Teljes API válasz (collapsible)
+- 🔍 **RAG Context** - LLM-nek küldött dokumentumok (collapsible)
+- 🤖 **LLM Prompt** - Teljes LLM prompt (collapsible)
+- 💬 **LLM Response** - Raw LLM válasz (collapsible)
+
+**Használat:**
+1. Nyisd meg a frontend-et: http://localhost:3000
+2. A jobb alsó sarokban lásd a debug panel-t
+3. Minden kérdés után automatikusan frissül
+4. Kattints a részletekre a collapsible szekciók kibontásához
+5. A panel scrollozható (max 85vh)
+
+**Mikor használd:**
+- 🐛 Debug - LLM prompt engineering
+- 📊 Performance - Latency monitoring
+- 🔬 RAG analysis - Chunk quality validation
+- 🧪 Testing - End-to-end pipeline inspection
 ================================================================================
 
   🟢  85.0% [█████████████████░░░] doc_123#chunk0

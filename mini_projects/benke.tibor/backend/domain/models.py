@@ -98,6 +98,10 @@ class QueryResponse(BaseModel):
     tools_used: List[ToolCall] = Field(default_factory=list)
     workflow: Optional[Dict[str, Any]] = None
     confidence: float = 1.0
+    # Telemetry fields (optional, for debug)
+    rag_context: Optional[str] = None
+    llm_prompt: Optional[str] = None
+    llm_response: Optional[str] = None
 
     class Config:
         json_schema_extra = {

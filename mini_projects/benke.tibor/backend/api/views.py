@@ -62,8 +62,19 @@ class QueryAPIView(APIView):
 
             # Process through agent
             import asyncio
+            import time
+            
+            start_time = time.time()
             response = asyncio.run(chat_service.process_query(query_request))
-
+            total_latency = round((time.time() - start_time) * 1000, 2)  # ms
+            
+            # Calculate telemetry
+            chunk_count = len(response.citations)
+            max_score = max([c.score for c in response.citations], default=0.0)
+            
+            user_id = data.get("user_id", "guest")
+            session_id = data.get("session_id")
+            
             return Response(
                 {
                     "success": True,
@@ -73,6 +84,33 @@ class QueryAPIView(APIView):
                         "citations": [c.model_dump() for c in response.citations],
                         "workflow": response.workflow,
                         "confidence": response.confidence,
+                        "telemetry": {
+                            "total_latency_ms": total_latency,
+                            "chunk_count": chunk_count,
+                            "max_similarity_score": round(max_score, 3),
+                            "retrieval_latency_ms": None,  # TODO: measure RAG separately
+                            "request": {
+                                "user_id": user_id,
+                                "session_id": session_id,
+                                "query": query_text
+                            },
+                            "response": {
+                                "domain": response.domain,
+                                "answer_length": len(response.answer),
+                                "citation_count": chunk_count,
+                                "workflow_triggered": response.workflow is not None
+                            },
+                            "rag": {
+                                "context": response.rag_context,
+                                "chunk_count": chunk_count
+                            },
+                            "llm": {
+                                "prompt": response.llm_prompt,
+                                "response": response.llm_response,
+                                "prompt_length": len(response.llm_prompt) if response.llm_prompt else 0,
+                                "response_length": len(response.llm_response) if response.llm_response else 0
+                            }
+                        }
                     }
                 },
                 status=status.HTTP_200_OK,
