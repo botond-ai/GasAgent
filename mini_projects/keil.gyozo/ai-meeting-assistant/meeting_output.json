@@ -1,9 +1,9 @@
 {
   "summary": {
-    "summary": "In today's product planning meeting, the team discussed the timeline for the new user dashboard feature, with initial mockups set to be ready by March 10th for a client presentation on the 15th. Urgent API integration issues were addressed, with Mike tasked to investigate and provide an update by the end of the next day. Additionally, plans were made to schedule user testing for the new onboarding flow and to update the API documentation within the next two weeks.",
+    "summary": "In today's product planning meeting, the team discussed the timeline for the new user dashboard feature, with initial mockups set to be ready by March 10th for a client presentation on the 15th. Urgent API integration issues with a third-party payment service were addressed, with Mike tasked to investigate and propose a solution by the end of the next day. Additionally, plans were made to schedule a user testing session for the new onboarding flow and to update the API documentation within the next two weeks.",
     "key_points": [
-      "Initial mockups for the new user dashboard feature are to be ready by March 10th for a client presentation on the 15th, with Sarah taking ownership.",
-      "Mike is to investigate and propose a solution for the urgent API integration issues by the end of the next day, with assistance from the DevOps team.",
+      "Sarah will prepare the initial mockups for the new user dashboard feature by March 10th.",
+      "Mike is to investigate and address the API integration issues with the third-party payment service urgently, with an update due by the end of the next day.",
       "A user testing session for the new onboarding flow is to be scheduled next week, and the API documentation needs to be updated within the next two weeks."
     ],
     "participants": [
@@ -45,5 +45,5 @@
       "priority": "medium"
     }
   ],
-  "processed_at": "2025-12-19T19:56:00.306592"
+  "processed_at": "2025-12-19T22:00:33.231548"
 }
