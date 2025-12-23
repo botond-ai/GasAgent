@@ -1,0 +1,5 @@
+requests>=2.0
+# Optional (recommended for the homework spec):
+# pydantic>=2.0
+# langgraph>=0.1
+
