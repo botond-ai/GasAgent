@@ -41,7 +41,13 @@ class GeminiClient(ILLMClient):
 
 class QdrantVectorDB(IVectorDBClient):
     def __init__(self, path: str = "./qdrant_db", collection_name: str = "medical_kb"):
-        self.client = QdrantClient(path=path)
+        qdrant_url = os.getenv("QDRANT_URL")
+        if qdrant_url:
+            print(f"DEBUG: Connecting to Qdrant at {qdrant_url}")
+            self.client = QdrantClient(url=qdrant_url)
+        else:
+            print(f"DEBUG: Using local Qdrant at {path}")
+            self.client = QdrantClient(path=path)
         self.collection_name = collection_name
         api_key = os.getenv("GOOGLE_API_KEY")
         if not api_key:
