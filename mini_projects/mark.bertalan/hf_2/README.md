@@ -130,36 +130,6 @@ Factory method `from_env()` loads from .env file with validation.
 - OpenAI API key
 - (Optional) Docker and Docker Compose
 
-### Local Setup
-
-1. **Clone the repository**
-   ```bash
-   cd mini_projects/mark.bertalan/hf_2
-   ```
-
-2. **Create virtual environment**
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-
-3. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. **Configure environment**
-   ```bash
-   cp .env.example .env
-   # Edit .env and add your OPENAI_API_KEY
-   ```
-
-5. **Create domain directories** (optional)
-   ```bash
-   mkdir -p data/{hr,dev,support,management}
-   # Place .md files in each domain folder
-   ```
-
 ### Docker Setup
 
 1. **Configure environment**
@@ -170,7 +140,11 @@ Factory method `from_env()` loads from .env file with validation.
 
 2. **Build and run**
    ```bash
-   docker-compose up --build
+   docker build -t embedding-hf2 .
+   ```
+
+   ```bash
+   docker run -it --env-file ./.env embedding-hf2
    ```
 
 ## Text Chunking Strategy
@@ -495,22 +469,4 @@ class CustomVectorDB(VectorDB):
 - Cosine similarity: O(n) for exact search
 - Consider approximate nearest neighbor (ANN) for large datasets
 - Metadata filtering can reduce search space if needed
-
-### Optimization Tips
-
-1. **Chunk Size Tuning**: Experiment with `EMBEDDING_CHUNK_SIZE` for your use case
-   - Start with 500-1000 characters for balanced performance
-   - Use larger chunks (2000+) for documents with long coherent sections
-   - Use smaller chunks (200-500) for FAQ-style or fragmented content
-
-2. **Overlap Strategy**: Use `OVERLAP` to preserve context at chunk boundaries
-   - 0 overlap = faster processing, risk losing context at boundaries
-   - 50-100 char overlap = better semantic continuity, slight cost increase
-
-3. **Batch Processing**: Process multiple documents in parallel
-4. **Caching**: Cache embeddings for repeated queries
-5. **Indexing**: Use ChromaDB's indexing features for large collections
-6. **Model Selection**: Smaller models = faster/cheaper (trade-off with accuracy)
-
-7. **Metadata Filtering**: Use domain or source_document_id metadata to narrow searches
 
