@@ -108,19 +108,26 @@ class FakeLLM(BaseLLM):
     Why track prompts: Allows tests to verify correct prompt construction.
     """
 
-    def __init__(self, response: str = "This is a fake LLM response."):
+    # Use Pydantic model_config to allow extra fields
+    model_config = {"extra": "allow"}
+
+    response: str = "This is a fake LLM response."
+    prompts: List[str] = []
+
+    def __init__(self, response: str = "This is a fake LLM response.", **kwargs):
         """
         Initialize fake LLM.
 
         Args:
             response: Constant string to return for all queries
+            **kwargs: Additional arguments for BaseLLM
         """
         # Assert: response must not be empty
         assert response.strip(), "Response must not be empty"
 
-        super().__init__()
+        super().__init__(**kwargs)
         self.response = response
-        self.prompts: List[str] = []  # Track prompts for test assertions
+        self.prompts = []  # Track prompts for test assertions
 
     @property
     def _llm_type(self) -> str:
@@ -134,9 +141,13 @@ class FakeLLM(BaseLLM):
         **kwargs,
     ) -> LLMResult:
         """
-        Generate fake responses.
+        Generate fake responses with support for query expansion.
 
         Why track prompts: Allows tests to inspect what was sent to LLM.
+
+        Why check prompt content: Allows returning different responses
+        for expansion prompts vs answer generation prompts. This enables
+        deterministic testing of query expansion without OpenAI API calls.
 
         Args:
             prompts: List of prompt strings
@@ -152,10 +163,20 @@ class FakeLLM(BaseLLM):
         # Track prompts for test inspection
         self.prompts.extend(prompts)
 
-        # Return constant response for each prompt
-        generations = [
-            [Generation(text=self.response)] for _ in prompts
-        ]
+        # Generate responses based on prompt content
+        generations = []
+        for prompt in prompts:
+            # Check if this is a query expansion request
+            # Why check content: Query expansion prompts contain specific keywords
+            if "alternative versions" in prompt.lower() or "reformulates" in prompt.lower():
+                # Return deterministic expansions for testing
+                # Why newline-separated: Matches expected format from real LLM
+                response_text = "Alternative phrasing 1\nAlternative phrasing 2"
+            else:
+                # Regular answer generation
+                response_text = self.response
+
+            generations.append([Generation(text=response_text)])
 
         return LLMResult(generations=generations)
 

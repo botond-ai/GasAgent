@@ -33,7 +33,7 @@ async def chat(
     settings: Settings = Depends(get_settings),
 ) -> ChatResponse:
     """
-    Ask a question using RAG retrieval.
+    Ask a question using RAG retrieval with optional query expansion.
 
     Why this endpoint: Core functionality of the chatbot.
     Retrieves relevant document chunks and generates answer using LLM.
@@ -45,12 +45,19 @@ async def chat(
     Why stateless: No conversation history. Each request is independent.
     session_id is accepted for UI correlation but not used for memory.
 
+    Query Expansion:
+    When enabled, the system generates alternative phrasings of your question
+    to improve retrieval coverage. This helps find relevant documents even if
+    they use different terminology than your original query.
+
     Args:
-        request: Chat request with message, top_k, temperature, optional session_id
+        request: Chat request with message, top_k, temperature, optional session_id,
+                 and optional query expansion parameters
         settings: Injected application settings
 
     Returns:
-        ChatResponse: Answer with source attributions and model name
+        ChatResponse: Answer with source attributions, model name, and optional
+                     expanded queries list
 
     Raises:
         HTTPException 409: Vector store not found (call /ingest first)
@@ -79,22 +86,26 @@ async def chat(
 
         # Call RAG pipeline
         # Why answer_question: Encapsulates retrieval + generation logic
-        answer, sources = answer_question(
+        answer, sources, expanded_queries = answer_question(
             query=request.message,
             top_k=request.top_k,
             temperature=request.temperature,
             settings=settings,
             embeddings=embeddings,
             llm=llm,
+            enable_query_expansion=request.enable_query_expansion,
+            num_expansions=request.num_expansions,
         )
 
         # Build response
         # Why echo session_id: Allows UI to correlate request/response
+        # Why include expanded_queries: Transparency for debugging and understanding retrieval
         return ChatResponse(
             session_id=request.session_id,
             answer=answer,
             sources=sources,
             model=settings.OPENAI_CHAT_MODEL,
+            expanded_queries=expanded_queries,
         )
 
     except HTTPException:

@@ -39,7 +39,9 @@ class ChatRequest(BaseModel):
                 "session_id": "user-123-session",
                 "message": "What does the documentation say about deployment?",
                 "top_k": 4,
-                "temperature": 0.2
+                "temperature": 0.2,
+                "enable_query_expansion": True,
+                "num_expansions": 2
             }
         }
     )
@@ -67,6 +69,25 @@ class ChatRequest(BaseModel):
         ge=0.0,
         le=1.0,
         description="LLM temperature (0=deterministic, 1=creative)"
+    )
+
+    enable_query_expansion: bool = Field(
+        default=False,
+        description=(
+            "Enable query expansion to generate alternative phrasings of the question. "
+            "Improves retrieval recall by matching different terminology in documents."
+        )
+    )
+
+    num_expansions: int = Field(
+        default=2,
+        ge=0,
+        le=4,
+        description=(
+            "Number of alternative query variations to generate (0-4). "
+            "Higher values may improve recall but increase latency and cost. "
+            "Recommended: 2-3 for best balance."
+        )
     )
 
 
@@ -138,7 +159,12 @@ class ChatResponse(BaseModel):
                         "snippet": "To deploy on Cloud Run, use..."
                     }
                 ],
-                "model": "gpt-4.1-mini"
+                "model": "gpt-4.1-mini",
+                "expanded_queries": [
+                    "What does the documentation say about deployment?",
+                    "How do I deploy according to the docs?",
+                    "What are the deployment instructions in the documentation?"
+                ]
             }
         }
     )
@@ -162,4 +188,13 @@ class ChatResponse(BaseModel):
     model: str = Field(
         ...,
         description="Model that generated the answer"
+    )
+
+    expanded_queries: Optional[List[str]] = Field(
+        default=None,
+        description=(
+            "List of all queries used for retrieval (if expansion enabled). "
+            "First query is always the original user query. "
+            "Useful for debugging and understanding retrieval behavior."
+        )
     )

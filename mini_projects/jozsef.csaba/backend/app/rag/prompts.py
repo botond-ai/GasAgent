@@ -33,6 +33,61 @@ Rules:
 
 Do not use any external knowledge or make assumptions beyond what's explicitly stated in the context."""
 
+# Why this prompt: Generates semantically equivalent questions with different phrasing
+# to improve retrieval recall across diverse document terminology
+QUERY_EXPANSION_PROMPT = """You are a helpful assistant that reformulates user questions to improve document search.
+
+Given a user's question, generate {num_expansions} alternative versions of the question that:
+1. Use different words and phrasing while preserving the same meaning
+2. Might match different terminology in technical documentation
+3. Are concise and focused (similar length to original)
+4. Avoid being too broad or too narrow
+
+Important:
+- Keep the same level of specificity as the original
+- Use professional/technical language appropriate for documentation
+- Focus on capturing the same information need with different words
+
+Original question: {query}
+
+Generate exactly {num_expansions} alternative versions (one per line, no numbering, labels, or explanations):"""
+
+
+def build_query_expansion_prompt(
+    query: str,
+    num_expansions: int,
+) -> List[HumanMessage]:
+    """
+    Build prompt for query expansion.
+
+    Why this function: Constructs prompt that generates alternative
+    query phrasings for better retrieval coverage.
+
+    Why specific instructions: LLM needs constraints to avoid:
+    - Overly broad expansions (loses specificity)
+    - Overly narrow expansions (no benefit)
+    - Verbose expansions (exceed embedding limits)
+
+    Args:
+        query: Original user query
+        num_expansions: Number of alternatives to generate
+
+    Returns:
+        List[HumanMessage]: Prompt messages for LLM
+    """
+    # Assert: Query must not be empty and num_expansions must be positive
+    assert query.strip(), "Query must not be empty"
+    assert num_expansions > 0, "num_expansions must be positive"
+
+    logger.debug(f"Building query expansion prompt for: {query[:50]}...")
+
+    formatted_prompt = QUERY_EXPANSION_PROMPT.format(
+        query=query,
+        num_expansions=num_expansions,
+    )
+
+    return [HumanMessage(content=formatted_prompt)]
+
 
 def build_rag_prompt(
     query: str,

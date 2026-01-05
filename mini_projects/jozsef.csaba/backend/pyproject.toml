@@ -32,3 +32,5 @@ testpaths = ["app/tests"]
 python_files = "test_*.py"
 python_functions = "test_*"
 asyncio_mode = "auto"
+
+# [project.scripts] TODO: Add CLI scripts if needed, maybe to fire up the frontend and backend together

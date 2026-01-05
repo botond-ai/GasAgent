@@ -63,22 +63,32 @@ def answer_question(
     settings: Settings,
     embeddings: Any,
     llm: Any,
-) -> tuple[str, List[SourceAttribution]]:
+    enable_query_expansion: bool = False,
+    num_expansions: int = 2,
+) -> tuple[str, List[SourceAttribution], List[str] | None]:
     """
-    Answer a question using RAG.
+    Answer a question using RAG with optional query expansion.
 
     Why this function: Core RAG logic that:
     1. Loads vector store
-    2. Retrieves relevant chunks
-    3. Builds prompt with context
-    4. Calls LLM to generate answer
-    5. Formats source attributions
+    2. (Optional) Expands query into alternative phrasings
+    3. Retrieves relevant chunks (using expanded queries if enabled)
+    4. Merges and deduplicates chunks from multiple queries
+    5. Builds prompt with context
+    6. Calls LLM to generate answer
+    7. Formats source attributions
 
     Why injectable embeddings and llm: Allows tests to inject fakes
     (no OpenAI API calls during testing).
 
     Why stateless: No conversation history; each question is independent.
     Simplifies implementation and matches demo requirements.
+
+    Why query expansion parameter: Allows A/B testing and gradual rollout.
+    Users can compare performance with/without expansion.
+
+    Why configurable num_expansions: Different queries benefit from different
+    numbers of expansions; flexibility enables experimentation.
 
     Args:
         query: User's question
@@ -87,9 +97,11 @@ def answer_question(
         settings: Application settings
         embeddings: Embeddings instance (real or fake)
         llm: LLM instance (real or fake)
+        enable_query_expansion: Enable query expansion for improved retrieval
+        num_expansions: Number of query variations to generate (0-4)
 
     Returns:
-        Tuple of (answer string, list of source attributions)
+        Tuple of (answer string, list of source attributions, expanded queries used or None)
 
     Raises:
         RuntimeError: If vector store not found or RAG pipeline fails
@@ -97,20 +109,42 @@ def answer_question(
     # Assert: Query must not be empty
     assert query.strip(), "Query must not be empty"
 
-    logger.info(f"Answering question (top_k={top_k}, temperature={temperature})")
+    logger.info(f"Answering question (top_k={top_k}, temperature={temperature}, expansion={enable_query_expansion})")
 
     # Step 1: Load vector store
     # Why load per request: Could cache in memory for production,
     # but loading is fast enough for demo and avoids stale index issues
     vectorstore = load_vectorstore(embeddings, settings)
 
-    # Step 2: Retrieve relevant chunks
-    # Why similarity search: Finds chunks with embeddings closest to query
-    context_chunks = retrieve_chunks(vectorstore, query, top_k)
+    # Step 2: Retrieve relevant chunks (WITH or WITHOUT expansion)
+    expanded_queries_used = None
+
+    if enable_query_expansion and num_expansions > 0:
+        # Import query expansion functions
+        from app.rag.query_expansion import expand_query, merge_retrieved_chunks
+
+        # Generate expanded queries
+        queries = expand_query(query, llm, num_expansions)
+        expanded_queries_used = queries
+        logger.info(f"Expanded to {len(queries)} queries: {queries}")
+
+        # Retrieve chunks for each query
+        chunks_per_query = []
+        for q in queries:
+            chunks = retrieve_chunks(vectorstore, q, top_k)
+            chunks_per_query.append(chunks)
+
+        # Merge and deduplicate
+        context_chunks = merge_retrieved_chunks(chunks_per_query, top_k)
+        logger.info(f"Merged to {len(context_chunks)} unique chunks")
+    else:
+        # Original behavior: single query retrieval
+        # Why similarity search: Finds chunks with embeddings closest to query
+        context_chunks = retrieve_chunks(vectorstore, query, top_k)
 
     if not context_chunks:
         logger.warning("No context chunks retrieved")
-        return "I don't know based on the provided documentation.", []
+        return "I don't know based on the provided documentation.", [], expanded_queries_used
 
     # Step 3: Build prompt with context
     # Why system + human messages: Modern chat models expect message format
@@ -147,4 +181,4 @@ def answer_question(
 
     logger.debug(f"Created {len(sources)} source attributions")
 
-    return answer, sources
+    return answer, sources, expanded_queries_used
