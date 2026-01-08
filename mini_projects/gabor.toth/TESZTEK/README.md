@@ -227,7 +227,7 @@ python3 TESZTEK/test_category_management.py
 
 ```bash
 # 1. Szerver indítása (az al-mappában)
-cd /Users/tothgabor/ai-agents-hu/mini_projects/gabor.toth/2_hw
+cd /Users/tothgabor/ai-agents-hu/mini_projects/gabor.toth
 source .env && ./start-dev.sh
 
 # 2. Új terminálban a tesztek futtatása (ebben a sorrendben):
@@ -412,7 +412,7 @@ Error: Failed to establish a connection (Connection refused)
 ps aux | grep start-dev.sh
 
 # Ha nem fut, indítsd el:
-cd /Users/tothgabor/ai-agents-hu/mini_projects/gabor.toth/2_hw
+cd /Users/tothgabor/ai-agents-hu/mini_projects/gabor.toth
 source .env && ./start-dev.sh
 ```
 

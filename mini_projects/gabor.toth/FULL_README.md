@@ -154,7 +154,7 @@ npm run dev
 ## 📁 Projektstruktúra
 
 ```
-2_hw/
+gabor.toth/
 ├── README.md
 ├── ARCHITECTURE.md                # Részletes architektúra
 ├── GETTING_STARTED.md             # Lépésenkénti útmutató

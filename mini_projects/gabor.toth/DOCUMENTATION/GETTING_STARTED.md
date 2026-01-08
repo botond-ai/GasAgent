@@ -189,7 +189,7 @@ Soha nem keveredik az időrend
 
 ```bash
 # A projekt gyökérjében (ahol docker-compose.yml van)
-cd /Users/tothgabor/ai-agents-hu/mini_projects/gabor.toth/2_hw
+cd /Users/tothgabor/ai-agents-hu/mini_projects/gabor.toth
 
 # Setted az OPENAI_API_KEY-t:
 export OPENAI_API_KEY="sk-..."
@@ -349,7 +349,7 @@ npm run lint
 ## 9. Projekt Szerkezete (Gyors Referencia)
 
 ```
-2_hw/
+gabor.toth/
 ├── backend/
 │   ├── main.py                 ← FastAPI app entry
 │   ├── requirements.txt         ← Python dependencies

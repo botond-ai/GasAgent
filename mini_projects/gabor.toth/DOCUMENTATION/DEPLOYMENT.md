@@ -31,7 +31,7 @@ npm install && npm run dev
 ### 2.1 Docker Compose (Gyors Start)
 
 ```bash
-cd /Users/tothgabor/ai-agents-hu/mini_projects/gabor.toth/2_hw
+cd /Users/tothgabor/ai-agents-hu/mini_projects/gabor.toth
 
 # Environment változók beállítása
 export OPENAI_API_KEY="sk-..."

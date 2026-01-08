@@ -244,7 +244,7 @@ Estimated (on modern machine):
 
 ```bash
 # 1. Clone & navigate
-cd 2_hw
+cd /Users/tothgabor/ai-agents-hu/mini_projects/gabor.toth
 
 # 2. Set API key
 export OPENAI_API_KEY="sk-..."
