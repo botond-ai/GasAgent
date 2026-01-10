@@ -62,11 +62,11 @@ class ApiConfig(AppConfig):
                 collection_name="multi_domain_kb"
             )
 
-            # Initialize LLM from centralized factory
+            # Initialize LLM (OpenAI)
             llm = OpenAIClientFactory.get_llm(
                 model=settings.OPENAI_MODEL,
                 temperature=settings.LLM_TEMPERATURE,
-                api_key=settings.OPENAI_API_KEY
+                api_key=settings.OPENAI_API_KEY,
             )
 
             # Initialize agent

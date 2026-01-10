@@ -6,7 +6,7 @@ Multi-domain AI agent rendszer Python Django backenddel, LangGraph orchestráci�
 
 KnowledgeRouter egy vállalati belső tudásbázis rendszer, amely:
 
-✅ **LangGraph StateGraph orchestration** - 4 node-os workflow (intent → retrieval → generation → workflow)  
+✅ **LangGraph StateGraph orchestration** - 6 node-os workflow (intent → retrieval → generation → guardrail → feedback_metrics → workflow)  
 ✅ **6 domain-re** szétválasztott tudásbázisokból keres (HR, IT, Finance, Legal, Marketing, General)  
 ✅ **Multi-domain Qdrant collection** domain-specifikus szűréssel (egyetlen collection, gyors filtering)  
 ✅ **Hibrid keresés support** szemantikus (dense vectors) + domain filtering (lexikális BM25 ready)  
@@ -27,11 +27,15 @@ KnowledgeRouter egy vállalati belső tudásbázis rendszer, amely:
 🆕 **Health check rendszer** startup validálással (OpenAI, Qdrant, Redis, Postgres)  
 🆕 **Debug CLI** vizuális RAG testing eszközökkel  
 🆕 **Telemetria debug panel** - Pipeline latency, RAG context, LLM prompt/response monitoring
+🆕 **Guardrail Node** (v2.5) - IT domain citation validation with automatic retry logic (max 2x)
+🆕 **Feedback Metrics Node** (v2.5) - Telemetry collection: retrieval quality, latency, cache hits
+🆕 **Memory (v2.6)** - Rolling window, conversation summary, facts extraction (non-blocking)
 
 ## 📋 Tech Stack
 
 - **Backend**: Python 3.11+ | Django | **LangGraph (StateGraph orchestration)**
 - **LLM**: OpenAI GPT-4o Mini (gpt-4o-mini)
+- **Embedding**: OpenAI text-embedding-3-small (1536 dim)
 - **Vector DB**: Qdrant (self-hosted)
 - **Cache**: Redis 7 (embedding + query result cache)
 - **Database**: PostgreSQL 15 (feedback & analytics)
@@ -58,10 +62,14 @@ cp .env.example .env
 ### 2. API Key Beállítása
 
 ```bash
-# .env-ben add meg az OPENAI_API_KEY-t
+# .env fájl szerkesztése:
 nano .env
-# Vagy set a Windows PowerShell-ben:
-$env:OPENAI_API_KEY = "sk-your-key-here"
+OPENAI_API_KEY=sk-proj-...
+OPENAI_MODEL=gpt-4o-mini
+EMBEDDING_MODEL=text-embedding-3-small
+
+# Windows PowerShell példa:
+$env:OPENAI_API_KEY = "sk-proj-..."; $env:OPENAI_MODEL = "gpt-4o-mini"; $env:EMBEDDING_MODEL = "text-embedding-3-small"
 ```
 
 ### 3. Docker Compose Indítása
@@ -70,7 +78,7 @@ $env:OPENAI_API_KEY = "sk-your-key-here"
 docker-compose up --build
 ```
 
-**Fontos:** Az alkalmazás **Qdrant-alapú RAG-et** használ multi-domain collection-nel.
+**Fontos:** Az alkalmazás **Qdrant-alapú RAG-et** használ multi-domain collection-nel OpenAI embeddinggel (text-embedding-3-small, 1536 dim).
 
 ### 4. Dokumentumok Indexelése
 

@@ -50,7 +50,10 @@ class TestQdrantRAGIntegration:
             "text": "Tipográfia: Inter (Regular, Medium, SemiBold)"
         }
         
-        client.search.return_value = [mock_point_1, mock_point_2, mock_point_3]
+        # Mock query_points response with .points attribute (new Qdrant API)
+        mock_response = Mock()
+        mock_response.points = [mock_point_1, mock_point_2, mock_point_3]
+        client.query_points.return_value = mock_response
         
         return client
     
@@ -158,7 +161,7 @@ class TestQdrantRAGIntegration:
             "chunk_index": 0
         }
         
-        mock_qdrant.search.return_value = [mock_point_network, mock_point_vpn]
+        mock_qdrant.query_points.return_value = Mock(points=[mock_point_network, mock_point_vpn])
         
         rag_client = QdrantRAGClient(qdrant_url="http://mock:6333")
         rag_client.qdrant_client = mock_qdrant
@@ -259,7 +262,7 @@ class TestQdrantRAGIntegration:
     ):
         """Test handling of empty search results."""
         mock_qdrant = Mock()
-        mock_qdrant.search.return_value = []
+        mock_qdrant.query_points.return_value = Mock(points=[])
         
         rag_client = QdrantRAGClient(qdrant_url="http://mock:6333")
         rag_client.qdrant_client = mock_qdrant
@@ -316,11 +319,11 @@ class TestQdrantRAGIntegration:
             "chunk_index": 0
         }
         
-        mock_qdrant.search.return_value = [
+        mock_qdrant.query_points.return_value = Mock(points=[
             mock_low_feedback,   # Highest semantic score
             mock_no_feedback,
             mock_high_feedback   # Lowest semantic score
-        ]
+        ])
         
         with patch('infrastructure.qdrant_rag_client.postgres_client') as mock_pg:
             mock_pg.is_available.return_value = True

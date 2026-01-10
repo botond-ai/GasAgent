@@ -19,6 +19,7 @@ Részletes telepítési útmutató Windows, Mac és Linux rendszerekre.
 ### Opcionális (Local Dev)
 - **Python 3.11+**
   - [Download](https://www.python.org/downloads/)
+  - Megjegyzés: Windows alatt a 3.11–3.13 ajánlott (3.14 esetén Pydantic V1 figyelmeztetés látható)
 
 - **Node.js 18+** (Tailwind CSS build)
   - [Download](https://nodejs.org/)
@@ -45,10 +46,10 @@ sudo apt-get install docker.io docker-compose
 
 **Docker Services:**
 A Docker Compose 4 szolgáltatást indít:
-- **Backend** (Django): http://localhost:8001
+- **Backend** (Django): http://localhost:8000
 - **Frontend** (Nginx): http://localhost:3000
 - **Qdrant** (Vector DB): http://localhost:6334
-- **Redis** (Cache): localhost:6380
+- **Redis** (Cache): localhost:6379
 
 ### 2. Repository Klónozása
 
@@ -63,7 +64,7 @@ cd ai-agents-hu/benketibor
 # Másold az .env.example fájlt
 cp .env.example .env
 
-# Szerkeszd a .env fájlt (add meg az OPENAI_API_KEY-t)
+# Szerkeszd a .env fájlt (LLM provider és API kulcsok)
 # Macen: nano .env
 # Windowson: notepad .env
 ```
@@ -122,12 +123,16 @@ pip install -r requirements.txt
 
 ```bash
 # Windows PowerShell
-$env:OPENAI_API_KEY = "sk-your-key-here"
+$env:OPENAI_API_KEY = "sk-proj-your-key"
+$env:OPENAI_MODEL = "gpt-4o-mini"
+$env:EMBEDDING_MODEL = "text-embedding-3-small"
 $env:DJANGO_SETTINGS_MODULE = "core.settings"
 
 # Mac/Linux
-export OPENAI_API_KEY="sk-your-key-here"
-export DJANGO_SETTINGS_MODULE="core.settings"
+export OPENAI_API_KEY=sk-proj-your-key
+export OPENAI_MODEL=gpt-4o-mini
+export EMBEDDING_MODEL=text-embedding-3-small
+export DJANGO_SETTINGS_MODULE=core.settings
 ```
 
 **4. Run Django Server**
@@ -159,7 +164,19 @@ Frontend fut: http://localhost:3000
 
 ## 🔐 API Key Konfigurálása
 
-### OpenAI API Key Beszerzés
+### Claude (Anthropic) API Key Beszerzés
+
+1. Menj a https://console.anthropic.com/ oldalra
+2. Hozz létre API kulcsot
+3. Add meg a `.env` fájlban:
+
+```bash
+LLM_PROVIDER=anthropic
+ANTHROPIC_API_KEY=sk-ant-... 
+CLAUDE_MODEL=claude-3-5-sonnet-20241022
+```
+
+### OpenAI API Key (alternatíva)
 
 1. Menj a https://platform.openai.com/account/api-keys-ra
 2. Kattints: "Create new secret key"
@@ -200,11 +217,12 @@ kill -9 <PID>
 ### ❌ OPENAI_API_KEY not found
 
 ```bash
-# Ellenőrizz a .env fájlban
+# Ellenőrizd a .env fájlban
 cat .env | grep OPENAI
 
 # Vagy set manuálisan
-export OPENAI_API_KEY="sk-..."
+export OPENAI_API_KEY="sk-proj-..."
+export OPENAI_MODEL="gpt-4o-mini"
 ```
 
 ### ❌ Qdrant connection error
