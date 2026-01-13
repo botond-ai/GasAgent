@@ -10,7 +10,8 @@ from langchain_core.tools import tool
 
 from domain.interfaces import (
     IWeatherClient, IGeocodeClient, IIPGeolocationClient,
-    IFXRatesClient, ICryptoPriceClient, IConversationRepository
+    IFXRatesClient, ICryptoPriceClient, IConversationRepository,
+    IDeepWikiMCPClient
 )
 
 logger = logging.getLogger(__name__)
@@ -23,6 +24,7 @@ _ip_client: Optional[IIPGeolocationClient] = None
 _fx_client: Optional[IFXRatesClient] = None
 _crypto_client: Optional[ICryptoPriceClient] = None
 _conversation_repo: Optional[IConversationRepository] = None
+_deepwiki_client: Optional[IDeepWikiMCPClient] = None
 _file_data_dir: str = "data/files"
 
 
@@ -33,10 +35,11 @@ def initialize_tools(
     fx_client: IFXRatesClient,
     crypto_client: ICryptoPriceClient,
     conversation_repo: IConversationRepository,
-    file_data_dir: str = "data/files"
+    file_data_dir: str = "data/files",
+    deepwiki_client: Optional[IDeepWikiMCPClient] = None
 ):
     """Initialize tool dependencies."""
-    global _weather_client, _geocode_client, _ip_client, _fx_client, _crypto_client, _conversation_repo, _file_data_dir
+    global _weather_client, _geocode_client, _ip_client, _fx_client, _crypto_client, _conversation_repo, _file_data_dir, _deepwiki_client
     _weather_client = weather_client
     _geocode_client = geocode_client
     _ip_client = ip_client
@@ -44,6 +47,7 @@ def initialize_tools(
     _crypto_client = crypto_client
     _conversation_repo = conversation_repo
     _file_data_dir = file_data_dir
+    _deepwiki_client = deepwiki_client
 
 
 @tool
@@ -243,11 +247,92 @@ async def search_history(query: str) -> str:
     except Exception as e:
         logger.error(f"History search error: {e}")
         return f"History search failed: {e}"
+@tool
+async def deepwiki_ask_question(question: str, repo_url: Optional[str] = None) -> str:
+    """Ask a question about a GitHub repository using DeepWiki. Provides answers about repository documentation, wiki, and knowledge.
+    
+    Args:
+        question: Question to ask about the repository
+        repo_url: Optional GitHub repository URL (e.g., "https://github.com/owner/repo")
+        
+    Returns:
+        Answer from DeepWiki knowledge base
+    """
+    logger.info(f"DeepWiki ask_question called: question={question}, repo={repo_url}")
+    if _deepwiki_client is None:
+        return "DeepWiki service not available"
+    
+    try:
+        result = await _deepwiki_client.ask_question(question, repo_url)
+        
+        if result.get("success"):
+            answer = result.get("answer", "No answer available")
+            return f"DeepWiki: {answer}"
+        else:
+            return f"DeepWiki error: {result.get('error', 'Unknown error')}"
+    except Exception as e:
+        logger.error(f"DeepWiki ask_question error: {e}")
+        return f"DeepWiki failed: {e}"
+
+
+@tool
+async def deepwiki_read_wiki_structure(repo_url: str) -> str:
+    """Read the wiki structure of a GitHub repository using DeepWiki. Gets the list of all wiki pages.
+    
+    Args:
+        repo_url: GitHub repository URL (e.g., "https://github.com/owner/repo")
+        
+    Returns:
+        Wiki structure information
+    """
+    logger.info(f"DeepWiki read_wiki_structure called: repo={repo_url}")
+    if _deepwiki_client is None:
+        return "DeepWiki service not available"
+    
+    try:
+        result = await _deepwiki_client.read_wiki_structure(repo_url)
+        
+        if result.get("success"):
+            structure = result.get("structure", {})
+            return f"Wiki structure for {repo_url}: {structure}"
+        else:
+            return f"DeepWiki error: {result.get('error', 'Unknown error')}"
+    except Exception as e:
+        logger.error(f"DeepWiki read_wiki_structure error: {e}")
+        return f"DeepWiki failed: {e}"
+
+
+@tool
+async def deepwiki_get_wiki_content(repo_url: str, page_title: str) -> str:
+    """Get the content of a specific wiki page from a GitHub repository using DeepWiki.
+    
+    Args:
+        repo_url: GitHub repository URL (e.g., "https://github.com/owner/repo")
+        page_title: Title of the wiki page to retrieve
+        
+    Returns:
+        Wiki page content
+    """
+    logger.info(f"DeepWiki get_wiki_content called: repo={repo_url}, page={page_title}")
+    if _deepwiki_client is None:
+        return "DeepWiki service not available"
+    
+    try:
+        result = await _deepwiki_client.get_wiki_content(repo_url, page_title)
+        
+        if result.get("success"):
+            content = result.get("content", "No content available")
+            return f"Wiki page '{page_title}' from {repo_url}: {content}"
+        else:
+            return f"DeepWiki error: {result.get('error', 'Unknown error')}"
+    except Exception as e:
+        logger.error(f"DeepWiki get_wiki_content error: {e}")
+        return f"DeepWiki failed: {e}"
 
 
 def get_all_tools():
     """Get list of all LangChain tools."""
-    return [
+    tools = [
         get_weather,
         geocode_location,
         get_ip_location,
@@ -256,3 +341,13 @@ def get_all_tools():
         create_file,
         search_history
     ]
+    
+    # Add DeepWiki tools if client is available
+    if _deepwiki_client is not None:
+        tools.extend([
+            deepwiki_ask_question,
+            deepwiki_read_wiki_structure,
+            deepwiki_get_wiki_content
+        ])
+    
+    return tools

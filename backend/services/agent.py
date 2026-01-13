@@ -9,6 +9,7 @@ from typing import List, Dict, Any, Optional, Annotated, Sequence
 from typing_extensions import TypedDict
 import json
 import logging
+import asyncio
 from datetime import datetime
 
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
@@ -20,15 +21,32 @@ from services.tools import (
     WeatherTool, GeocodeTool, IPGeolocationTool,
     FXRatesTool, CryptoPriceTool, FileCreationTool, HistorySearchTool
 )
+from services.parallel_execution import execute_parallel_mcp_tools
 
 logger = logging.getLogger(__name__)
 
 # Maximum iterations to prevent infinite loops in multi-step workflows
-MAX_ITERATIONS = 10
+MAX_ITERATIONS = 20  # Increased from 10 to support complex multi-tool requests
+
+
+def parallel_results_reducer(existing: List[Dict], new: List[Dict]) -> List[Dict]:
+    """Merge results from parallel tool executions."""
+    # Handle None values
+    if existing is None:
+        existing = []
+    if new is None:
+        new = []
+    
+    existing_ids = {r.get("tool_name", "") + str(r.get("arguments", {})) for r in existing}
+    for result in new:
+        result_id = result.get("tool_name", "") + str(result.get("arguments", {}))
+        if result_id not in existing_ids:
+            existing.append(result)
+    return existing
 
 
 class AgentState(TypedDict, total=False):
-    """State object for LangGraph agent with RAG support."""
+    """State object for LangGraph agent with RAG support and parallel execution."""
     messages: Sequence[BaseMessage]
     memory: Memory
     tools_called: List[ToolCall]
@@ -46,6 +64,10 @@ class AgentState(TypedDict, total=False):
     deepwiki_tools: List[Dict[str, Any]]  # Tools fetched from DeepWiki MCP server
     alphavantage_tools: List[Dict[str, Any]]  # Tools fetched from AlphaVantage MCP server
     debug_logs: List[str]  # Debug information for frontend display
+    
+    # Parallel execution support
+    parallel_tasks: Annotated[List[Dict[str, Any]], parallel_results_reducer]
+    parallel_results: Annotated[List[Dict[str, Any]], parallel_results_reducer]
 
 
 class AIAgent:
@@ -123,6 +145,12 @@ class AIAgent:
         # Add nodes
         workflow.add_node("agent_decide", self._agent_decide_node)
         workflow.add_node("agent_finalize", self._agent_finalize_node)
+        
+        # Add MCP tool execution node
+        workflow.add_node("mcp_tool_execution", self._mcp_tool_execution_node)
+        
+        # Add parallel tool execution node
+        workflow.add_node("parallel_tool_execution", self._parallel_tool_execution_node)
 
         # Add tool nodes
         for tool_name in self.tools.keys():
@@ -146,6 +174,8 @@ class AIAgent:
             self._route_decision,
             {
                 "final_answer": "agent_finalize",
+                "mcp_tool_execution": "mcp_tool_execution",
+                "parallel_tool_execution": "parallel_tool_execution",
                 **{f"tool_{name}": f"tool_{name}" for name in self.tools.keys()}
             }
         )
@@ -153,6 +183,12 @@ class AIAgent:
         # Add edges from tools back to agent_decide (for multi-step reasoning)
         for tool_name in self.tools.keys():
             workflow.add_edge(f"tool_{tool_name}", "agent_decide")
+        
+        # Add edge from MCP tool execution back to agent_decide
+        workflow.add_edge("mcp_tool_execution", "agent_decide")
+        
+        # Add edge from parallel tool execution back to agent_decide
+        workflow.add_edge("parallel_tool_execution", "agent_decide")
 
         # Add edge from finalize to end
         workflow.add_edge("agent_finalize", END)
@@ -189,9 +225,11 @@ class AIAgent:
         try:
             # Ensure connection to AlphaVantage MCP server
             if not hasattr(self.alphavantage_mcp_client, 'connected') or not self.alphavantage_mcp_client.connected:
-                logger.info("Connecting to AlphaVantage MCP server: https://mcp.alphavantage.co/mcp?apikey=5BBQJA8GEYVQ228V")
+                import os
+                api_key = os.getenv('ALPHAVANTAGE_API_KEY', '')
+                logger.info("Connecting to AlphaVantage MCP server: https://mcp.alphavantage.co/mcp?apikey=***")
                 state["debug_logs"].append("[MCP] Connecting to AlphaVantage server (https://mcp.alphavantage.co/mcp)...")
-                await self.alphavantage_mcp_client.connect("https://mcp.alphavantage.co/mcp?apikey=5BBQJA8GEYVQ228V")
+                await self.alphavantage_mcp_client.connect(f"https://mcp.alphavantage.co/mcp?apikey={api_key}")
                 state["debug_logs"].append("[MCP] ✓ Connected to AlphaVantage MCP server")
             
             # List all available tools from AlphaVantage
@@ -347,6 +385,32 @@ Available Citations: {", ".join(citations)}
 ═══════════════════════════════════════════════════════════════
 """
 
+        # Build available tools list dynamically
+        available_tools_list = [
+            "- weather: Get weather forecast (params: city OR lat/lon) - ONLY provides current + 2 day future forecast, NO historical data",
+            "- geocode: Convert address to coordinates or reverse (params: address OR lat/lon)",
+            "- ip_geolocation: Get location from IP address (params: ip_address)",
+            "- fx_rates: Get currency exchange rates (params: base, target, optional date)",
+            "- crypto_price: Get cryptocurrency prices (params: symbol, fiat)",
+            "- create_file: Save text to a file (params: user_id, filename, content)",
+            "- search_history: Search past conversations (params: query)"
+        ]
+        
+        # Add AlphaVantage MCP tools if available
+        alphavantage_tools = state.get("alphavantage_tools", [])
+        if alphavantage_tools:
+            available_tools_list.append("\n📊 AlphaVantage Financial & Market Data Tools:")
+            for tool in alphavantage_tools[:20]:  # Limit to first 20 to avoid token overflow
+                tool_name = tool.get("name", "")
+                tool_desc = tool.get("description", "No description")
+                # Extract parameter info from inputSchema if available
+                input_schema = tool.get("inputSchema", {})
+                properties = input_schema.get("properties", {})
+                params_desc = ", ".join(properties.keys()) if properties else "see schema"
+                available_tools_list.append(f"  - {tool_name}: {tool_desc} (params: {params_desc})")
+        
+        available_tools_str = "\n".join(available_tools_list)
+        
         # Create decision prompt - MUST return ONLY JSON, nothing else
         decision_prompt = f"""
 You must analyze the user's request and respond with ONLY a valid JSON object, nothing else.
@@ -357,13 +421,7 @@ Recent conversation context:
 {history_context}
 
 Available tools:
-- weather: Get weather forecast (params: city OR lat/lon) - ONLY provides current + 2 day future forecast, NO historical data
-- geocode: Convert address to coordinates or reverse (params: address OR lat/lon)
-- ip_geolocation: Get location from IP address (params: ip_address)
-- fx_rates: Get currency exchange rates (params: base, target, optional date)
-- crypto_price: Get cryptocurrency prices (params: symbol, fiat)
-- create_file: Save text to a file (params: user_id, filename, content)
-- search_history: Search past conversations (params: query)
+{available_tools_str}
 
 User's original request: {last_user_msg}
 
@@ -384,12 +442,23 @@ Respond with ONLY this JSON structure (no other text, no markdown):
   "reasoning": "brief explanation"
 }}
 
+For PARALLEL execution (when tools don't depend on each other's results):
+{{
+  "action": "call_tools_parallel",
+  "tools": [
+    {{"tool_name": "TOOL1", "arguments": {{...}}}},
+    {{"tool_name": "TOOL2", "arguments": {{...}}}}
+  ],
+  "reasoning": "these tools are independent and can run concurrently"
+}}
+
 Examples:
 - Weather: {{"action": "call_tool", "tool_name": "weather", "arguments": {{"city": "Budapest"}}, "reasoning": "get weather forecast"}}
+- Parallel stocks: {{"action": "call_tools_parallel", "tools": [{{"tool_name": "GLOBAL_QUOTE", "arguments": {{"symbol": "AAPL"}}}}, {{"tool_name": "GLOBAL_QUOTE", "arguments": {{"symbol": "TSLA"}}}}], "reasoning": "fetch multiple stock prices simultaneously"}}
 - Create file: {{"action": "call_tool", "tool_name": "create_file", "arguments": {{"filename": "summary.txt", "content": "..."}}, "reasoning": "save summary"}}
 - Final answer: {{"action": "final_answer", "reasoning": "all tasks completed"}}
 
-IMPORTANT: The "action" field must ALWAYS be either "call_tool" or "final_answer" - NEVER use a tool name as the action!
+IMPORTANT: The "action" field must be "call_tool", "call_tools_parallel", or "final_answer" - NEVER use a tool name as the action!
 """
         
         messages = [
@@ -421,10 +490,110 @@ IMPORTANT: The "action" field must ALWAYS be either "call_tool" or "final_answer
                 # Increment iteration count when calling a tool
                 state["iteration_count"] = state.get("iteration_count", 0) + 1
             
+            # Handle parallel tool execution
+            elif decision.get("action") == "call_tools_parallel":
+                state["parallel_tasks"] = decision.get("tools", [])
+                logger.info(f"Parallel execution requested for {len(state['parallel_tasks'])} tools")
+            
         except (json.JSONDecodeError, IndexError, AttributeError) as e:
             logger.error(f"Failed to parse agent decision: {e}, defaulting to final_answer")
             logger.error(f"Response content: {response.content[:200]}")
             state["next_action"] = "final_answer"
+        
+        return state
+    
+    def _detect_parallel_tools(self, state: AgentState) -> List[Dict[str, Any]]:
+        """Detect if multiple independent tools can be executed in parallel."""
+        parallel_tasks = state.get("parallel_tasks", [])
+        if not parallel_tasks:
+            return []
+        
+        # All MCP tools are independent (they don't have data dependencies)
+        # Local tools may have dependencies, so we only parallelize MCP tools
+        alphavantage_tools = {t.get("name") for t in state.get("alphavantage_tools", [])}
+        deepwiki_tools = {t.get("name") for t in state.get("deepwiki_tools", [])}
+        
+        independent_tasks = []
+        for task in parallel_tasks:
+            tool_name = task.get("tool_name", "")
+            # Strip prefix if present
+            if ":" in tool_name:
+                tool_name = tool_name.split(":", 1)[1]
+                task["tool_name"] = tool_name
+            
+            # Only MCP tools can be parallelized
+            if tool_name in alphavantage_tools or tool_name in deepwiki_tools:
+                independent_tasks.append(task)
+        
+        logger.info(f"Detected {len(independent_tasks)} independent tools for parallel execution")
+        return independent_tasks
+    
+    async def _execute_parallel_tools(self, state: AgentState) -> AgentState:
+        """Execute multiple MCP tools in parallel using asyncio.gather."""
+        tasks = self._detect_parallel_tools(state)
+        
+        if not tasks:
+            logger.warning("No parallel tasks to execute")
+            return state
+        
+        logger.info(f"Executing {len(tasks)} tools in parallel")
+        
+        # Create coroutines for each tool
+        async def execute_single_tool(task: Dict[str, Any]) -> Dict[str, Any]:
+            tool_name = task.get("tool_name")
+            arguments = task.get("arguments", {})
+            
+            try:
+                logger.info(f"Parallel execution: {tool_name} with args {arguments}")
+                result = await self.mcp_client.call_tool(
+                    tool_name=tool_name,
+                    arguments=arguments,
+                    session_id=state.get("alphavantage_session_id")
+                )
+                
+                return {
+                    "tool_name": tool_name,
+                    "arguments": arguments,
+                    "result": result.get("content") if result else None,
+                    "success": True
+                }
+            except Exception as e:
+                logger.error(f"Parallel tool {tool_name} failed: {e}")
+                return {
+                    "tool_name": tool_name,
+                    "arguments": arguments,
+                    "error": str(e),
+                    "success": False
+                }
+        
+        # Execute all tools in parallel
+        results = await asyncio.gather(*[execute_single_tool(task) for task in tasks])
+        
+        # Update state with results
+        state["parallel_results"] = results
+        
+        # Record successful tool calls
+        for result in results:
+            if result.get("success"):
+                tool_call = ToolCall(
+                    tool_name=result["tool_name"],
+                    arguments=result["arguments"],
+                    result=result.get("result"),
+                    error=None
+                )
+                state["tools_called"].append(tool_call)
+                
+                # Add to messages
+                tool_msg = f"Tool {result['tool_name']} executed: {str(result.get('result', ''))[:200]}"
+                state["messages"].append(AIMessage(content=tool_msg))
+        
+        # Increment iteration count
+        state["iteration_count"] = state.get("iteration_count", 0) + len(results)
+        
+        # Clear parallel tasks after execution
+        state["parallel_tasks"] = []
+        
+        logger.info(f"Parallel execution completed: {len(results)} tools executed")
         
         return state
     
@@ -437,10 +606,47 @@ IMPORTANT: The "action" field must ALWAYS be either "call_tool" or "final_answer
         
         action = state.get("next_action", "final_answer")
         
+        # Check for parallel tool execution
+        if action == "call_tools_parallel" and state.get("parallel_tasks"):
+            independent_tasks = self._detect_parallel_tools(state)
+            if len(independent_tasks) >= 2:
+                return "parallel_tool_execution"
+            # Fall back to sequential if only one task
+            elif len(independent_tasks) == 1:
+                state["tool_decision"] = independent_tasks[0]
+                state["parallel_tasks"] = []
+                action = "call_tool"
+        
         if action == "call_tool" and "tool_decision" in state:
             tool_name = state["tool_decision"].get("tool_name")
+            
+            # Strip MCP server prefixes (AlphaVantage:, DeepWiki:) from tool names
+            # LLM sometimes adds these prefixes incorrectly
+            if ":" in tool_name:
+                original_tool_name = tool_name
+                tool_name = tool_name.split(":", 1)[1]  # Take everything after the first colon
+                logger.info(f"Stripped prefix from tool name: {original_tool_name} -> {tool_name}")
+                # Update the tool_decision with the corrected name
+                state["tool_decision"]["tool_name"] = tool_name
+            
+            # Check if it's a local tool
             if tool_name in self.tools:
                 return f"tool_{tool_name}"
+            
+            # Check if it's an AlphaVantage MCP tool
+            alphavantage_tools = state.get("alphavantage_tools", [])
+            alphavantage_tool_names = [t.get("name") for t in alphavantage_tools]
+            if tool_name in alphavantage_tool_names:
+                return "mcp_tool_execution"
+            
+            # Check if it's a DeepWiki MCP tool
+            deepwiki_tools = state.get("deepwiki_tools", [])
+            deepwiki_tool_names = [t.get("name") for t in deepwiki_tools]
+            if tool_name in deepwiki_tool_names:
+                return "mcp_tool_execution"
+            
+            # Tool not found - log error and continue to finalize
+            logger.error(f"Unknown tool requested: {tool_name}")
         
         return "final_answer"
     
@@ -489,6 +695,115 @@ IMPORTANT: The "action" field must ALWAYS be either "call_tool" or "final_answer
             return state
         
         return tool_node
+    
+    async def _mcp_tool_execution_node(self, state: AgentState) -> AgentState:
+        """Execute MCP tool (AlphaVantage or DeepWiki) dynamically."""
+        decision = state.get("tool_decision", {})
+        tool_name = decision.get("tool_name")
+        arguments = decision.get("arguments", {})
+        
+        logger.info(f"Executing MCP tool: {tool_name} with args: {arguments}")
+        
+        try:
+            # Determine which MCP client to use
+            alphavantage_tools = state.get("alphavantage_tools", [])
+            deepwiki_tools = state.get("deepwiki_tools", [])
+            
+            alphavantage_tool_names = [t.get("name") for t in alphavantage_tools]
+            deepwiki_tool_names = [t.get("name") for t in deepwiki_tools]
+            
+            mcp_client = None
+            server_name = ""
+            
+            if tool_name in alphavantage_tool_names:
+                mcp_client = self.alphavantage_mcp_client
+                server_name = "AlphaVantage"
+            elif tool_name in deepwiki_tool_names:
+                mcp_client = self.mcp_client
+                server_name = "DeepWiki"
+            else:
+                raise ValueError(f"Tool {tool_name} not found in any MCP server")
+            
+            # Call the MCP tool
+            result = await mcp_client.call_tool(tool_name, arguments)
+            
+            # Record tool call
+            tool_call = ToolCall(
+                tool_name=f"{server_name}:{tool_name}",
+                arguments=arguments,
+                result=result,
+                error=None
+            )
+            state["tools_called"].append(tool_call)
+            
+            # Format result as system message
+            result_str = json.dumps(result, indent=2) if isinstance(result, dict) else str(result)
+            system_msg = f"[{server_name} MCP Tool: {tool_name}]\nResult:\n{result_str}"
+            state["messages"].append(SystemMessage(content=system_msg))
+            
+            logger.info(f"MCP tool {tool_name} completed successfully")
+            
+        except Exception as e:
+            logger.error(f"MCP tool {tool_name} error: {e}")
+            error_msg = f"Error executing MCP tool {tool_name}: {str(e)}"
+            state["messages"].append(SystemMessage(content=error_msg))
+            state["tools_called"].append(ToolCall(
+                tool_name=tool_name,
+                arguments=arguments,
+                error=str(e)
+            ))
+        
+        return state
+    
+    async def _parallel_tool_execution_node(self, state: AgentState) -> AgentState:
+        """
+        Execute multiple independent MCP tools in parallel for faster response.
+        Uses asyncio.gather to run tools concurrently.
+        """
+        parallel_tasks = state.get("parallel_tasks", [])
+        
+        if not parallel_tasks:
+            logger.warning("Parallel execution node called but no parallel_tasks in state")
+            return state
+        
+        logger.info(f"Parallel execution node: processing {len(parallel_tasks)} tasks")
+        
+        # Execute tools in parallel using helper function
+        results = await execute_parallel_mcp_tools(
+            tasks=parallel_tasks,
+            alphavantage_tools=state.get("alphavantage_tools", []),
+            deepwiki_tools=state.get("deepwiki_tools", []),
+            mcp_client=self.alphavantage_mcp_client,
+            session_id=state.get("alphavantage_session_id", "")
+        )
+        
+        # Update state with results
+        state["parallel_results"] = results
+        
+        # Record successful tool calls
+        for result in results:
+            if result.get("success"):
+                tool_call = ToolCall(
+                    tool_name=result["tool_name"],
+                    arguments=result["arguments"],
+                    result=result.get("result"),
+                    error=None
+                )
+                state["tools_called"].append(tool_call)
+                
+                # Add to messages
+                tool_msg = f"Tool {result['tool_name']} executed: {str(result.get('result', ''))[:200]}"
+                state["messages"].append(AIMessage(content=tool_msg))
+        
+        # Increment iteration count by number of tools executed
+        state["iteration_count"] = state.get("iteration_count", 0) + len(results)
+        
+        # Clear parallel tasks after execution
+        state["parallel_tasks"] = []
+        
+        logger.info(f"Parallel execution completed: {len([r for r in results if r.get('success')])} successful, {len([r for r in results if not r.get('success')])} failed")
+        
+        return state
     
     async def _agent_finalize_node(self, state: AgentState) -> AgentState:
         """

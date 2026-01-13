@@ -13,7 +13,8 @@ from pydantic import BaseModel, Field
 
 from domain.interfaces import (
     IWeatherClient, IGeocodeClient, IIPGeolocationClient,
-    IFXRatesClient, ICryptoPriceClient, IConversationRepository
+    IFXRatesClient, ICryptoPriceClient, IConversationRepository,
+    IDeepWikiMCPClient
 )
 
 logger = logging.getLogger(__name__)
@@ -273,4 +274,85 @@ class HistorySearchTool:
                 "success": False,
                 "error": str(e),
                 "system_message": f"History search failed: {e}"
+            }
+
+
+class DeepWikiTool:
+    """
+    DeepWiki MCP tool for GitHub repository knowledge retrieval.
+    
+    Provides access to:
+    - Repository wiki structure reading
+    - Wiki page content retrieval
+    - Question answering about repositories
+    """
+    
+    def __init__(self, client: IDeepWikiMCPClient):
+        self.client = client
+        self.name = "deepwiki"
+        self.description = (
+            "Access GitHub repository wikis and ask questions about repositories. "
+            "Can read wiki structure, get wiki page content, or answer questions about a repo. "
+            "Useful when user asks about GitHub repositories, their documentation, or wiki content."
+        )
+    
+    async def execute(
+        self, 
+        question: Optional[str] = None,
+        repo_url: Optional[str] = None,
+        page_title: Optional[str] = None,
+        action: str = "ask_question"
+    ) -> Dict[str, Any]:
+        """
+        Execute DeepWiki tool.
+        
+        Args:
+            question: Question to ask about the repository
+            repo_url: GitHub repository URL
+            page_title: Wiki page title (for get_wiki_content action)
+            action: Action to perform (ask_question, read_wiki_structure, get_wiki_content)
+        """
+        logger.info(f"DeepWiki tool called: action={action}, repo={repo_url}, question={question}")
+        
+        try:
+            if action == "read_wiki_structure" and repo_url:
+                result = await self.client.read_wiki_structure(repo_url)
+            elif action == "get_wiki_content" and repo_url and page_title:
+                result = await self.client.get_wiki_content(repo_url, page_title)
+            elif action == "ask_question" and question:
+                result = await self.client.ask_question(question, repo_url)
+            else:
+                return {
+                    "success": False,
+                    "error": "Invalid arguments. For 'ask_question' provide 'question', for 'read_wiki_structure' provide 'repo_url', for 'get_wiki_content' provide both 'repo_url' and 'page_title'.",
+                    "system_message": "DeepWiki tool invocation failed: invalid arguments"
+                }
+            
+            if result.get("success"):
+                # Format success response
+                if action == "ask_question":
+                    message = f"DeepWiki answered: {result.get('answer', 'No answer')}"
+                elif action == "read_wiki_structure":
+                    message = f"Retrieved wiki structure for {repo_url}"
+                else:
+                    message = f"Retrieved wiki page '{page_title}' from {repo_url}"
+                
+                return {
+                    "success": True,
+                    "data": result,
+                    "system_message": message
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": result.get("error", "Unknown error"),
+                    "system_message": f"DeepWiki tool failed: {result.get('error', 'Unknown error')}"
+                }
+                
+        except Exception as e:
+            logger.error(f"DeepWiki tool error: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "system_message": f"DeepWiki tool execution error: {e}"
             }

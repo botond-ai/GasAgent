@@ -107,6 +107,25 @@ class IMCPWeatherClient(IWeatherClient):
         pass
 
 
+class IDeepWikiMCPClient(IToolClient):
+    """Interface for DeepWiki MCP client - repository knowledge retrieval."""
+    
+    @abstractmethod
+    async def read_wiki_structure(self, repo_url: str) -> Dict[str, Any]:
+        """Read wiki structure of a GitHub repository."""
+        pass
+    
+    @abstractmethod
+    async def get_wiki_content(self, repo_url: str, page_title: str) -> Dict[str, Any]:
+        """Get content of a specific wiki page."""
+        pass
+    
+    @abstractmethod
+    async def ask_question(self, question: str, repo_url: Optional[str] = None) -> Dict[str, Any]:
+        """Ask a question about a repository."""
+        pass
+
+
 class IGeocodeClient(IToolClient):
     """Interface for geocoding service."""
     

@@ -19,14 +19,22 @@ from domain.interfaces import IUserRepository, IConversationRepository
 from infrastructure.repositories import FileUserRepository, FileConversationRepository
 from infrastructure.tool_clients import (
     OpenMeteoWeatherClient, NominatimGeocodeClient, IPAPIGeolocationClient,
-    ExchangeRateHostClient, CoinGeckoCryptoClient, MCPWeatherClient, MCPClient
+    ExchangeRateHostClient, CoinGeckoCryptoClient, MCPWeatherClient, MCPClient,
+    DeepWikiMCPClient
 )
 from services.tools import (
     WeatherTool, GeocodeTool, IPGeolocationTool, FXRatesTool,
-    CryptoPriceTool, FileCreationTool, HistorySearchTool
+    CryptoPriceTool, FileCreationTool, HistorySearchTool, DeepWikiTool
 )
+import services.tools_langchain as tools_langchain
 from services.agent import AIAgent
 from services.chat_service import ChatService
+
+# NEW: Advanced Agent imports
+from advanced_agents.advanced_graph import AdvancedAgentGraph
+from advanced_agents.state import create_initial_state
+from langchain_openai import ChatOpenAI
+from langchain_core.messages import SystemMessage
 
 # NEW: RAG imports
 from rag.config import RAGConfig
@@ -46,6 +54,66 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# ADAPTER CLASS - Makes AdvancedAgentGraph compatible with ChatService
+# ============================================================================
+
+class AdvancedAgentAdapter:
+    """
+    Adapter that wraps AdvancedAgentGraph to provide the interface expected by ChatService.
+
+    ChatService expects:
+        async def run(user_message: str, memory: Memory, user_id: str) -> Dict
+
+    AdvancedAgentGraph provides:
+        async def run(state: AdvancedAgentState) -> AdvancedAgentState
+    """
+
+    def __init__(self, advanced_graph: AdvancedAgentGraph):
+        self.graph = advanced_graph
+
+    async def run(self, user_message: str, memory: Any, user_id: str) -> Dict[str, Any]:
+        """
+        Adapt ChatService's run() interface to AdvancedAgentGraph's run() interface.
+
+        Args:
+            user_message: User's message
+            memory: Memory context (from ChatService)
+            user_id: User identifier
+
+        Returns:
+            Dict with keys: final_answer, tools_called, messages, debug_logs
+        """
+        # Create initial state for Advanced Agent
+        initial_state = create_initial_state(
+            user_id=user_id,
+            message=user_message,
+            session_id=user_id  # Use user_id as session_id
+        )
+
+        # Add memory context as system message if available
+        if memory and memory.preferences:
+            memory_context = "User Context:"
+            if memory.preferences:
+                memory_context += f"\nPreferences: {memory.preferences}"
+
+            # Prepend system message with memory context
+            initial_state["messages"].insert(0, SystemMessage(content=memory_context))
+
+        # Run the Advanced Agent graph
+        final_state = await self.graph.run(initial_state)
+
+        # Extract and return results in the format ChatService expects
+        return {
+            "final_answer": final_state.get("final_answer", "I apologize, but I couldn't generate a response."),
+            "tools_called": final_state.get("tools_called", []),
+            "messages": final_state.get("messages", []),
+            "debug_logs": final_state.get("debug_logs", []),
+            "rag_context": {},  # Advanced Agent doesn't use RAG yet
+            "rag_metrics": {}   # Advanced Agent doesn't use RAG yet
+        }
 
 # Global service instances
 chat_service: ChatService = None
@@ -85,6 +153,10 @@ async def lifespan(app: FastAPI):
     alphavantage_mcp_client = MCPClient()
     logger.info("Initialized MCP client for AlphaVantage")
     
+    # Initialize DeepWiki MCP client
+    deepwiki_client = DeepWikiMCPClient(mcp_client=mcp_client)
+    logger.info("Initialized DeepWiki MCP client")
+    
     ip_client = IPAPIGeolocationClient()
     fx_client = ExchangeRateHostClient()
     crypto_client = CoinGeckoCryptoClient()
@@ -97,6 +169,21 @@ async def lifespan(app: FastAPI):
     crypto_tool = CryptoPriceTool(crypto_client)
     file_tool = FileCreationTool(data_dir="data/files")
     history_tool = HistorySearchTool(conversation_repo)
+    deepwiki_tool = DeepWikiTool(deepwiki_client)
+    logger.info("Initialized DeepWiki tool")
+    
+    # Initialize LangChain tools for ToolNode
+    tools_langchain.initialize_tools(
+        weather_client=weather_client,
+        geocode_client=geocode_client,
+        ip_client=ip_client,
+        fx_client=fx_client,
+        crypto_client=crypto_client,
+        conversation_repo=conversation_repo,
+        file_data_dir="data/files",
+        deepwiki_client=deepwiki_client
+    )
+    logger.info("Initialized LangChain tools with DeepWiki support")
 
     # NEW: Initialize RAG services
     logger.info("Initializing RAG services...")
@@ -149,20 +236,44 @@ async def lifespan(app: FastAPI):
         logger.error(f"Failed to initialize RAG services: {e}")
         logger.warning("Continuing without RAG support")
 
-    # Initialize agent (with RAG if available)
-    agent = AIAgent(
-        openai_api_key=openai_api_key,
-        weather_tool=weather_tool,
-        geocode_tool=geocode_tool,
-        ip_tool=ip_tool,
-        fx_tool=fx_tool,
-        crypto_tool=crypto_tool,
-        file_tool=file_tool,
-        history_tool=history_tool,
-        rag_subgraph=rag_subgraph,  # NEW: Pass RAG subgraph
-        mcp_client=mcp_client,  # NEW: Pass MCP client for DeepWiki tools
-        alphavantage_mcp_client=alphavantage_mcp_client  # NEW: Pass MCP client for AlphaVantage
+    # Initialize LLM for Advanced Agent
+    agent_llm = ChatOpenAI(
+        model="gpt-4-turbo-preview",
+        temperature=0.7,
+        openai_api_key=openai_api_key
     )
+
+    # Build tools dictionary for Advanced Agent
+    tools_dict = {
+        "weather": weather_tool,
+        "geocode": geocode_tool,
+        "ip_geolocation": ip_tool,
+        "fx_rates": fx_tool,
+        "crypto_price": crypto_tool,
+        "file_creation": file_tool,
+        "history_search": history_tool
+    }
+
+    # Get AlphaVantage API key for MCP connection
+    alphavantage_api_key = os.getenv("ALPHAVANTAGE_API_KEY", "demo")
+    alphavantage_url = f"https://mcp.alphavantage.co/mcp?apikey={alphavantage_api_key}"
+    deepwiki_url = "https://mcp.deepwiki.com/mcp"
+
+    # Initialize Advanced Agent (with RAG if available)
+    advanced_graph = AdvancedAgentGraph(
+        llm=agent_llm,
+        tools=tools_dict,
+        enable_checkpointing=False,
+        alphavantage_mcp_client=alphavantage_mcp_client,
+        deepwiki_mcp_client=mcp_client,  # DeepWiki uses mcp_client
+        alphavantage_url=alphavantage_url,
+        deepwiki_url=deepwiki_url
+    )
+
+    # Wrap Advanced Agent with adapter for ChatService compatibility
+    agent = AdvancedAgentAdapter(advanced_graph)
+
+    logger.info("Advanced Agent initialized with MCP integration and adapter")
     
     # Initialize chat service
     chat_service = ChatService(
@@ -399,6 +510,272 @@ async def delete_document(doc_id: str, user_id: str):
     except Exception as e:
         logger.error(f"Delete document error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==============================================================================
+# ADVANCED AGENTS ENDPOINTS (NEW)
+# ==============================================================================
+
+@app.post("/api/advanced/parallel-demo")
+async def run_parallel_demo(request: Dict[str, Any]):
+    """
+    Run the parallel execution demo.
+    
+    Educational endpoint demonstrating:
+    - Parallel task execution (fan-out/fan-in)
+    - Result aggregation
+    - Performance comparison (parallel vs sequential)
+    
+    Request body:
+    {
+        "message": "What's the weather in London, USD to EUR rate, and Bitcoin price?" (optional)
+    }
+    
+    Returns:
+    {
+        "final_answer": "...",
+        "execution_time": 2.4,
+        "aggregation": {...},
+        "debug_logs": [...]
+    }
+    """
+    try:
+        from advanced_agents.examples import ParallelExecutionDemo
+        from langchain_openai import ChatOpenAI
+        
+        # Get user message or use default
+        user_message = request.get("message")
+        
+        # Initialize demo
+        llm = ChatOpenAI(
+            model="gpt-4-turbo-preview",
+            temperature=0.7,
+            openai_api_key=os.getenv("OPENAI_API_KEY")
+        )
+        
+        demo = ParallelExecutionDemo(llm)
+        
+        # Run demo
+        result = await demo.run_demo(user_message)
+        
+        # Extract state for response
+        state = result["state"]
+        
+        return {
+            "final_answer": result["final_answer"],
+            "execution_time": result["execution_time"],
+            "aggregation": {
+                "total_tasks": result["aggregation"].total_tasks,
+                "successful_tasks": result["aggregation"].successful_tasks,
+                "failed_tasks": result["aggregation"].failed_tasks,
+                "aggregated_data": result["aggregation"].aggregated_data
+            },
+            "debug_logs": state.get("debug_logs", []),
+            "parallel_results": state.get("parallel_results", [])
+        }
+        
+    except Exception as e:
+        logger.error(f"Parallel demo error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/advanced/plan-execute")
+async def plan_and_execute(request: ChatRequest):
+    """
+    Execute a request using Plan-and-Execute pattern.
+    
+    Educational endpoint demonstrating:
+    - LLM-based plan generation
+    - Step-by-step execution
+    - Dependency resolution
+    - Retry logic
+    
+    Request body:
+    {
+        "user_id": "user_123",
+        "message": "Find my location and get weather there",
+        "session_id": "session_456" (optional)
+    }
+    
+    Returns:
+    {
+        "plan": {...},
+        "execution_results": [...],
+        "final_answer": "...",
+        "debug_logs": [...]
+    }
+    """
+    try:
+        from advanced_agents import AdvancedAgentGraph, create_initial_state
+        from langchain_openai import ChatOpenAI
+        
+        # Initialize LLM
+        llm = ChatOpenAI(
+            model="gpt-4-turbo-preview",
+            temperature=0.7,
+            openai_api_key=os.getenv("OPENAI_API_KEY")
+        )
+        
+        # Get available tools
+        tools = {
+            "weather": weather_tool,
+            "geocode": geocode_tool,
+            "ip_geolocation": ip_tool,
+            "fx_rates": fx_tool,
+            "crypto_price": crypto_tool
+        }
+        
+        # Create advanced graph
+        graph = AdvancedAgentGraph(llm=llm, tools=tools)
+        
+        # Create initial state
+        state = create_initial_state(
+            user_id=request.user_id,
+            message=request.message,
+            session_id=request.session_id
+        )
+        
+        # Execute workflow
+        final_state = await graph.run(state)
+        
+        # Extract results
+        execution_plan = final_state.get("execution_plan")
+        
+        return {
+            "plan": execution_plan.dict() if execution_plan else None,
+            "execution_results": final_state.get("plan_results", []),
+            "final_answer": final_state.get("final_answer", "No answer generated"),
+            "debug_logs": final_state.get("debug_logs", []),
+            "tools_called": final_state.get("tools_called", []),
+            "iteration_count": final_state.get("iteration_count", 0)
+        }
+        
+    except Exception as e:
+        logger.error(f"Plan-execute error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/advanced/dynamic-route")
+async def dynamic_route(request: ChatRequest):
+    """
+    Execute a request using dynamic routing.
+    
+    Educational endpoint demonstrating:
+    - LLM-based routing decisions
+    - Adaptive workflow paths
+    - Parallel routing capabilities
+    
+    Request body:
+    {
+        "user_id": "user_123",
+        "message": "What's the weather and exchange rate?",
+        "session_id": "session_456" (optional)
+    }
+    
+    Returns:
+    {
+        "routing_decisions": [...],
+        "final_answer": "...",
+        "debug_logs": [...]
+    }
+    """
+    try:
+        from advanced_agents import AdvancedAgentGraph, create_initial_state
+        from langchain_openai import ChatOpenAI
+        
+        # Initialize LLM
+        llm = ChatOpenAI(
+            model="gpt-4-turbo-preview",
+            temperature=0.7,
+            openai_api_key=os.getenv("OPENAI_API_KEY")
+        )
+        
+        # Get available tools
+        tools = {
+            "weather": weather_tool,
+            "geocode": geocode_tool,
+            "ip_geolocation": ip_tool,
+            "fx_rates": fx_tool,
+            "crypto_price": crypto_tool
+        }
+        
+        # Create advanced graph
+        graph = AdvancedAgentGraph(llm=llm, tools=tools)
+        
+        # Create initial state
+        state = create_initial_state(
+            user_id=request.user_id,
+            message=request.message,
+            session_id=request.session_id
+        )
+        
+        # Execute workflow
+        final_state = await graph.run(state)
+        
+        return {
+            "routing_decision": final_state.get("routing_decision"),
+            "next_nodes": final_state.get("next_nodes", []),
+            "final_answer": final_state.get("final_answer", "No answer generated"),
+            "debug_logs": final_state.get("debug_logs", []),
+            "tools_called": final_state.get("tools_called", [])
+        }
+        
+    except Exception as e:
+        logger.error(f"Dynamic route error: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/advanced/capabilities")
+async def get_advanced_capabilities():
+    """
+    Get information about available advanced orchestration capabilities.
+    
+    Returns:
+    {
+        "patterns": [...],
+        "examples": [...]
+    }
+    """
+    return {
+        "patterns": [
+            {
+                "name": "Plan-and-Execute",
+                "description": "LLM generates execution plan, then executes step-by-step",
+                "use_cases": ["Multi-step workflows", "Dependent operations", "Complex tasks"],
+                "endpoint": "/api/advanced/plan-execute"
+            },
+            {
+                "name": "Parallel Execution",
+                "description": "Run independent tasks concurrently to reduce latency",
+                "use_cases": ["Multiple API calls", "Independent queries", "Data gathering"],
+                "endpoint": "/api/advanced/parallel-demo"
+            },
+            {
+                "name": "Dynamic Routing",
+                "description": "LLM decides at runtime which nodes to execute",
+                "use_cases": ["Adaptive workflows", "Complex decision trees", "Context-aware routing"],
+                "endpoint": "/api/advanced/dynamic-route"
+            }
+        ],
+        "examples": [
+            {
+                "name": "Parallel Weather + FX + Crypto",
+                "message": "What's the weather in London, USD to EUR rate, and Bitcoin price?",
+                "pattern": "parallel"
+            },
+            {
+                "name": "Location-based Weather",
+                "message": "Find my location and get weather there",
+                "pattern": "plan-execute"
+            },
+            {
+                "name": "Multi-city Weather",
+                "message": "What's the weather in London, Paris, and Tokyo?",
+                "pattern": "parallel"
+            }
+        ],
+        "documentation": "/docs/ADVANCED_AGENTS.md"
+    }
 
 
 if __name__ == "__main__":

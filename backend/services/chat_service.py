@@ -112,9 +112,9 @@ class ChatService:
         # Build response
         tools_used = [
             {
-                "name": tc.tool_name,
-                "arguments": tc.arguments,
-                "success": tc.error is None
+                "name": tc.get("tool_name", "unknown") if isinstance(tc, dict) else tc.tool_name,
+                "arguments": tc.get("arguments", {}) if isinstance(tc, dict) else tc.arguments,
+                "success": tc.get("success", tc.get("error") is None) if isinstance(tc, dict) else tc.error is None
             }
             for tc in tools_called
         ]

@@ -205,10 +205,15 @@ class AIAgentWithToolNode:
         Fetch available tools from DeepWiki MCP server before agent decision.
         
         This node:
-        1. Connects to DeepWiki MCP server
-        2. Fetches all available tools
-        3. Stores them in state for agent to use
-        4. The agent will then select relevant tools based on user prompt
+        1. Connects to DeepWiki MCP server (https://mcp.deepwiki.com/mcp)
+        2. Fetches all available tools using list_tools
+        3. Stores them in state for agent to potentially use
+        4. The agent can then call these tools if needed (ask_question, read_wiki_structure, get_wiki_content)
+        
+        DeepWiki Tools:
+        - ask_question: Ask questions about a GitHub repository
+        - read_wiki_structure: Get wiki page structure of a repo
+        - get_wiki_content: Get specific wiki page content
         """
         logger.info("Fetching tools from DeepWiki MCP server")
         
@@ -233,10 +238,26 @@ class AIAgentWithToolNode:
             tool_names = [tool.get("name", "unknown") for tool in deepwiki_tools]
             logger.info(f"Available DeepWiki tools: {tool_names}")
             
+            # Add system message about DeepWiki tools availability
+            if deepwiki_tools:
+                system_msg = SystemMessage(
+                    content=f"[DeepWiki MCP] Connected successfully. Available tools: {', '.join(tool_names)}. "
+                    f"These tools can access GitHub repository wikis and answer questions about repositories."
+                )
+                state["messages"] = list(state["messages"]) + [system_msg]
+            
         except ConnectionError as e:
             logger.error(f"Failed to connect to DeepWiki MCP server: {e}")
+            error_msg = SystemMessage(
+                content=f"[DeepWiki MCP] Connection failed: {e}. DeepWiki tools not available."
+            )
+            state["messages"] = list(state["messages"]) + [error_msg]
         except Exception as e:
             logger.error(f"Error fetching DeepWiki tools: {e}")
+            error_msg = SystemMessage(
+                content=f"[DeepWiki MCP] Error: {e}. DeepWiki tools not available."
+            )
+            state["messages"] = list(state["messages"]) + [error_msg]
         
         # Store tools in state for agent to use
         state["deepwiki_tools"] = deepwiki_tools

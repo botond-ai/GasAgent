@@ -18,6 +18,7 @@ const apiClient = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  timeout: 180000, // 180 seconds for complex multi-tool agent requests
 });
 
 export const api = {

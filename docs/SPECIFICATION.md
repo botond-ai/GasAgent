@@ -8,6 +8,7 @@
 
 This application serves as a comprehensive example of:
 - Modern AI agent architecture using LangGraph for workflow orchestration
+- **Advanced orchestration patterns** (Plan-and-Execute, parallel execution, dynamic routing)
 - RAG (Retrieval-Augmented Generation) for document-based question answering
 - Clean code architecture following SOLID principles
 - Integration of multiple external APIs through unified tool interfaces
@@ -20,6 +21,7 @@ This application serves as a comprehensive example of:
 - Template for building production AI assistants
 - Reference implementation for LangGraph + RAG integration
 - Showcase of clean architecture patterns in AI applications
+- **Learning advanced agent patterns** (Plan-Execute, Parallelism, Routing)
 
 ## System Architecture
 
@@ -247,7 +249,132 @@ src/
 - Automatically detects language preference from conversation
 - Supports language switching mid-conversation
 
-### 2. RAG (Retrieval-Augmented Generation)
+### 2. Advanced Orchestration (NEW)
+
+**Plan-and-Execute Workflow:**
+- **Planner Node**: LLM generates structured execution plans in JSON format
+- **Executor Node**: Iterates through plan steps with retry logic and failure handling
+- **Dependency Resolution**: Steps can depend on results from previous steps
+- **Plan Visibility**: Users can see what the agent intends to do before execution
+- **Error Recovery**: Can replan if execution fails
+
+**Example Plan:**
+```json
+{
+  "plan_id": "plan_001",
+  "goal": "Get weather and currency info for London",
+  "steps": [
+    {
+      "step_id": "step_1",
+      "description": "Get weather for London",
+      "tool_name": "weather",
+      "arguments": {"city": "London"},
+      "depends_on": [],
+      "can_run_parallel": true
+    },
+    {
+      "step_id": "step_2",
+      "description": "Convert 100 USD to GBP",
+      "tool_name": "fx_rates",
+      "arguments": {"from": "USD", "to": "GBP", "amount": 100},
+      "depends_on": [],
+      "can_run_parallel": true
+    }
+  ],
+  "estimated_duration_seconds": 3.0
+}
+```
+
+**Parallel Node Execution (Fan-Out/Fan-In):**
+- **Fan-Out Node**: Spawns multiple independent tasks for concurrent execution
+- **Parallel Execution**: Tasks run simultaneously to reduce latency (3 tasks @ 2s each = 2s total, not 6s)
+- **Fan-In Node**: Aggregates results from all parallel branches
+- **Reducer Functions**: Safe state merging from concurrent updates
+- **Partial Failure Handling**: Gracefully handles some tasks succeeding while others fail
+
+**Parallel Execution Flow:**
+```
+User Query
+    ↓
+Fan-Out (spawn tasks)
+    ↓
+    ├→ Weather API (2s) ──┐
+    ├→ FX API (2s) ───────┤→ Fan-In (merge) → Aggregator → Response
+    └→ Crypto API (2s) ───┘
+    
+Total time: ~2s (vs 6s sequential)
+```
+
+**Dynamic Routing:**
+- **LLM-Based Router**: Decides at runtime which nodes to execute
+- **Adaptive Workflows**: Different user requests trigger different execution paths
+- **Routing Decisions**: Can route to single node, multiple parallel nodes, or terminate
+- **Explainable Routing**: Each decision includes reasoning and confidence score
+
+**Example Routing Decision:**
+```json
+{
+  "next_nodes": ["tool_weather", "tool_fx"],
+  "reasoning": "Both queries are independent and can run in parallel",
+  "is_parallel": true,
+  "is_terminal": true,
+  "confidence": 0.95
+}
+```
+
+**Result Aggregation & Synthesis:**
+- **ResultAggregator**: Combines raw results into user-friendly responses
+- **LLM Synthesis**: Generates natural language from structured data
+- **Multiple Strategies**: Concatenation, dictionary merge, or summary generation
+- **Error Handling**: Provides partial results when some operations fail
+
+**State Management with Reducers:**
+- **List Reducer**: Appends new items to existing lists (for collecting results)
+- **Dict Merge Reducer**: Merges dictionaries from different sources
+- **Custom Reducers**: Specialized merging for parallel task results
+- **Type Safety**: Annotated TypedDict with Pydantic validation
+
+**Example Reducer Usage:**
+```python
+from typing import Annotated
+
+class AdvancedAgentState(TypedDict):
+    # Parallel results with custom reducer
+    parallel_results: Annotated[List[Dict], parallel_results_reducer]
+    
+    # Aggregated data with dict merge
+    aggregated_data: Annotated[Dict[str, Any], dict_merge_reducer]
+```
+
+**Architecture:**
+```
+backend/advanced_agents/
+├── state.py                 # State models and reducers
+├── advanced_graph.py        # Main workflow integration
+├── planning/
+│   ├── planner.py          # Plan generation
+│   └── executor.py         # Plan execution
+├── parallel/
+│   ├── fan_out.py          # Spawn parallel tasks
+│   └── fan_in.py           # Aggregate results
+├── routing/
+│   └── router.py           # Dynamic routing
+├── aggregation/
+│   └── aggregator.py       # Result synthesis
+└── examples/
+    └── parallel_demo.py    # Educational demo
+```
+
+**Benefits:**
+- ✅ **Reduced Latency**: Parallel execution cuts response time by 60-80%
+- ✅ **Transparency**: Plans and routing decisions are visible and inspectable
+- ✅ **Robustness**: Retry logic and partial failure handling
+- ✅ **Scalability**: Patterns proven in enterprise production systems
+- ✅ **Educational**: Clear examples of advanced AI agent patterns
+
+**See [ADVANCED_AGENTS.md](ADVANCED_AGENTS.md) for complete documentation.**
+
+### 3. RAG (Retrieval-Augmented Generation)
 
 **Document Processing:**
 - Upload TXT, MD, PDF files (via frontend)
@@ -274,7 +401,7 @@ src/
 Question → Retrieve → Grade Relevance → [Rewrite?] → Generate Answer
 ```
 
-### 3. Persistence System
+### 4. Persistence System
 
 **File-Based Storage:**
 All data stored as JSON files for transparency and easy debugging.
@@ -328,7 +455,7 @@ All data stored as JSON files for transparency and easy debugging.
 - Uploaded documents stored per user
 - Original files preserved for reference
 
-### 4. Special Commands
+### 5. Special Commands
 
 **Reset Context:**
 ```
@@ -347,7 +474,7 @@ User: From now on, answer in English
 - Affects all future responses
 - Acknowledged by agent
 
-### 5. Frontend User Experience
+### 6. Frontend User Experience
 
 **ChatGPT-like Interface:**
 - Clean, modern design
