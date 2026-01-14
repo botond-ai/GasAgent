@@ -1,3 +1,4 @@
 """MeetingAI minimal package."""
 
-__all__ = ["agent", "sentiment_client"]
+__all__ = ["agent", "sentiment_client", "rag"]
+
