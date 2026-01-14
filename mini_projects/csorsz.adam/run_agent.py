@@ -13,6 +13,9 @@ Place your local API key in `apikulcs.env` (already present) or set env vars.
 import sys
 import asyncio
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from meetingai.agent import MeetingAgent
 
@@ -34,7 +37,9 @@ def load_env_file(path: str) -> None:
 
 
 async def main(notes_path: str):
+    # load legacy apikulcs.env if present (keeps backward compatibility)
     load_env_file(os.path.join(os.path.dirname(__file__), "apikulcs.env"))
+    # also load .env via dotenv earlier with load_dotenv()
     if not os.path.exists(notes_path):
         print("Notes file not found:", notes_path)
         return
@@ -42,8 +47,7 @@ async def main(notes_path: str):
     agent = MeetingAgent()
     res = await agent.run(notes)
     import json
-    print(json.dumps(res, indent=2, ensure_ascii=False))
-
+    print(json.dumps(res, indent=2, ensure_ascii=False, default=lambda o: str(o)))
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
