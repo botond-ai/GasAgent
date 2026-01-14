@@ -1,0 +1,127 @@
+Projekttervezési és operatív meeting – december 9
+
+Péter:
+Sziasztok, kezdjük el a mai megbeszélést. Több témánk is van, ezért haladjunk
+strukturáltan. Először nézzük meg, hol tartunk a jelenlegi feladatokkal,
+utána térjünk át a következő időszak tervezésére.
+
+Anna:
+Az elmúlt héten a legtöbb időt a hibajegyek kezelése vitte el.
+Voltak kritikus problémák, amelyek azonnali beavatkozást igényeltek.
+
+Gábor:
+Igen, főleg a teljesítményproblémák okoztak gondot.
+Ezek közül néhány már javítva lett, de nem mindegyik.
+
+Péter:
+Akkor itt fontos kérdés, hogy a következő sprintben
+engedünk-e új fejlesztést, vagy kizárólag stabilizálunk.
+
+Anna:
+Szerintem most nem fér bele új funkció.
+Ha tovább halogatjuk a javításokat, később sokkal nagyobb gond lesz.
+
+Gábor:
+Ezzel egyetértek. Inkább legyen egy „takarító sprint”.
+
+Péter:
+Rendben, akkor rögzítsük döntésként:
+a következő sprint kizárólag hibajavításról és optimalizálásról szól,
+új funkció nem kerül be.
+
+Péter:
+Menjünk tovább a dokumentáció kérdésére.
+Többször felmerült, hogy a jelenlegi leírások nem tükrözik a valós állapotot.
+
+Anna:
+Igen, több belső oldalon is elavult információk vannak.
+Ez különösen problémás az újonnan csatlakozók számára.
+
+Gábor:
+A technikai dokumentáció frissítését vállalom,
+de ehhez időre lesz szükségem.
+
+Péter:
+Mikorra tudnád vállalni?
+
+Gábor:
+Ha nem jön közbe semmi, akkor december 13-ig elkészülök vele.
+
+Péter:
+Fontos megjegyezni, hogy december 11-én munkaszüneti nap van,
+tehát azt vegyük figyelembe a tervezésnél.
+
+Gábor:
+Így akkor reális a december 13.
+
+Péter:
+Rendben, akkor ezt rögzítjük akciópontként.
+
+Péter:
+Következő téma: kommunikáció és átláthatóság.
+Több visszajelzés érkezett, hogy nem mindig világos,
+milyen döntések születtek egy-egy meeting után.
+
+Anna:
+Ezen segíthetne egy rövid összefoglaló minden fontos megbeszélés után.
+
+Péter:
+Ki tudná ezt vállalni a jövőben?
+
+Anna:
+Én tudok készíteni egy sablont,
+és a mai meetingről is csinálok egy összefoglalót.
+
+Péter:
+Mikorra legyen kész?
+
+Anna:
+Legkésőbb december 10 végéig.
+
+Péter:
+Rendben.
+
+Péter:
+Beszéljünk a következő időszak ütemezéséről is.
+Az ünnepek miatt a következő hetek rövidebbek lesznek.
+
+Gábor:
+Igen, december 24 és 26 között több munkanap is kiesik.
+
+Anna:
+Ezért szerintem reálisabb, ha a sprint lezárását nem
+december végére, hanem január elejére tesszük.
+
+Péter:
+Ez jó javaslat. Akkor döntésként rögzítsük,
+hogy a sprint hivatalos lezárása január 7 lesz.
+
+Péter:
+Van még valami, amit mindenképp át kell beszélnünk?
+
+Gábor:
+Egy dolog még eszembe jutott.
+Szükség lenne egy rövid teljesítmény elemzésre,
+hogy lássuk, hol vannak még szűk keresztmetszetek.
+
+Péter:
+Ki tudná ezt vállalni?
+
+Gábor:
+Ezt is én csinálnám meg,
+de akkor ez már csak január elejére fér bele.
+
+Péter:
+Rendben. Akkor az első verzió határideje január 5 legyen.
+
+Péter:
+Összefoglalva:
+- a következő sprint stabilizálásról szól,
+- dokumentáció frissítés december 13-ig,
+- meeting összefoglaló sablon és mai összefoglaló december 10-ig,
+- sprint lezárása január 7,
+- teljesítmény elemzés első verziója január 5.
+
+Péter:
+Ha nincs több kérdés, akkor lezárhatjuk a meetinget.
+Köszönöm mindenkinek.
