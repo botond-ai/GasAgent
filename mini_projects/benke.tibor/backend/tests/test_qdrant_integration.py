@@ -3,8 +3,7 @@ Integration tests for Qdrant RAG client end-to-end flow.
 Tests the complete retrieval pipeline with deduplication and ranking.
 """
 import pytest
-from unittest.mock import Mock, AsyncMock, patch, MagicMock
-from domain.models import Citation, DomainType
+from unittest.mock import Mock, AsyncMock, patch
 from infrastructure.qdrant_rag_client import QdrantRAGClient
 
 
@@ -219,6 +218,9 @@ class TestQdrantRAGIntegration:
                 top_k=5,
                 domain="marketing"
             )
+            
+            # Verify result is not None (cache hit)
+            assert result is not None
             
             # Verify cache was used (search not called)
             mock_qdrant_client.search.assert_not_called()
