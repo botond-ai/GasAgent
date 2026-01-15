@@ -46,3 +46,16 @@
 - [ ] **WebSocket support**: Real-time streaming responses
 - [ ] **Multi-language support**: Automatikus nyelvdetekció és fordítás
 - [ ] **Feedback analytics dashboard**: Admin UI feedback trends-hez
+
+Újabbak, kategóriázandók:
+- chat summarizing tömörítés szemantika vagy fizikai foglalás miatt trimmel (hosszabb chatek összefoglalója) - overwrite vagy összefűzés (reducderk)
+- profil adatok mentése
+- gyakori bemeneti kérések válaszainak cachelése ne kelljen RAG-elni (adott már?)
+- idempotencia
+- degradáció: ha a RAG nem érhető el, csak summary-only üzemmódban történjen a válasz
+- pydantic model micsoda (típusosság, validáció, pontosság), ToolNode LangGraph képesség használatban van-e, mire jó - Pydantic használat md alapján
+- http kódok (200, 201, 202, 203 204) - Langgraph állapot alapján, pl. LLM válaszolt, workflow továbment stb.
+- LangGraph vagy LLM ismerje fel, milyen domainre érkezett kérdés és a háttérben a megfelelő RAG-et végezze el a megfelelő dokumentumon (fontos, hogy domainenként meg legyenek jelölve a dokumentumok és ha megvan a domain, csak abban keressen tovább)
+
+- timeout kezelés + fallback + retry: ha nem ér el egy API-t, x-szer próbálkozzon, y másodperc után jelezzen a usernek, hogy nem éri el a szolgáltatást, mi legyen...Az x és y ne legyen beégetve, legyen környezeti paraméter
+- mcp alapúak legyenek az api kezeléseink + legyen logolva: ki, melyik mcp toolt hívta, milyen paraméterekkel, mi a válasz, mi a költsége, hibák. Tehát maga az agent legyen MCP-be csomagolva, a szolgáltatás könyvtár enterprise környezetben használható legyen

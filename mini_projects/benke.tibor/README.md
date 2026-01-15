@@ -30,6 +30,7 @@ KnowledgeRouter egy vállalati belső tudásbázis rendszer, amely:
 🆕 **Guardrail Node** (v2.5) - IT domain citation validation with automatic retry logic (max 2x)
 🆕 **Feedback Metrics Node** (v2.5) - Telemetry collection: retrieval quality, latency, cache hits
 🆕 **Memory (v2.6)** - Rolling window, conversation summary, facts extraction (non-blocking)
+🆕 **Optional MCP Server (v0.1 alpha)** - Model Context Protocol wrapper exposing Jira/Qdrant/Postgres tools (stdio); run via `pip install -r backend/mcp_server/requirements.txt && python -m backend.mcp_server`
 
 ## 📋 Tech Stack
 

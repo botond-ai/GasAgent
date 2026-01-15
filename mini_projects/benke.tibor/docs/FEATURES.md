@@ -61,6 +61,16 @@
 
 ---
 
+### 🧩 Optional MCP Server (v0.1 alpha)
+
+- **Purpose**: Expose existing infra clients (Jira, Qdrant, Postgres) as Model Context Protocol tools
+- **Transport**: stdio (ready for HTTP/SSE later)
+- **Tools**: Jira ticket create/search, Qdrant semantic search/retrieve, Postgres feedback/analytics
+- **Isolation**: Standalone module (`backend/mcp_server`), no changes to core backend
+- **Getting Started**: `pip install -r backend/mcp_server/requirements.txt && python -m backend.mcp_server`
+
+---
+
 ### ✨ Message Deduplication Reducer (NEW in v2.6)
 
 - **SHA256-Based**: Deduplicates messages by role + normalized content

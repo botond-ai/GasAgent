@@ -27,20 +27,15 @@ import hashlib
 from pathlib import Path
 from typing import List, Dict
 from datetime import datetime
+from qdrant_client import QdrantClient
+from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
 # Add backend to path
 backend_path = Path(__file__).parent.parent
 sys.path.insert(0, str(backend_path))
 
-# Third-party imports
-from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue
-from langchain_text_splitters import RecursiveCharacterTextSplitter
-
-# Local imports
-from infrastructure.atlassian_client import atlassian_client
-from infrastructure.openai_clients import OpenAIClientFactory
-from infrastructure.redis_client import redis_cache
+# Local imports will be loaded later inside class to satisfy linting
 
 # Setup logging
 logging.basicConfig(
@@ -61,7 +56,13 @@ class ConfluenceITPolicySync:
         
         # Initialize clients
         self.qdrant_client = QdrantClient(url=self.qdrant_url)
+        # Import local modules here to avoid E402 (imports not at top of file)
+        from infrastructure.atlassian_client import atlassian_client
+        from infrastructure.openai_clients import OpenAIClientFactory
+        from infrastructure.redis_client import redis_cache
+        self.atlassian_client = atlassian_client
         self.embedding_model = OpenAIClientFactory.get_embeddings()
+        self.redis_cache = redis_cache
         
         # Text splitter for chunking
         self.text_splitter = RecursiveCharacterTextSplitter(
@@ -77,7 +78,7 @@ class ConfluenceITPolicySync:
         """Retrieve IT Policy sections from Confluence."""
         logger.info("📥 Retrieving IT Policy from Confluence...")
         
-        sections = await atlassian_client.get_it_policy_content()
+        sections = await self.atlassian_client.get_it_policy_content()
         
         if not sections:
             logger.error("❌ Failed to retrieve IT Policy from Confluence")
@@ -136,8 +137,8 @@ class ConfluenceITPolicySync:
                     "chunk_index": i,
                     "total_chunks": len(section_chunks),
                     "source": "confluence",
-                    "confluence_page_id": atlassian_client.it_policy_page_id,
-                    "confluence_url": f"{atlassian_client.base_url}/wiki/spaces/SD/pages/{atlassian_client.it_policy_page_id}"
+                    "confluence_page_id": self.atlassian_client.it_policy_page_id,
+                    "confluence_url": f"{self.atlassian_client.base_url}/wiki/spaces/SD/pages/{self.atlassian_client.it_policy_page_id}"
                 })
         
         logger.info(f"✅ Created {len(chunks)} chunks from {len(sections)} sections")
@@ -156,10 +157,10 @@ class ConfluenceITPolicySync:
         cached_indices = []
         
         for i, text in enumerate(texts):
-            # Skip cache if redis_cache is None
-            if redis_cache is not None:
+            # Skip cache if redis is available
+            if self.redis_cache is not None:
                 try:
-                    cached_embedding = await redis_cache.get_embedding(text)
+                    cached_embedding = await self.redis_cache.get_embedding(text)
                     if cached_embedding:
                         embeddings.append(cached_embedding)
                         cached_indices.append(i)
@@ -183,9 +184,9 @@ class ConfluenceITPolicySync:
                 if embeddings[i] is None:
                     embeddings[i] = new_embeddings[embed_idx]
                     # Cache for future use (if Redis is available)
-                    if redis_cache is not None:
+                    if self.redis_cache is not None:
                         try:
-                            await redis_cache.set_embedding(texts[i], new_embeddings[embed_idx])
+                            await self.redis_cache.set_embedding(texts[i], new_embeddings[embed_idx])
                         except Exception as e:
                             logger.warning(f"Redis cache write error (skipping): {e}")
                     embed_idx += 1

@@ -40,7 +40,8 @@ class MCPServer:
         """Initialize MCP server."""
         self.server = Server(name)
         self.name = name
-        self.tools_registry = {}
+        self.tool_defs = {}
+        self.tool_handlers = {}
         self._setup_tools()
         self._setup_handlers()
     
@@ -49,24 +50,36 @@ class MCPServer:
         logger.info("📋 Registering MCP tools...")
         
         # Jira tools
-        self.tools_registry.update({
+        self.tool_defs.update({
             "jira_create_ticket": jira_tools.create_ticket_tool(),
             "jira_search_issues": jira_tools.search_issues_tool(),
         })
+        self.tool_handlers.update({
+            "jira_create_ticket": jira_tools.create_ticket,
+            "jira_search_issues": jira_tools.search_issues,
+        })
         
         # Qdrant tools
-        self.tools_registry.update({
+        self.tool_defs.update({
             "qdrant_search": qdrant_tools.search_tool(),
             "qdrant_retrieve_by_ids": qdrant_tools.retrieve_by_ids_tool(),
         })
+        self.tool_handlers.update({
+            "qdrant_search": qdrant_tools.search,
+            "qdrant_retrieve_by_ids": qdrant_tools.retrieve_by_ids,
+        })
         
         # PostgreSQL tools
-        self.tools_registry.update({
+        self.tool_defs.update({
             "postgres_get_feedback": postgres_tools.get_feedback_tool(),
             "postgres_get_analytics": postgres_tools.get_analytics_tool(),
         })
+        self.tool_handlers.update({
+            "postgres_get_feedback": postgres_tools.get_feedback,
+            "postgres_get_analytics": postgres_tools.get_analytics,
+        })
         
-        logger.info(f"✅ Registered {len(self.tools_registry)} tools")
+        logger.info(f"✅ Registered {len(self.tool_defs)} tools")
     
     def _setup_handlers(self):
         """Setup MCP protocol handlers."""
@@ -74,21 +87,21 @@ class MCPServer:
         @self.server.list_tools()
         async def handle_list_tools() -> list[Tool]:
             """Return available tools."""
-            return list(self.tools_registry.values())
+            return list(self.tool_defs.values())
         
         @self.server.call_tool()
         async def handle_call_tool(name: str, arguments: dict) -> ToolResult:
             """Execute a tool."""
             logger.info(f"🔧 Calling tool: {name} with args: {arguments}")
             
-            if name not in self.tools_registry:
+            if name not in self.tool_handlers:
                 return ToolResult(
                     isError=True,
                     content=[TextContent(type="text", text=f"Tool '{name}' not found")]
                 )
             
             try:
-                tool_func = self.tools_registry[name]
+                tool_func = self.tool_handlers[name]
                 result = await tool_func(**arguments)
                 
                 return ToolResult(

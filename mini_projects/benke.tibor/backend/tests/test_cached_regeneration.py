@@ -207,7 +207,7 @@ class TestRegenerateAPIView:
             'user_id': 'test_user'
         }, format='json')
 
-        response = view(request)
+        view(request)
 
         # Should extract domain from last bot message
         assert mock_django_app.chat_service.get_session_history.called
@@ -227,7 +227,7 @@ class TestRegenerateAPIView:
             'user_id': 'test_user'
         }, format='json')
 
-        response = view(request)
+        view(request)
 
         # Verify regenerate was called with cached citations
         call_kwargs = mock_django_app.chat_service.agent.regenerate.call_args[1]

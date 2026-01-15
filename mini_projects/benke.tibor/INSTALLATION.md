@@ -95,6 +95,20 @@ Nyisd meg a böngészőt:
 
 ---
 
+## ➕ Opcionális: MCP Server (stdio)
+
+Az MCP modul külön folyamatban futtatható, nem érinti a fő backendet.
+
+```bash
+cd backend
+pip install -r mcp_server/requirements.txt
+python -m mcp_server  # stdio mód
+```
+
+Eszközök: Jira ticket létrehozás/keresés, Qdrant keresés/ID alapú lekérés, Postgres feedback/analytics.
+
+---
+
 ## 🖥️ Local Development (BASH/PowerShell)
 
 ### Backend Setup
