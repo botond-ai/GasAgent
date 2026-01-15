@@ -178,19 +178,7 @@ Frontend fut: http://localhost:3000
 
 ## 🔐 API Key Konfigurálása
 
-### Claude (Anthropic) API Key Beszerzés
-
-1. Menj a https://console.anthropic.com/ oldalra
-2. Hozz létre API kulcsot
-3. Add meg a `.env` fájlban:
-
-```bash
-LLM_PROVIDER=anthropic
-ANTHROPIC_API_KEY=sk-ant-... 
-CLAUDE_MODEL=claude-3-5-sonnet-20241022
-```
-
-### OpenAI API Key (alternatíva)
+### OpenAI API Key (Primary LLM Provider)
 
 1. Menj a https://platform.openai.com/account/api-keys-ra
 2. Kattints: "Create new secret key"
@@ -199,6 +187,8 @@ CLAUDE_MODEL=claude-3-5-sonnet-20241022
 
 ```bash
 OPENAI_API_KEY=sk-xxx...yyy
+OPENAI_MODEL=gpt-4o-mini
+OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 ```
 
 ### Költségvetés Beállítása (Fontos!)

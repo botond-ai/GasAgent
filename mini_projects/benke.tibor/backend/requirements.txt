@@ -47,7 +47,7 @@ pytz==2024.1
 
 # Production
 gunicorn==21.2.0
-psycopg2-binary==2.9.9
+psycopg2-binary==2.9.11
 
 # Testing
 pytest==7.4.3
