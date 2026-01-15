@@ -54,8 +54,11 @@
 - idempotencia
 - degradáció: ha a RAG nem érhető el, csak summary-only üzemmódban történjen a válasz
 - pydantic model micsoda (típusosság, validáció, pontosság), ToolNode LangGraph képesség használatban van-e, mire jó - Pydantic használat md alapján
-- http kódok (200, 201, 202, 203 204) - Langgraph állapot alapján, pl. LLM válaszolt, workflow továbment stb.
+- http kódok (200, 201, 202, 203 204) - Langgraph állapot alapján, pl. LLM válaszolt, workflow továbment stb. - fail safe response működés kialakítása a prompt-ban (ha eltéved az llm/langgraph)
 - LangGraph vagy LLM ismerje fel, milyen domainre érkezett kérdés és a háttérben a megfelelő RAG-et végezze el a megfelelő dokumentumon (fontos, hogy domainenként meg legyenek jelölve a dokumentumok és ha megvan a domain, csak abban keressen tovább)
 
 - timeout kezelés + fallback + retry: ha nem ér el egy API-t, x-szer próbálkozzon, y másodperc után jelezzen a usernek, hogy nem éri el a szolgáltatást, mi legyen...Az x és y ne legyen beégetve, legyen környezeti paraméter
-- mcp alapúak legyenek az api kezeléseink + legyen logolva: ki, melyik mcp toolt hívta, milyen paraméterekkel, mi a válasz, mi a költsége, hibák. Tehát maga az agent legyen MCP-be csomagolva, a szolgáltatás könyvtár enterprise környezetben használható legyen
+- összetett ágens tervezési elvek: reasoning layer, operational layer, tool exceutoron layer. Executre: plan node, triage, executor loop, observation, router tool (state-k kezelése), action/update, next step, final answer. Át kell nézni a kódban ezeket az elveket mennyire alkalmazzuk (LangGraph) ami az összetett ágensfejlesztésnek az alapjai. 
+- Routing döntési mintákból melyik lenne alkalmas a projektünkre? input-based routing, state-based routing, tool-availability routing, confidence-based routing
+- LangGraph ismétlődő feladatokon milyen technikát érdemes alkalmazni? pl. paginated API, itemlist stb. Kontrollált rekurzóra gondolok
+- első prompt alapján döntse el automatikusan a rendszer, melyik domain kérdését kell feldolgozni, ezután RAG-eljen a megfelelő domainű dokumentációra és menjen tovább a folyamat
