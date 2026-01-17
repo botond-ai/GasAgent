@@ -1,5 +1,5 @@
 """State model for the AI weather agent."""
-from typing import Annotated, TypedDict, Sequence
+from typing import Annotated, TypedDict, Sequence, Literal
 from operator import add
 from pydantic import BaseModel, Field
 
@@ -14,10 +14,13 @@ class ToolResult(BaseModel):
 
 class Decision(BaseModel):
     """LLM decision about the next action."""
-    action: str = Field(description="One of: call_tool, final_answer")
-    tool_name: str | None = Field(default=None, description="One of: geocode_city, get_weather")
+    action: Literal["call_tool", "final_answer"] = Field(description="One of: call_tool, final_answer")
+    tool_name: Literal["get_weather", "get_time"] | None = Field(
+        default=None, 
+        description="One of: get_weather, get_time"
+    )
     tool_input: dict | None = Field(default=None, description="Tool parameters")
-    reason: str = Field(default="", description="Internal reasoning")
+    reason: str = Field(default="", description="Internal reasoning (not printed)")
 
 
 class AgentState(TypedDict):

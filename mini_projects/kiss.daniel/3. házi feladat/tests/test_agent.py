@@ -4,7 +4,7 @@ from unittest.mock import Mock, patch, MagicMock
 from src.agent.graph import (
     read_user_prompt_node,
     decision_node,
-    tool_node,
+    tool_execution_wrapper,
     answer_node,
     should_continue,
     create_graph
@@ -33,17 +33,17 @@ class TestReadUserPromptNode:
 class TestDecisionNode:
     """Test cases for decision_node."""
     
-    @patch('src.agent.graph.OllamaClient')
-    def test_decision_node_call_tool(self, mock_ollama):
+    @patch('src.agent.graph.GroqClient')
+    def test_decision_node_call_tool(self, mock_groq):
         """Test decision node deciding to call a tool."""
         mock_client = Mock()
         mock_client.invoke_json.return_value = {
             "action": "call_tool",
-            "tool_name": "geocode_city",
-            "tool_input": {"city": "Budapest", "country": "HU"},
-            "reason": "Need coordinates"
+            "tool_name": "get_weather",
+            "tool_input": {"question": "Milyen az időjárás Budapesten?"},
+            "reason": "Need weather"
         }
-        mock_ollama.return_value = mock_client
+        mock_groq.return_value = mock_client
         
         state = {
             "user_prompt": "Milyen az időjárás Budapesten?",
@@ -57,17 +57,17 @@ class TestDecisionNode:
         
         assert result["decision"] is not None
         assert result["decision"].action == "call_tool"
-        assert result["decision"].tool_name == "geocode_city"
+        assert result["decision"].tool_name == "get_weather"
     
-    @patch('src.agent.graph.OllamaClient')
-    def test_decision_node_final_answer(self, mock_ollama):
+    @patch('src.agent.graph.GroqClient')
+    def test_decision_node_final_answer(self, mock_groq):
         """Test decision node deciding to provide final answer."""
         mock_client = Mock()
         mock_client.invoke_json.return_value = {
             "action": "final_answer",
             "reason": "Have all information"
         }
-        mock_ollama.return_value = mock_client
+        mock_groq.return_value = mock_client
         
         state = {
             "user_prompt": "Szia",
@@ -82,12 +82,12 @@ class TestDecisionNode:
         assert result["decision"] is not None
         assert result["decision"].action == "final_answer"
     
-    @patch('src.agent.graph.OllamaClient')
-    def test_decision_node_invalid_response(self, mock_ollama):
+    @patch('src.agent.graph.GroqClient')
+    def test_decision_node_invalid_response(self, mock_groq):
         """Test decision node with invalid LLM response."""
         mock_client = Mock()
         mock_client.invoke_json.side_effect = ValueError("Invalid JSON")
-        mock_ollama.return_value = mock_client
+        mock_groq.return_value = mock_client
         
         state = {
             "user_prompt": "Test",
@@ -105,20 +105,16 @@ class TestDecisionNode:
 
 
 class TestToolNode:
-    """Test cases for tool_node."""
+    """Test cases for tool_execution_wrapper."""
     
-    @patch('src.agent.graph.geocode_city')
-    def test_tool_node_geocode(self, mock_geocode):
-        """Test tool node executing geocode_city."""
-        from src.agent.tools.geocode import GeocodeOutput
-        
-        mock_geocode.return_value = GeocodeOutput(
-            success=True,
-            name="Budapest",
-            country="Hungary",
-            latitude=47.4979,
-            longitude=19.0402
-        )
+    @patch('src.agent.graph.get_time_tool')
+    def test_tool_node_get_time(self, mock_get_time):
+        """Test tool node executing get_time."""
+        # Mock the tool's invoke method to return the expected dict
+        mock_get_time.invoke.return_value = {
+            "current_time": "2026-01-17T14:30:00",
+            "timezone": "UTC"
+        }
         
         state = {
             "user_prompt": "Test",
@@ -126,47 +122,49 @@ class TestToolNode:
             "iteration_count": 0,
             "decision": Decision(
                 action="call_tool",
-                tool_name="geocode_city",
-                tool_input={"city": "Budapest"},
-                reason="Need coordinates"
+                tool_name="get_time",
+                tool_input={},
+                reason="Need time"
             ),
             "final_answer": None
         }
         
-        result = tool_node(state)
+        result = tool_execution_wrapper(state)
         
         assert len(result["tool_results"]) == 1
         assert result["tool_results"][0].success is True
-        assert result["tool_results"][0].tool_name == "geocode_city"
+        assert result["tool_results"][0].tool_name == "get_time"
         assert result["iteration_count"] == 1
     
-    @patch('src.agent.graph.get_weather')
+    @patch('src.agent.graph.get_weather_tool')
     def test_tool_node_weather(self, mock_weather):
         """Test tool node executing get_weather."""
-        from src.agent.tools.weather import WeatherOutput
-        
-        mock_weather.return_value = WeatherOutput(
-            success=True,
-            temperature_c=15.5,
-            description="tiszta ég",
-            wind_speed=3.5,
-            humidity=65
-        )
+        # Mock the tool's invoke method to return the expected dict
+        mock_weather.invoke.return_value = {
+            "success": True,
+            "temperature_c": 15.5,
+            "description": "tiszta ég",
+            "wind_speed": 3.5,
+            "humidity": 65,
+            "location_name": "Budapest",
+            "date": "2026-01-17",
+            "is_forecast": False
+        }
         
         state = {
-            "user_prompt": "Test",
+            "user_prompt": "Milyen az időjárás?",
             "tool_results": [],
             "iteration_count": 0,
             "decision": Decision(
                 action="call_tool",
                 tool_name="get_weather",
-                tool_input={"latitude": 47.4979, "longitude": 19.0402},
+                tool_input={},
                 reason="Need weather"
             ),
             "final_answer": None
         }
         
-        result = tool_node(state)
+        result = tool_execution_wrapper(state)
         
         assert len(result["tool_results"]) == 1
         assert result["tool_results"][0].success is True
@@ -174,36 +172,33 @@ class TestToolNode:
     
     def test_tool_node_invalid_tool(self):
         """Test tool node with invalid tool name."""
+        # Since Decision now uses Literal, we can't create invalid tool_name
+        # Test that tool_execution_wrapper handles missing tool gracefully
         state = {
             "user_prompt": "Test",
             "tool_results": [],
             "iteration_count": 0,
-            "decision": Decision(
-                action="call_tool",
-                tool_name="invalid_tool",
-                tool_input={},
-                reason="Test"
-            ),
+            "decision": None,  # No decision
             "final_answer": None
         }
         
-        result = tool_node(state)
+        result = tool_execution_wrapper(state)
         
         assert len(result["tool_results"]) == 1
         assert result["tool_results"][0].success is False
-        # Error message can be either "Ismeretlen eszköz" or "Nincs érvényes eszköz hívás"
+        # Error message should indicate no valid tool call
         assert result["tool_results"][0].error_message is not None
 
 
 class TestAnswerNode:
     """Test cases for answer_node."""
     
-    @patch('src.agent.graph.OllamaClient')
-    def test_answer_node_success(self, mock_ollama):
+    @patch('src.agent.graph.GroqClient')
+    def test_answer_node_success(self, mock_groq):
         """Test answer node generating final answer."""
         mock_client = Mock()
         mock_client.invoke.return_value = "Budapesten 15°C van."
-        mock_ollama.return_value = mock_client
+        mock_groq.return_value = mock_client
         
         state = {
             "user_prompt": "Milyen az időjárás Budapesten?",
@@ -224,12 +219,12 @@ class TestAnswerNode:
         assert result["final_answer"] is not None
         assert "15°C" in result["final_answer"]
     
-    @patch('src.agent.graph.OllamaClient')
-    def test_answer_node_error(self, mock_ollama):
+    @patch('src.agent.graph.GroqClient')
+    def test_answer_node_error(self, mock_groq):
         """Test answer node with LLM error."""
         mock_client = Mock()
         mock_client.invoke.side_effect = Exception("LLM error")
-        mock_ollama.return_value = mock_client
+        mock_groq.return_value = mock_client
         
         state = {
             "user_prompt": "Test",
@@ -241,9 +236,9 @@ class TestAnswerNode:
         
         result = answer_node(state)
         
-        # Should have fallback answer (no weather data)
+        # Should have fallback answer
         assert result["final_answer"] is not None
-        assert "nem tudok válaszolni" in result["final_answer"].lower()
+        assert "hiba" in result["final_answer"].lower()
 
 
 class TestShouldContinue:
@@ -257,9 +252,9 @@ class TestShouldContinue:
             "iteration_count": 0,
             "decision": Decision(
                 action="call_tool",
-                tool_name="geocode_city",
-                tool_input={"city": "Budapest"},
-                reason="Need coordinates"
+                tool_name="get_weather",
+                tool_input={"question": "Test"},
+                reason="Need weather"
             ),
             "final_answer": None
         }
@@ -293,9 +288,9 @@ class TestShouldContinue:
             "iteration_count": 3,
             "decision": Decision(
                 action="call_tool",
-                tool_name="geocode_city",
-                tool_input={"city": "Budapest"},
-                reason="Need coordinates"
+                tool_name="get_weather",
+                tool_input={"question": "Test"},
+                reason="Need weather"
             ),
             "final_answer": None
         }

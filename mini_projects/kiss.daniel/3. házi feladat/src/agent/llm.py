@@ -5,14 +5,14 @@ from langchain_groq import ChatGroq
 from langchain_core.messages import HumanMessage, SystemMessage
 
 
-class OllamaClient:
+class GroqClient:
     """Wrapper for Groq LLM interactions."""
     
     def __init__(self, model: str = "llama-3.3-70b-versatile", temperature: float = 0.1):
         """Initialize Groq client.
         
         Args:
-            model: Model name to use (Groq models)
+            model: Model name to use (Groq models - suitable for tool-using agents)
             temperature: Sampling temperature (lower = more deterministic)
         """
         api_key = os.getenv("GROQ_API_KEY")
@@ -22,7 +22,7 @@ class OllamaClient:
         self.llm = ChatGroq(
             model=model,
             temperature=temperature,
-            max_tokens=300,  # Enough for JSON responses
+            max_tokens=500,  # Enough for JSON responses
             groq_api_key=api_key
         )
     

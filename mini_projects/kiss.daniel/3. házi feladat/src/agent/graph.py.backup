@@ -1,74 +1,17 @@
-"""LangGraph-based AI agent with ToolNode."""
+"""LangGraph-based AI weather agent."""
 import json
 from typing import Literal
 from langgraph.graph import StateGraph, END
-from langgraph.prebuilt import ToolNode
-from langchain_core.tools import tool
 from pydantic import ValidationError
 
 from .state import AgentState, Decision, ToolResult
-from .llm import GroqClient
+from .llm import OllamaClient
 from .prompts import DECISION_PROMPT, ANSWER_PROMPT
-from .weather_graph import get_weather_via_subgraph
-from .tools.time_tool import get_time
+from .tools import geocode_city, get_weather, parse_time
 
 
 # Maximum number of tool call iterations to prevent infinite loops
 MAX_ITERATIONS = 3
-
-
-# Define tools using @tool decorator for LangGraph ToolNode
-@tool
-def get_time_tool() -> dict:
-    """Get the current server time in ISO format.
-    
-    Returns:
-        Dictionary with current_time and timezone
-    """
-    result = get_time()
-    return {
-        "current_time": result.current_time,
-        "timezone": result.timezone
-    }
-
-
-@tool
-def get_weather_tool(question: str) -> dict:
-    """Get weather information by running the dedicated Weather subgraph.
-    
-    This tool handles:
-    - Time parsing (today, tomorrow, yesterday, specific dates)
-    - Location geocoding (or IP-based fallback)
-    - Weather fetching from OpenWeather One Call 3.0
-    
-    Args:
-        question: The original user question about weather
-        
-    Returns:
-        Dictionary with weather data or error message
-    """
-    result = get_weather_via_subgraph(question)
-    
-    if result.success:
-        return {
-            "success": True,
-            "temperature_c": result.temperature_c,
-            "description": result.description,
-            "wind_speed": result.wind_speed,
-            "humidity": result.humidity,
-            "location_name": result.location_name,
-            "date": result.date,
-            "is_forecast": result.is_forecast
-        }
-    else:
-        return {
-            "success": False,
-            "error_message": result.error_message
-        }
-
-
-# Create tools list for ToolNode
-tools = [get_time_tool, get_weather_tool]
 
 
 def read_user_prompt_node(state: AgentState) -> AgentState:
@@ -80,19 +23,32 @@ def read_user_prompt_node(state: AgentState) -> AgentState:
 
 def decision_node(state: AgentState) -> AgentState:
     """Node 2: LLM decides whether to call a tool or provide final answer."""
-    llm = GroqClient()
+    llm = OllamaClient()
     
-    # Format tool results for LLM
+    # Format tool results for LLM with clear status
+    tool_status = {
+        "parse_time": False,
+        "geocode_city": False,
+        "get_weather": False
+    }
+    
     tool_results_str = ""
     if state.get("tool_results"):
         for result in state["tool_results"]:
-            tool_results_str += f"\n\nEszköz: {result.tool_name}\n"
             if result.success:
-                tool_results_str += f"Sikeres: {json.dumps(result.data, ensure_ascii=False)}"
-            else:
-                tool_results_str += f"Sikertelen: {result.error_message}"
+                tool_status[result.tool_name] = True
+            tool_results_str += f"\n{result.tool_name}: {'✓ SIKERES' if result.success else '✗ SIKERTELEN'}"
+            if result.success and result.data:
+                tool_results_str += f" (adat: {json.dumps(result.data, ensure_ascii=False)})"
+            elif result.error_message:
+                tool_results_str += f" ({result.error_message})"
     else:
-        tool_results_str = "Még nincsenek eszköz eredmények."
+        tool_results_str = "NINCS MÉG"
+    
+    # Add clear summary
+    tool_results_str = f"""DONE: parse_time={tool_status['parse_time']}, geocode_city={tool_status['geocode_city']}, get_weather={tool_status['get_weather']}
+
+DETAILS:{tool_results_str}"""
     
     # Create decision prompt
     prompt = DECISION_PROMPT.format(
@@ -103,10 +59,7 @@ def decision_node(state: AgentState) -> AgentState:
     
     try:
         # Get LLM decision (JSON only)
-        response_dict = llm.invoke_json(
-            "You must respond with valid JSON only. No other text.",
-            prompt
-        )
+        response_dict = llm.invoke_json("You must respond with valid JSON only. No other text.", prompt)
         decision = Decision(**response_dict)
         
         # Validate decision
@@ -118,7 +71,7 @@ def decision_node(state: AgentState) -> AgentState:
             )
         
         if decision.action == "call_tool":
-            if not decision.tool_name or decision.tool_name not in ["get_weather", "get_time"]:
+            if not decision.tool_name or decision.tool_name not in ["parse_time", "geocode_city", "get_weather"]:
                 # Fallback if invalid tool
                 decision = Decision(
                     action="final_answer",
@@ -136,18 +89,11 @@ def decision_node(state: AgentState) -> AgentState:
         return {**state, "decision": decision}
 
 
-def tool_execution_wrapper(state: AgentState) -> AgentState:
-    """Wrapper around ToolNode execution to convert results to our ToolResult format.
-    
-    This node:
-    1. Extracts tool_name and tool_input from decision
-    2. Calls the appropriate tool
-    3. Wraps result in ToolResult
-    4. Increments iteration counter
-    """
+def tool_node(state: AgentState) -> AgentState:
+    """Node 3: Execute the requested tool."""
     decision = state.get("decision")
     
-    if not decision or not decision.tool_name:
+    if not decision or not decision.tool_name or not decision.tool_input:
         # Safety check
         error_result = ToolResult(
             tool_name="unknown",
@@ -161,33 +107,54 @@ def tool_execution_wrapper(state: AgentState) -> AgentState:
         }
     
     tool_name = decision.tool_name
-    tool_input = decision.tool_input or {}
+    tool_input = decision.tool_input
     
     # Execute the appropriate tool
     try:
-        if tool_name == "get_time":
-            result = get_time_tool.invoke({})
+        if tool_name == "parse_time":
+            result = parse_time(**tool_input)
             tool_result = ToolResult(
                 tool_name=tool_name,
-                success=True,
-                data=result
+                success=result.success,
+                data={
+                    "date": result.date,
+                    "days_from_now": result.days_from_now,
+                    "time_type": result.time_type,
+                    "description": result.description
+                } if result.success else None,
+                error_message=result.error_message
+            )
+        elif tool_name == "geocode_city":
+            result = geocode_city(**tool_input)
+            tool_result = ToolResult(
+                tool_name=tool_name,
+                success=result.success,
+                data={
+                    "name": result.name,
+                    "country": result.country,
+                    "latitude": result.latitude,
+                    "longitude": result.longitude,
+                    "admin1": result.admin1,
+                    "timezone": result.timezone
+                } if result.success else None,
+                error_message=result.error_message
             )
         elif tool_name == "get_weather":
-            # Pass the original user prompt to weather subgraph
-            result = get_weather_tool.invoke({"question": state["user_prompt"]})
-            
-            if result.get("success"):
-                tool_result = ToolResult(
-                    tool_name=tool_name,
-                    success=True,
-                    data=result
-                )
-            else:
-                tool_result = ToolResult(
-                    tool_name=tool_name,
-                    success=False,
-                    error_message=result.get("error_message", "Ismeretlen hiba")
-                )
+            result = get_weather(**tool_input)
+            tool_result = ToolResult(
+                tool_name=tool_name,
+                success=result.success,
+                data={
+                    "temperature_c": result.temperature_c,
+                    "description": result.description,
+                    "wind_speed": result.wind_speed,
+                    "humidity": result.humidity,
+                    "location_name": result.location_name,
+                    "date": result.date,
+                    "is_forecast": result.is_forecast
+                } if result.success else None,
+                error_message=result.error_message
+            )
         else:
             tool_result = ToolResult(
                 tool_name=tool_name,
@@ -211,7 +178,22 @@ def tool_execution_wrapper(state: AgentState) -> AgentState:
 
 def answer_node(state: AgentState) -> AgentState:
     """Node 4: Generate final answer using LLM."""
-    llm = GroqClient()
+    llm = OllamaClient()
+    
+    # Check if weather tool was called successfully
+    has_weather_data = False
+    if state.get("tool_results"):
+        for result in state["tool_results"]:
+            if result.tool_name == "get_weather" and result.success:
+                has_weather_data = True
+                break
+    
+    # If no weather data, return default message
+    if not has_weather_data:
+        return {
+            **state,
+            "final_answer": "Sajnos nem tudok válaszolni erre a kérdésre, add meg a pontos időpontot és helyet."
+        }
     
     # Format tool results for LLM
     tool_results_str = ""
@@ -233,22 +215,10 @@ def answer_node(state: AgentState) -> AgentState:
     
     try:
         # Get final answer from LLM
-        answer = llm.invoke(
-            "Te egy barátságos asszisztens vagy. KÖTELEZŐ: Csak magyarul válaszolj!",
-            prompt
-        )
+        answer = llm.invoke("Te egy barátságos időjárás asszisztens vagy.", prompt)
         return {**state, "final_answer": answer.strip()}
     except Exception as e:
-        # Check if rate limit error
-        error_msg = str(e)
-        if "rate_limit" in error_msg.lower() or "429" in error_msg:
-            return {
-                **state,
-                "final_answer": "Jelenleg túl sok kérés érkezett. Kérlek, próbáld újra pár perc múlva."
-            }
-        # Fallback answer on other errors
-        import sys
-        print(f"ERROR in answer_node: {e}", file=sys.stderr)
+        # Fallback answer on error
         return {
             **state,
             "final_answer": "Sajnos hiba történt a válasz generálása során. Kérlek, próbáld újra később."
@@ -256,12 +226,7 @@ def answer_node(state: AgentState) -> AgentState:
 
 
 def should_continue(state: AgentState) -> Literal["tool_node", "answer_node"]:
-    """Router function: decide whether to call tool or provide answer.
-    
-    Routes:
-    - 2 -> 3 (call tool)
-    - 2 -> 4 (final answer)
-    """
+    """Router function: decide whether to call tool or provide answer."""
     decision = state.get("decision")
     iteration_count = state.get("iteration_count", 0)
     
@@ -277,28 +242,14 @@ def should_continue(state: AgentState) -> Literal["tool_node", "answer_node"]:
 
 
 def create_graph() -> StateGraph:
-    """Create and compile the LangGraph StateGraph.
-    
-    Graph structure:
-    - Node 1: read_user_prompt
-    - Node 2: decision_node
-    - Node 3: tool_node (ToolNode wrapper)
-    - Node 4: answer_node
-    
-    Edges:
-    - 1 -> 2
-    - 2 -> 3 (conditional)
-    - 3 -> 2
-    - 2 -> 4 (conditional)
-    - 4 -> END
-    """
+    """Create and compile the LangGraph StateGraph."""
     # Create the graph
     workflow = StateGraph(AgentState)
     
     # Add nodes
     workflow.add_node("read_user_prompt", read_user_prompt_node)
     workflow.add_node("decision_node", decision_node)
-    workflow.add_node("tool_node", tool_execution_wrapper)
+    workflow.add_node("tool_node", tool_node)
     workflow.add_node("answer_node", answer_node)
     
     # Add edges
@@ -311,7 +262,7 @@ def create_graph() -> StateGraph:
             "answer_node": "answer_node"
         }
     )
-    workflow.add_edge("tool_node", "decision_node")  # 3 -> 2
+    workflow.add_edge("tool_node", "decision_node")
     workflow.add_edge("answer_node", END)
     
     # Set entry point
