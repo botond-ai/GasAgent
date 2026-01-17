@@ -229,6 +229,71 @@ Upcoming Events (3):
 
 The calendar service uses OAuth2 authentication and caches tokens locally for future use.
 
+IP Geolocation API Integration
+-------------------------------
+
+The app includes optional IP Geolocation functionality for retrieving geographic information based on IP addresses. This feature allows you to look up details such as country, city, region, latitude, longitude, timezone, ISP, and other location-based data.
+
+**Setup:**
+
+1. Obtain an IP Geolocation API key from a geolocation service provider (e.g., ip-api.com, MaxMind, or similar).
+
+2. Set the API key in `.env`:
+   ```bash
+   IP_GEOLOCATION_API_KEY=your_api_key_here
+   ```
+
+**Interactive usage:**
+
+Once configured, geolocation commands are available:
+
+```
+/geoip 8.8.8.8              # Look up geolocation for a specific IP address
+/geoip                      # Look up geolocation for your current IP address
+```
+
+**Example output:**
+
+```
+IP Geolocation Information:
+
+IP Address: 8.8.8.8
+Country: United States
+Country Code: US
+Region: California
+City: Mountain View
+Latitude: 37.3861
+Longitude: -122.0839
+Timezone: America/Los_Angeles
+ISP: Google LLC
+Organization: Google
+```
+
+**Features:**
+
+- **IP lookup:** Query any public IP address for its geographic location
+- **Current IP detection:** Automatically detect and look up your machine's public IP
+- **Comprehensive data:** Returns country, region, city, coordinates, timezone, and ISP information
+- **Error handling:** Gracefully handles invalid IPs or API errors
+- **Response caching:** Geolocation results are cached to minimize API calls
+
+**Configuration:**
+
+Set these in `.env` to customize geolocation behavior:
+
+```bash
+IP_GEOLOCATION_API_KEY=your_api_key      # API key for geolocation service
+IP_GEOLOCATION_CACHE_ENABLED=true        # Enable/disable response caching
+IP_GEOLOCATION_TIMEOUT=10                # Request timeout in seconds
+```
+
+**Limitations and considerations:**
+
+- Some IP geolocation APIs have rate limits; check your provider's documentation
+- Private/internal IP addresses (10.x.x.x, 192.168.x.x, 172.16.x.x) may not resolve
+- Accuracy varies depending on the geolocation data provider
+- Consider caching results locally to reduce API usage and improve response times
+
 Testing
 --------------
 
