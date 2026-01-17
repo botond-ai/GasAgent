@@ -27,6 +27,8 @@ class Config:
         openai_api_key: Authentication key for OpenAI API access (required).
         embedding_model: Model identifier for OpenAI embeddings.
                         Default: 'text-embedding-3-small' (1536 dimensions).
+        llm_model: Model identifier for OpenAI chat completions (RAG).
+                   Default: 'gpt-4o-mini' for cost-effective generation.
         chroma_db_path: Filesystem path for ChromaDB persistent storage.
                        Default: './chroma_db' in current working directory.
         collection_name: ChromaDB collection identifier for vector storage.
@@ -34,6 +36,7 @@ class Config:
     """
     openai_api_key: str
     embedding_model: str = "text-embedding-3-small"
+    llm_model: str = "gpt-4o-mini"
     embedding_chunk_size: int = 500
     overlap: int = 0
     chroma_db_path: str = "./chroma_db"
@@ -52,6 +55,7 @@ class Config:
         Environment Variables:
             OPENAI_API_KEY (required): OpenAI API authentication key
             EMBEDDING_MODEL (optional): Override default embedding model
+            LLM_MODEL (optional): Override default LLM model for RAG
             CHROMA_DB_PATH (optional): Override default database path
             COLLECTION_NAME (optional): Override default collection name
 
@@ -84,6 +88,7 @@ class Config:
         return cls(
             openai_api_key=openai_api_key,
             embedding_model=os.getenv("EMBEDDING_MODEL", cls.embedding_model),
+            llm_model=os.getenv("LLM_MODEL", cls.llm_model),
             embedding_chunk_size=embedding_chunk_size,
             overlap=overlap,
             chroma_db_path=os.getenv("CHROMA_DB_PATH", cls.chroma_db_path),

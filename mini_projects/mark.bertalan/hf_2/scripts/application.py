@@ -9,9 +9,9 @@ import os
 import re
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Optional
 
-from scripts.interfaces import Embedder, VectorDB
+from scripts.interfaces import Embedder, VectorDB, LLM
 
 
 class EmbeddingApp:
@@ -28,16 +28,18 @@ class EmbeddingApp:
     modifying this orchestrator.
     """
 
-    def __init__(self, embedding_service: Embedder, vector_store: VectorDB):
+    def __init__(self, embedding_service: Embedder, vector_store: VectorDB, llm: Optional[LLM] = None):
         """
         Construct processor with dependency-injected components.
 
         Args:
             embedding_service: Component responsible for text-to-vector transformation
             vector_store: Component handling vector persistence and retrieval
+            llm: Optional LLM component for RAG text generation
         """
         self._embedder = embedding_service
         self._vector_db = vector_store
+        self._llm = llm
 
     def _parse_domains_config(self) -> List[str]:
         """
@@ -168,3 +170,45 @@ class EmbeddingApp:
         }
 
         return query_identifier, search_results
+
+    def process_query_with_rag(
+        self,
+        text: str,
+        k: int = 3,
+        max_tokens: int = 500
+    ) -> Tuple[str, Dict[str, List], str]:
+        """
+        Execute RAG pipeline: retrieve relevant documents and generate response.
+
+        Args:
+            text: User's question or query.
+            k: Number of documents to retrieve for context.
+            max_tokens: Maximum tokens for LLM response generation.
+
+        Returns:
+            Tuple containing (query_id, search_results, generated_answer)
+
+        Raises:
+            ValueError: If LLM was not provided during initialization.
+        """
+        if self._llm is None:
+            raise ValueError(
+                "LLM component not initialized. "
+                "Please provide an LLM instance when creating EmbeddingApp."
+            )
+
+        # Retrieve relevant documents
+        query_id, search_results = self.process_query(text, k=k)
+
+        # Extract text content from cosine search results
+        # Results format: (id, distance, similarity, text, metadata)
+        retrieved_chunks = [result[3] for result in search_results['cosine']]
+
+        # Generate answer using LLM with retrieved context
+        generated_answer = self._llm.generate(
+            prompt=text,
+            context=retrieved_chunks,
+            max_tokens=max_tokens
+        )
+
+        return query_id, search_results, generated_answer
