@@ -2,11 +2,12 @@
 
 The CLI is a thin layer that interacts with the user and delegates
 work to `EmbeddingApp` and `RAGAgent` which follow dependency injection principles.
+Includes support for LangGraph workflow orchestration.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, TYPE_CHECKING
 import uuid
 import textwrap
 
@@ -15,6 +16,9 @@ from .vector_store import VectorStore
 from .rag_agent import RAGAgent
 from .google_calendar import CalendarService
 from .tool_clients import GeolocationClient, WeatherClient, CryptoClient, ForexClient
+
+if TYPE_CHECKING:
+    from .langgraph_workflow import MeetingAssistantWorkflow
 
 
 @dataclass
@@ -68,6 +72,7 @@ class CLI:
         weather_client: Optional[WeatherClient] = None,
         crypto_client: Optional[CryptoClient] = None,
         forex_client: Optional[ForexClient] = None,
+        workflow: Optional[MeetingAssistantWorkflow] = None,
     ) -> None:
         self.app = EmbeddingApp(emb_service, vector_store)
         self.rag_agent = rag_agent
@@ -76,6 +81,7 @@ class CLI:
         self.weather_client = weather_client
         self.crypto_client = crypto_client
         self.forex_client = forex_client
+        self.workflow = workflow
 
     def _print_intro(self) -> None:
         intro = (
@@ -93,6 +99,8 @@ class CLI:
             intro += "\nCrypto: '/crypto SYMBOL' (e.g., '/crypto bitcoin')"
         if self.forex_client:
             intro += "\nForex: '/forex BASE TARGET' (e.g., '/forex USD EUR')"
+        if self.workflow:
+            intro += "\nWorkflow: '/workflow your request' (LangGraph multi-step orchestration)"
         print(textwrap.dedent(intro))
 
     def _print_results(self, uid: str, neighbors: List[Neighbor]) -> None:
@@ -344,6 +352,35 @@ class CLI:
                         print("Usage: /forex BASE TARGET (e.g., /forex USD EUR)")
                 except Exception as exc:
                     print(f"Forex error: {exc}")
+                continue
+
+            if text.startswith("/workflow "):
+                if not self.workflow:
+                    print("LangGraph workflow not available")
+                    continue
+
+                try:
+                    user_request = text.split(maxsplit=1)[1].strip()
+                    print("\n--- Starting LangGraph Workflow ---")
+                    result = self.workflow.run(user_request)
+                    
+                    # Print workflow results
+                    print("\nWorkflow Results:")
+                    print(f"Steps Executed: {result['executed_steps']}/{len(result['execution_plan'])}")
+                    
+                    if result['meeting_summary']:
+                        print(f"\nMeeting Summary:\n{result['meeting_summary']}")
+                    
+                    if result['final_answer']:
+                        print(f"\nFinal Answer:\n{result['final_answer']}")
+                    
+                    if result['errors']:
+                        print("\nWarnings/Errors:")
+                        for error in result['errors']:
+                            print(f"  ⚠ {error}")
+                            
+                except Exception as exc:
+                    print(f"Workflow error: {exc}")
                 continue
 
             uid, neighbors = self.app.process_query(text, k=k, mode=mode, alpha=alpha)
