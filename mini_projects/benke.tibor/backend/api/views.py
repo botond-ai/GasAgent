@@ -18,8 +18,21 @@ class QueryAPIView(APIView):
     """
 
     def post(self, request: Request) -> Response:
-        """Handle query request with input validation."""
+        """Handle query request with input validation and idempotency."""
         try:
+            # Check for idempotency via X-Request-ID header
+            request_id = request.headers.get('X-Request-ID')
+            if request_id:
+                from infrastructure.redis_client import redis_cache
+                cached_response = redis_cache.get_request_response(request_id)
+                if cached_response:
+                    logger.info(f"🔁 Idempotent request detected: {request_id}")
+                    return Response(
+                        cached_response,
+                        status=status.HTTP_200_OK,
+                        headers={'X-Cache-Hit': 'true'}
+                    )
+            
             # Validate request
             data = request.data
             query_text = data.get("query", "")
@@ -74,45 +87,69 @@ class QueryAPIView(APIView):
             user_id = data.get("user_id", "guest")
             session_id = data.get("session_id")
             
-            return Response(
-                {
-                    "success": True,
-                    "data": {
-                        "domain": response.domain,
-                        "answer": response.answer,
-                        "citations": [c.model_dump() for c in response.citations],
-                        "workflow": response.workflow,
-                        "confidence": response.confidence,
-                        "telemetry": {
-                            "total_latency_ms": total_latency,
-                            "chunk_count": chunk_count,
-                            "max_similarity_score": round(max_score, 3),
-                            "retrieval_latency_ms": None,  # TODO: measure RAG separately
-                            "request": {
-                                "user_id": user_id,
-                                "session_id": session_id,
-                                "query": query_text
-                            },
-                            "response": {
-                                "domain": response.domain,
-                                "answer_length": len(response.answer),
-                                "citation_count": chunk_count,
-                                "workflow_triggered": response.workflow is not None
-                            },
-                            "rag": {
-                                "context": response.rag_context,
-                                "chunk_count": chunk_count
-                            },
-                            "llm": {
-                                "prompt": response.llm_prompt,
-                                "response": response.llm_response,
-                                "prompt_length": len(response.llm_prompt) if response.llm_prompt else 0,
-                                "response_length": len(response.llm_response) if response.llm_response else 0
-                            }
+            # Map ProcessingStatus to HTTP status code
+            from domain.models import ProcessingStatus
+            status_map = {
+                ProcessingStatus.SUCCESS: status.HTTP_200_OK,
+                ProcessingStatus.PARTIAL_SUCCESS: status.HTTP_206_PARTIAL_CONTENT,
+                ProcessingStatus.RAG_UNAVAILABLE: status.HTTP_503_SERVICE_UNAVAILABLE,
+                ProcessingStatus.GENERATION_FAILED: status.HTTP_500_INTERNAL_SERVER_ERROR,
+                ProcessingStatus.VALIDATION_FAILED: status.HTTP_422_UNPROCESSABLE_ENTITY,
+            }
+            http_status = status_map.get(response.processing_status, status.HTTP_200_OK)
+            
+            # Determine overall success flag
+            is_success = response.processing_status in [ProcessingStatus.SUCCESS, ProcessingStatus.PARTIAL_SUCCESS]
+            
+            response_data = {
+                "success": is_success,
+                "data": {
+                    "domain": response.domain,
+                    "answer": response.answer,
+                    "citations": [c.model_dump() for c in response.citations],
+                    "workflow": response.workflow,
+                    "confidence": response.confidence,
+                    "processing_status": response.processing_status.value,
+                    "validation_errors": response.validation_errors,
+                    "retry_count": response.retry_count,
+                    "telemetry": {
+                        "total_latency_ms": total_latency,
+                        "chunk_count": chunk_count,
+                        "max_similarity_score": round(max_score, 3),
+                        "retrieval_latency_ms": None,  # TODO: measure RAG separately
+                        "request": {
+                            "user_id": user_id,
+                            "session_id": session_id,
+                            "query": query_text
+                        },
+                        "response": {
+                            "domain": response.domain,
+                            "answer_length": len(response.answer),
+                            "citation_count": chunk_count,
+                            "workflow_triggered": response.workflow is not None
+                        },
+                        "rag": {
+                            "context": response.rag_context,
+                            "chunk_count": chunk_count
+                        },
+                        "llm": {
+                            "prompt": response.llm_prompt,
+                            "response": response.llm_response,
+                            "prompt_length": len(response.llm_prompt) if response.llm_prompt else 0,
+                            "response_length": len(response.llm_response) if response.llm_response else 0
                         }
                     }
-                },
-                status=status.HTTP_200_OK,
+                }
+            }
+            
+            # Cache response for idempotency if request_id provided
+            if request_id:
+                from infrastructure.redis_client import redis_cache
+                redis_cache.set_request_response(request_id, response_data, ttl=300)  # 5 min
+            
+            return Response(
+                response_data,
+                status=http_status,
             )
 
         except ValueError as e:

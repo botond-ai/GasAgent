@@ -335,14 +335,34 @@ queryForm.addEventListener('submit', async (e) => {
 
     if (!query) return;
 
-    // Check if user is responding "igen" to Jira ticket offer
+    // Check if user is responding to Jira ticket offer (yes/no)
     const normalizedQuery = query.toLowerCase().trim();
+    const isJiraDecline = lastITContext && (
+        normalizedQuery === 'nem' ||
+        normalizedQuery === 'no' ||
+        normalizedQuery.includes('mégsem') ||
+        normalizedQuery.includes('nem kell') ||
+        normalizedQuery.includes('nem kérem') ||
+        (normalizedQuery.includes('nem') && query.split(' ').length <= 3)
+    );
     const isJiraConfirmation = lastITContext && 
         (normalizedQuery === 'igen' || 
          normalizedQuery === 'yes' ||
          normalizedQuery === 'ok' ||
          normalizedQuery === 'i' ||
          (normalizedQuery.includes('igen') && query.split(' ').length <= 3));
+    
+    if (isJiraDecline) {
+        addMessage(query, 'user');
+        if (lastITContext) {
+            addMessage('Köszönöm a visszajelzést, nem hozok létre Jira ticketet. Szólj, ha mégis szeretnéd, vagy írd le, miben segíthetek még.', 'bot');
+        } else {
+            addMessage('Rendben, nem hozok létre ticketet. Miben segíthetek helyette?', 'bot');
+        }
+        queryInput.value = '';
+        lastITContext = null;
+        return;
+    }
     
     if (isJiraConfirmation) {
         console.log('🎫 Jira confirmation detected, creating ticket...');
@@ -463,20 +483,21 @@ queryForm.addEventListener('submit', async (e) => {
             sessionId  // Pass session ID
         );
         
-        // Store IT context for potential Jira ticket creation
-        if (payload.domain === 'it' && payload.answer) {
-            // Store context if response mentions Jira or contains typical IT offer keywords
-            const hasJiraOffer = payload.answer.toLowerCase().includes('jira') || 
-                                 payload.answer.toLowerCase().includes('ticket') ||
+        // Store context for potential Jira ticket creation (independent of domain)
+        if (payload.answer) {
+            const lowerAns = payload.answer.toLowerCase();
+            const hasJiraOffer = lowerAns.includes('jira') ||
+                                 lowerAns.includes('ticket') ||
                                  payload.answer.includes('📋') ||
-                                 payload.answer.toLowerCase().includes('szeretnéd');
-            
+                                 lowerAns.includes('szeretnéd') ||
+                                 lowerAns.includes('támogatási jegy') ||
+                                 lowerAns.includes('support ticket') ||
+                                 lowerAns.includes('hozzak létre') ||
+                                 lowerAns.includes('létrehozzak');
+
             if (hasJiraOffer) {
-                lastITContext = {
-                    query: query,
-                    answer: payload.answer
-                };
-                console.log('✅ IT context stored for Jira ticket:', lastITContext);
+                lastITContext = { query, answer: payload.answer };
+                console.log('✅ Jira context stored for ticket flow:', lastITContext);
             } else {
                 lastITContext = null;
             }

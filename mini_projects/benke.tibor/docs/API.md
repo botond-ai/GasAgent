@@ -93,6 +93,35 @@ Feldolgoz egy felhasználói kérdést **LangGraph StateGraph** segítségével,
 **Headers:**
 ```
 Content-Type: application/json
+X-Request-ID: <uuid> (optional, for idempotency)
+```
+
+**Idempotency Support (v2.7):** 🆕
+
+Az endpoint támogatja az idempotens request-eket az `X-Request-ID` header használatával:
+
+- **Cache kulcs:** `request_id:{uuid}`
+- **TTL:** 5 perc (300s)
+- **Behavior:** Azonos `X-Request-ID` → cached response (no LLM call)
+- **Response header:** `X-Cache-Hit: true` ha cache találat
+- **UUID format:** UUID v4 ajánlott (pl. `550e8400-e29b-41d4-a716-446655440000`)
+
+**Példa:**
+```bash
+REQUEST_ID=$(uuidgen)
+
+# First request - full processing (~4000ms)
+curl -X POST http://localhost:8001/api/query/ \
+  -H "Content-Type: application/json" \
+  -H "X-Request-ID: $REQUEST_ID" \
+  -d '{"query": "Mi a szabadság policy?", "user_id": "demo", "session_id": "s1"}'
+
+# Duplicate request within 5 min - cached (<10ms)
+curl -X POST http://localhost:8001/api/query/ \
+  -H "X-Request-ID: $REQUEST_ID" \
+  -d '{"query": "Different query ignored", "user_id": "demo", "session_id": "s1"}'
+# Response header: X-Cache-Hit: true
+# Note: Query text in body is IGNORED for duplicate request_id
 ```
 
 **Body:**

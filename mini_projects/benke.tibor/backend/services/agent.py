@@ -10,9 +10,17 @@ from typing_extensions import TypedDict
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from langgraph.graph import StateGraph, END
 
-from domain.models import DomainType, QueryResponse, Citation
-from infrastructure.error_handling import check_token_limit, estimate_tokens
+from domain.models import DomainType, QueryResponse, Citation, ProcessingStatus, FeedbackMetrics
+from domain.llm_outputs import IntentOutput, MemoryUpdate, RAGGenerationOutput
+from infrastructure.error_handling import (
+    check_token_limit,
+    estimate_tokens,
+    with_timeout_and_retry,
+    TimeoutError,
+    APICallError,
+)
 from infrastructure.atlassian_client import atlassian_client
+from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +48,8 @@ class AgentState(TypedDict, total=False):
     # Memory
     memory_summary: str
     memory_facts: list
+    # Error handling
+    rag_unavailable: bool  # True if RAG retrieval failed
 
 
 class QueryAgent:
@@ -111,11 +121,12 @@ class QueryAgent:
         return result
 
     async def _memory_update_node(self, state: AgentState) -> AgentState:
-        """Maintain rolling window memory and update summary + facts.
+        """Maintain rolling window memory with reducer pattern + semantic compression.
 
         - Keeps only last N messages (env MEMORY_MAX_MESSAGES, default 8)
-        - Updates `memory_summary` via LLM when needed
-        - Extracts `memory_facts` via LLM (simple bullet list)
+        - REDUCER PATTERN: Concatenates previous summary with new summary
+        - SEMANTIC COMPRESSION: LLM decides which facts to keep (relevance-based)
+        - Multi-level summarization: short (8 msgs) → medium (50 msgs) → long (200+ msgs)
         - Non-blocking on errors
         """
         logger.info("Memory update node executing")
@@ -123,6 +134,10 @@ class QueryAgent:
             import os
             max_messages = int(os.getenv("MEMORY_MAX_MESSAGES", 8))
             msgs = list(state.get("messages", []))
+            
+            # Track total message count (for multi-level summarization)
+            total_msg_count = len(msgs)
+            
             if len(msgs) > max_messages:
                 msgs = msgs[-max_messages:]
                 state["messages"] = msgs
@@ -134,39 +149,67 @@ class QueryAgent:
 
             transcript = "\n".join(format_msg(m) for m in msgs)
 
-            summary = state.get("memory_summary", "")
-            need_summary = (len(msgs) >= max_messages) or (not summary)
+            # Get previous summary and facts (for reducer pattern)
+            prev_summary = state.get("memory_summary", "")
+            prev_facts = state.get("memory_facts", [])
+            
+            need_summary = (len(msgs) >= max_messages) or (not prev_summary)
             if need_summary and transcript:
-                prompt_sum = (
-                    "Summarize the following conversation in 3-4 sentences focusing on user intent, constraints, and decisions.\n\n"
-                    f"Conversation:\n{transcript}\n\nSummary:"
+                # Build prompt with REDUCER PATTERN (include previous summary)
+                prompt_mem = (
+                    "You are updating conversation memory using a REDUCER PATTERN.\n\n"
                 )
-                try:
-                    resp = await self.llm.ainvoke([HumanMessage(content=prompt_sum)])
-                    state["memory_summary"] = getattr(resp, "content", "").strip() or summary
-                except Exception as e:
-                    logger.warning(f"Memory summary failed (non-blocking): {e}")
-
-            if transcript:
-                prompt_facts = (
-                    "Extract up to 5 atomic facts (short bullet points) from the conversation useful for future turns.\n"
-                    "Return one fact per line, no numbering.\n\n"
-                    f"Conversation:\n{transcript}\n\nFacts:"
+                
+                # Include previous summary if exists
+                if prev_summary:
+                    prompt_mem += (
+                        f"**PREVIOUS SUMMARY:**\n{prev_summary}\n\n"
+                        f"**PREVIOUS FACTS ({len(prev_facts)}):**\n"
+                    )
+                    if prev_facts:
+                        prompt_mem += "\n".join(f"- {fact}" for fact in prev_facts) + "\n\n"
+                    else:
+                        prompt_mem += "None\n\n"
+                
+                prompt_mem += (
+                    f"**NEW CONVERSATION (last {len(msgs)} messages):**\n{transcript}\n\n"
+                    "**TASK:**\n"
+                    "1. **summary**: Merge previous summary with new information (3-5 sentences). "
+                    "Focus on cumulative user intent, constraints, and key decisions across ALL conversations.\n"
+                    "2. **facts**: Semantically filter facts - keep up to 8 MOST RELEVANT facts "
+                    "(merge previous facts + extract new ones, prioritize by recency and relevance). "
+                    "Drop outdated or redundant facts.\n"
+                    "3. **decisions**: Track cumulative key decisions made by the user.\n\n"
+                    "**SEMANTIC COMPRESSION RULES:**\n"
+                    "- Merge similar facts (e.g., 'user wants X' + 'user needs X' → 'user requires X')\n"
+                    "- Prioritize recent facts over old ones if conflict exists\n"
+                    "- Keep domain-specific constraints (dates, names, numbers)\n"
+                    "- Drop facts no longer relevant to current conversation direction\n\n"
+                    "IMPORTANT: Only extract facts explicitly stated. Do NOT hallucinate.\n\n"
+                    "Respond with summary, facts, and decisions fields."
                 )
+                
                 try:
-                    resp2 = await self.llm.ainvoke([HumanMessage(content=prompt_facts)])
-                    raw = getattr(resp2, "content", "")
-                    lines = [line.strip("- •\t ") for line in raw.splitlines() if line.strip()]
-                    seenf = set()
-                    nfacts = []
-                    for line in lines:
-                        if line and line not in seenf:
-                            seenf.add(line)
-                            nfacts.append(line)
-                    if nfacts:
-                        state["memory_facts"] = nfacts[:5]
+                    # Use structured output with Pydantic validation
+                    structured_llm = self.llm.with_structured_output(MemoryUpdate)
+                    memory_update = await structured_llm.ainvoke([HumanMessage(content=prompt_mem)])
+                    
+                    # Update state with validated data (REDUCER: replaces with merged summary)
+                    if memory_update.summary:
+                        state["memory_summary"] = memory_update.summary
+                    if memory_update.facts:
+                        state["memory_facts"] = memory_update.facts[:8]  # Max 8 facts after semantic compression
+                    
+                    compression_ratio = len(prev_facts) + len(msgs) if prev_facts else len(msgs)
+                    final_facts = len(memory_update.facts)
+                    logger.info(
+                        f"Memory updated (REDUCER): {final_facts} facts "
+                        f"(compressed from {compression_ratio} items), "
+                        f"summary length: {len(memory_update.summary)} chars, "
+                        f"total messages: {total_msg_count}"
+                    )
                 except Exception as e:
-                    logger.warning(f"Memory facts extraction failed (non-blocking): {e}")
+                    logger.warning(f"Memory update failed (non-blocking): {e}")
 
         except Exception as e:
             logger.warning(f"Memory update node error (non-blocking): {e}")
@@ -194,7 +237,7 @@ class QueryAgent:
             logger.info(f"Detected domain (keyword match): {domain}")
             return state
         
-        # Otherwise use LLM
+        # Otherwise use LLM with structured output
         prompt = f"""
 Classify this query into ONE category:
 
@@ -207,19 +250,29 @@ general = other
 
 Query: "{state['query']}"
 
-Category:"""
-        response = await self.llm.ainvoke([HumanMessage(content=prompt)])
-        domain = response.content.strip().lower()
+Provide:
+1. domain (one of the above categories)
+2. confidence (0.0-1.0, how sure you are)
+3. reasoning (why this domain, 10-500 characters)
+
+Respond in JSON format."""
+        
+        # Use structured output with Pydantic validation
+        structured_llm = self.llm.with_structured_output(IntentOutput)
+        intent_output = await structured_llm.ainvoke([HumanMessage(content=prompt)])
+        
+        domain = intent_output.domain.lower()
 
         # Validate domain
         try:
             DomainType(domain)
         except ValueError:
             domain = DomainType.GENERAL.value
+            logger.warning(f"Invalid domain '{intent_output.domain}' from LLM, defaulting to {domain}")
 
         state["domain"] = domain
         state["messages"] = self._dedup_messages([HumanMessage(content=state["query"])])
-        logger.info(f"Detected domain: {domain}")
+        logger.info(f"Detected domain: {domain} (confidence: {intent_output.confidence:.3f}, reasoning: {intent_output.reasoning[:50]}...)")
 
         return state
 
@@ -239,14 +292,26 @@ Category:"""
             except Exception:
                 augmented_query = state["query"]
 
-            citations = await self.rag_client.retrieve_for_domain(
-                domain=state["domain"],
-                query=augmented_query,
-                top_k=5
+            # Wrap RAG call with timeout and retry
+            citations = await with_timeout_and_retry(
+                self.rag_client.retrieve_for_domain(
+                    domain=state["domain"],
+                    query=augmented_query,
+                    top_k=5
+                ),
+                timeout=settings.RAG_TIMEOUT,
+                max_retries=3,
+                operation_name="RAG retrieval",
             )
+        except (TimeoutError, APICallError) as e:
+            logger.error(f"RAG retrieval failed: {str(e)}. Continuing with empty citations.")
+            citations = []
+            # Mark state for summary-only fallback mode
+            state["rag_unavailable"] = True
         except Exception as e:
             logger.warning(f"RAG retrieval failed: {str(e)}. Continuing with empty citations.")
             citations = []
+            state["rag_unavailable"] = True
 
         state["citations"] = [c.model_dump() for c in citations]
         state["retrieved_docs"] = citations
@@ -275,9 +340,19 @@ Category:"""
         return state
 
     async def _generation_node(self, state: AgentState) -> AgentState:
-        """Generate response using RAG context with token limit protection."""
+        """Generate response using RAG context with token limit protection.
+        
+        Fallback to summary-only mode if RAG is unavailable.
+        """
         logger.info("Generation node executing")
 
+        # Check if RAG is unavailable (timeout or error)
+        rag_unavailable = state.get("rag_unavailable", False)
+        
+        if rag_unavailable:
+            logger.warning("⚠️ RAG unavailable - using summary-only mode")
+            return await self._generate_summary_only_response(state)
+        
         # Build context from citations with content
         context_parts = []
         is_it_domain = state.get("domain") == DomainType.IT.value
@@ -352,11 +427,27 @@ User query: "{state['query']}"
 
 {domain_instructions}
 
+CRITICAL FAIL-SAFE INSTRUCTIONS:
+1. **Only use information from the retrieved documents above** - DO NOT invent facts, policies, or procedures
+2. **If information is contradictory, unclear, or missing:**
+   - DO NOT hallucinate or make assumptions
+   - Instead, respond with: "Sajnálom, nem tudok pontos választ adni a rendelkezésre álló információk alapján. Kérlek, pontosítsd a kérdést vagy fordulj a [domain] csapathoz közvetlenül."
+   - For Hungarian queries: "Sajnálom, az elérhető dokumentumok nem tartalmaznak elegendő információt ehhez a kérdéshez. Kérlek, vedd fel a kapcsolatot a [HR/IT/Finance/Legal/Marketing] csapattal további segítségért."
+3. **If no relevant documents were retrieved** (empty context):
+   - Respond with: "Sajnálom, nem találtam releváns információt ehhez a kérdéshez a rendelkezésre álló dokumentumokban. Kérlek, próbáld meg átfogalmazni a kérdést vagy vedd fel a kapcsolatot a megfelelő csapattal."
+4. **Never fabricate:** email addresses, phone numbers, section IDs, policy details, dates, or procedures not explicitly stated in the retrieved documents
+5. **If uncertain about any detail:** acknowledge the uncertainty and suggest contacting the relevant team
+
 Provide a comprehensive answer based on the retrieved documents above.
 Combine information from multiple sources when they relate to the same topic.
 If asking about guidelines or rules, include ALL relevant details found in the documents.
 Use proper formatting with line breaks and bullet points for better readability.
 Answer in Hungarian if the query is in Hungarian, otherwise in English.
+
+Respond with:
+1. answer (comprehensive response based ONLY on retrieved documents, minimum 10 characters)
+2. language (detected language code: hu/en/other)
+3. section_ids (list of section IDs referenced, e.g., ['IT-KB-267', 'IT-KB-320'])
 """
 
         # Check token limit before sending to OpenAI
@@ -379,13 +470,26 @@ Retrieved documents:
 
 User query: "{state['query']}"
 
+CRITICAL FAIL-SAFE INSTRUCTIONS:
+- Only use information from the retrieved documents - DO NOT hallucinate
+- If information is missing or unclear, respond with: "Sajnálom, nem tudok pontos választ adni a rendelkezésre álló információk alapján."
+- Never fabricate details not in the documents
+
 Provide an answer based on the retrieved documents above.
 Answer in Hungarian if the query is in Hungarian, otherwise in English.
+
+Respond with:
+1. answer (comprehensive response based ONLY on retrieved documents)
+2. language (detected language code)
+3. section_ids (list of section IDs if available)
 """
             logger.warning("Prompt truncated to fit token limit")
 
-        response = await self.llm.ainvoke([HumanMessage(content=prompt)])
-        answer = response.content
+        # Use structured output with Pydantic validation
+        structured_llm = self.llm.with_structured_output(RAGGenerationOutput)
+        rag_output = await structured_llm.ainvoke([HumanMessage(content=prompt)])
+        
+        answer = rag_output.answer
 
         # Ensure IT answers surface section references even if the model forgets
         if is_it_domain:
@@ -399,8 +503,11 @@ Answer in Hungarian if the query is in Hungarian, otherwise in English.
                 if section_id and section_id not in section_ids:
                     section_ids.append(section_id)
 
-            if section_ids and not any(sid in answer for sid in section_ids):
-                refs = ", ".join(f"[{sid}]" for sid in section_ids)
+            # Merge LLM-provided section_ids with extracted ones
+            all_section_ids = list(set(section_ids + rag_output.section_ids))
+            
+            if all_section_ids and not any(sid in answer for sid in all_section_ids):
+                refs = ", ".join(f"[{sid}]" for sid in all_section_ids)
                 answer = f"{answer}\n\nForrás: {refs} – IT Üzemeltetési és Felhasználói Szabályzat"
         
         # Save telemetry data
@@ -417,6 +524,98 @@ Answer in Hungarian if the query is in Hungarian, otherwise in English.
         state["messages"] = self._dedup_messages(state["messages"])  # SHA256-based message dedup
         logger.info("Generation completed")
 
+        return state
+
+    async def _generate_summary_only_response(self, state: AgentState) -> AgentState:
+        """Fallback response generation using only memory summary and conversation context.
+        
+        Used when RAG is unavailable due to timeout or connection errors.
+        No citations, only memory-based context.
+        """
+        logger.info("🔄 Generating summary-only response (RAG unavailable)")
+        
+        # Memory blocks
+        mem_summary = (state.get("memory_summary") or "").strip()
+        mem_facts = state.get("memory_facts") or []
+        facts_block = "\n".join(f"- {f}" for f in mem_facts[:5]) if mem_facts else ""
+        
+        memory_block = ""
+        if mem_summary or facts_block:
+            memory_block = f"""
+Previous conversation summary:
+{mem_summary}
+
+Known facts from conversation:
+{facts_block}
+"""
+        
+        # Build conversation history (last 5 messages for context)
+        conversation_history = ""
+        messages = state.get("messages", [])[-5:]
+        if messages:
+            conversation_history = "\n".join([
+                f"{msg.__class__.__name__.replace('Message', '')}: {getattr(msg, 'content', '')[:200]}"
+                for msg in messages
+            ])
+        
+        prompt = f"""
+You are a helpful assistant. The document retrieval system is temporarily unavailable.
+
+{memory_block}
+
+Recent conversation:
+{conversation_history}
+
+User query: "{state['query']}"
+
+IMPORTANT INSTRUCTIONS:
+1. Answer ONLY based on the conversation summary and known facts above
+2. DO NOT make up or hallucinate information
+3. Acknowledge the limitation: Start your response with "⚠️ Válasz korlátozott információk alapján (dokumentum retrieval átmenetileg nem elérhető):"
+4. If you cannot answer based on available context, be honest and suggest:
+   - Trying again later when the document system is available
+   - Contacting the relevant team directly (HR/IT/Finance/Legal/Marketing)
+5. Keep response concise and factual
+
+Answer in Hungarian if the query is in Hungarian, otherwise in English.
+
+Respond with:
+1. answer (your response starting with the warning message)
+2. language (detected language code: hu/en/other)
+3. section_ids (empty list - no citations available)
+"""
+        
+        try:
+            # Use structured output
+            structured_llm = self.llm.with_structured_output(RAGGenerationOutput)
+            rag_output = await structured_llm.ainvoke([HumanMessage(content=prompt)])
+            answer = rag_output.answer
+            
+        except Exception as e:
+            logger.error(f"Summary-only generation failed: {e}")
+            # Ultimate fallback
+            answer = (
+                "⚠️ Válasz korlátozott információk alapján (dokumentum retrieval átmenetileg nem elérhető):\n\n"
+                "Sajnálom, jelenleg nem tudok részletes választ adni, mert a dokumentum-keresési rendszer "
+                "átmenetileg nem elérhető. Kérlek, próbáld újra később, vagy fordulj közvetlenül "
+                "a megfelelő csapathoz (HR/IT/Finance/Legal/Marketing)."
+            )
+        
+        # Save telemetry
+        state["llm_prompt"] = prompt
+        state["llm_response"] = answer
+        
+        # Build output (no citations)
+        state["output"] = {
+            "domain": state["domain"],
+            "answer": answer,
+            "citations": [],  # Empty - RAG unavailable
+        }
+        
+        state["messages"].append(AIMessage(content=answer))
+        state["messages"] = self._dedup_messages(state["messages"])
+        
+        logger.info("✓ Summary-only response generated (RAG unavailable mode)")
         return state
 
     async def _guardrail_node(self, state: AgentState) -> AgentState:
@@ -570,70 +769,68 @@ Answer in Hungarian if the query is in Hungarian, otherwise in English.
         return state
 
     async def _feedback_metrics_node(self, state: AgentState) -> AgentState:
-        """Collect pipeline metrics for telemetry (non-blocking).
+        """Collect pipeline metrics for telemetry using Pydantic validation.
         
         Gathers performance data: latency, cache hits, token usage.
+        Uses TurnMetrics model for automatic validation and JSON encoding.
         If metrics collection fails, continues without blocking workflow.
         """
-        logger.info("📊 Feedback metrics node executing")
+        logger.info("Feedback metrics node executing")
         
         try:
-            metrics = {
-                "retrieval_score_top1": None,
-                "retrieval_count": 0,
-                "dedup_count": 0,
-                "llm_latency_ms": None,
-                "llm_tokens_used": None,
-                "llm_tokens_input": None,
-                "llm_tokens_output": None,
-                "cache_hit_embedding": False,
-                "cache_hit_query": False,
-                "validation_errors": state.get("validation_errors", []),
-                "retry_count": state.get("retry_count", 0),
-            }
-            
             # 1. Retrieval quality metrics
             citations = state.get("citations", [])
+            retrieval_score_top1 = None
+            retrieval_count = 0
             if citations:
-                # Top-1 score from first citation
                 if isinstance(citations[0], dict) and "score" in citations[0]:
-                    metrics["retrieval_score_top1"] = citations[0]["score"]
-                metrics["retrieval_count"] = len(citations)
+                    retrieval_score_top1 = citations[0]["score"]
+                retrieval_count = len(citations)
             
-            # 2. Token usage (extract from LLM response if available)
+            # 2. Token usage estimation
             llm_response = state.get("llm_response", "")
-            if llm_response:
-                # Rough token estimation: ~4 chars per token (GPT tokenizer)
-                metrics["llm_tokens_output"] = estimate_tokens(llm_response)
-            
             llm_prompt = state.get("llm_prompt", "")
-            if llm_prompt:
-                metrics["llm_tokens_input"] = estimate_tokens(llm_prompt)
-                if metrics.get("llm_tokens_input") and metrics.get("llm_tokens_output"):
-                    metrics["llm_tokens_used"] = metrics["llm_tokens_input"] + metrics["llm_tokens_output"]
+            llm_tokens_output = estimate_tokens(llm_response) if llm_response else None
+            llm_tokens_input = estimate_tokens(llm_prompt) if llm_prompt else None
+            llm_tokens_used = None
+            if llm_tokens_input is not None and llm_tokens_output is not None:
+                llm_tokens_used = llm_tokens_input + llm_tokens_output
             
             # 3. Latency calculation
             request_start = state.get("request_start_time")
+            total_latency_ms = None
             if request_start:
                 current_time = time.time()
-                metrics["total_latency_ms"] = (current_time - request_start) * 1000
+                total_latency_ms = (current_time - request_start) * 1000
             
-            # 4. Cache flags (placeholder - would be populated by retrieval/cache nodes)
-            # These would be set by _retrieval_node in production
-            # For now, we track that metrics collection was attempted
+            # 4. Create FeedbackMetrics with Pydantic validation
+            turn_metrics = FeedbackMetrics(
+                retrieval_score_top1=retrieval_score_top1,
+                retrieval_count=retrieval_count,
+                dedup_count=0,  # Would be populated by dedup logic
+                llm_latency_ms=total_latency_ms,
+                llm_tokens_used=llm_tokens_used,
+                llm_tokens_input=llm_tokens_input,
+                llm_tokens_output=llm_tokens_output,
+                cache_hit_embedding=False,  # Placeholder - would be populated by cache
+                cache_hit_query=False,
+                validation_errors=state.get("validation_errors", []),
+                retry_count=state.get("retry_count", 0),
+                total_latency_ms=total_latency_ms,
+            )
             
-            # Store metrics in state (as dict for JSON serialization)
-            state["feedback_metrics"] = metrics
+            # Store as dict for JSON serialization (Pydantic validators already ran)
+            state["feedback_metrics"] = turn_metrics.model_dump()
             
-            logger.info(f"✓ Metrics collected: {len(citations)} citations, "
-                       f"tokens={metrics.get('llm_tokens_used', 'N/A')}, "
-                       f"latency={metrics.get('total_latency_ms', 'N/A'):.1f}ms")
+            logger.info(f"Metrics collected: {retrieval_count} citations, "
+                       f"tokens={llm_tokens_used or 'N/A'}, "
+                       f"latency={total_latency_ms:.1f if total_latency_ms else 'N/A'}ms")
             
             return state
             
         except Exception as e:
             # Non-blocking: log error and continue
-            logger.warning(f"⚠️ Metrics collection error (non-blocking): {e}")
+            logger.warning(f"Metrics collection error (non-blocking): {e}")
             state["feedback_metrics"] = {
                 "error": str(e),
                 "validation_errors": state.get("validation_errors", []),
@@ -669,15 +866,37 @@ Answer in Hungarian if the query is in Hungarian, otherwise in English.
         state_after_guardrail = await self._guardrail_node(state_after_generation)
         final_state = await self._workflow_node(state_after_guardrail)
 
-        # Build response
+        # Determine processing status from state
+        validation_errors = final_state.get("validation_errors", [])
+        retry_count = final_state.get("retry_count", 0)
+        citations_count = len(final_state.get("citations", []))
+        
+        # Status determination logic
+        if retry_count >= 2 and validation_errors:
+            # Max retries reached with persistent errors
+            processing_status = ProcessingStatus.VALIDATION_FAILED
+        elif retry_count > 0 and not validation_errors:
+            # Guardrail retry occurred but eventually succeeded
+            processing_status = ProcessingStatus.PARTIAL_SUCCESS
+        elif citations_count == 0 and "retrieved_docs" in final_state:
+            # RAG attempted but no citations (possible RAG failure fallback)
+            processing_status = ProcessingStatus.RAG_UNAVAILABLE
+        else:
+            # Clean success
+            processing_status = ProcessingStatus.SUCCESS
+        
+        # Build response with state tracking
         response = QueryResponse(
             domain=final_state["domain"],
             answer=final_state["output"]["answer"],
             citations=[Citation(**c) for c in final_state["citations"]],
             workflow=final_state.get("workflow"),
+            processing_status=processing_status,
+            validation_errors=validation_errors,
+            retry_count=retry_count,
         )
 
-        logger.info("Agent regenerate completed (cached)")
+        logger.info(f"Agent run completed: status={processing_status.value}, retries={retry_count}")
         return response
 
     async def run(self, query: str, user_id: str, session_id: str) -> QueryResponse:

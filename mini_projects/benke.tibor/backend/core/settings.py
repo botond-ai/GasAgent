@@ -83,6 +83,11 @@ REST_FRAMEWORK = {
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 OPENAI_MODEL = os.getenv('OPENAI_MODEL', 'gpt-4o-mini')
 
+# Timeout and Retry Configuration
+OPENAI_TIMEOUT = int(os.getenv('OPENAI_TIMEOUT', 30))  # seconds
+OPENAI_MAX_RETRIES = int(os.getenv('OPENAI_MAX_RETRIES', 3))
+RAG_TIMEOUT = int(os.getenv('RAG_TIMEOUT', 10))  # seconds
+
 # Vector DB Configuration
 QDRANT_HOST = os.getenv('QDRANT_HOST', 'localhost')
 QDRANT_PORT = int(os.getenv('QDRANT_PORT', 6334))

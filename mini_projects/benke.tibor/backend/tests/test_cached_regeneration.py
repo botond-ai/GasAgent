@@ -6,6 +6,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from services.agent import QueryAgent
 from domain.models import QueryResponse, Citation
+from domain.llm_outputs import IntentOutput, RAGGenerationOutput, MemoryUpdate, TurnMetrics
 from api.views import RegenerateAPIView
 from rest_framework.test import APIRequestFactory
 
@@ -15,8 +16,46 @@ class TestAgentRegenerate:
 
     @pytest.fixture
     def mock_llm(self):
-        """Mock LLM client."""
+        """Mock LLM client with structured output support."""
         llm = MagicMock()
+        
+        # Create structured output mock
+        structured_llm = MagicMock()
+        
+        async def structured_ainvoke(messages):
+            """Handle structured output requests."""
+            content = str(messages) if not isinstance(messages, list) else str(messages[0].content if messages else "")
+            
+            # Intent detection
+            if "Classify this query" in content:
+                return IntentOutput(domain="marketing", confidence=0.90, reasoning="Test")
+            
+            # Memory update
+            if "REDUCER PATTERN" in content:
+                return MemoryUpdate(summary="Test summary", facts=["Fact 1"], decisions=[])
+            
+            # Turn metrics
+            if "llm_latency" in content.lower():
+                return TurnMetrics(
+                    retrieval_score_top1=0.85,
+                    retrieval_score_avg=0.75,
+                    citations_count=2,
+                    llm_latency_ms=1200,
+                    cache_hit=False
+                )
+            
+            # Generation (default)
+            return RAGGenerationOutput(
+                answer="Regenerated answer with citation [doc1]",
+                section_ids=["doc1"],
+                confidence=0.88,
+                language="hu"
+            )
+        
+        structured_llm.ainvoke = AsyncMock(side_effect=structured_ainvoke)
+        llm.with_structured_output = MagicMock(return_value=structured_llm)
+        
+        # Legacy ainvoke for backward compatibility
         llm.ainvoke = AsyncMock(return_value=MagicMock(content="Regenerated answer"))
         return llm
 
@@ -84,11 +123,12 @@ class TestAgentRegenerate:
             user_id="test_user"
         )
 
-        # LLM should be invoked for generation
-        mock_llm.ainvoke.assert_called_once()
+        # LLM structured output should be invoked for generation
+        structured_llm = mock_llm.with_structured_output.return_value
+        structured_llm.ainvoke.assert_called()
         
-        # Response should contain answer
-        assert response.answer == "Regenerated answer"
+        # Response should contain answer (from RAGGenerationOutput)
+        assert "citation" in response.answer.lower() or "doc1" in response.answer.lower()
 
     @pytest.mark.asyncio
     async def test_regenerate_executes_workflow_node(self, agent, mock_llm):

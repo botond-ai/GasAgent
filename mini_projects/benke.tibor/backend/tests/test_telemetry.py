@@ -63,12 +63,18 @@ class TestTelemetryDataCollection:
         """Test LLM prompt and response are saved during generation."""
         from services.agent import QueryAgent
         from langchain_openai import ChatOpenAI
+        from domain.llm_outputs import RAGGenerationOutput
         
-        # Mock LLM
-        llm = AsyncMock(spec=ChatOpenAI)
-        mock_response = MagicMock()
-        mock_response.content = "This is the LLM response"
-        llm.ainvoke = AsyncMock(return_value=mock_response)
+        # Mock LLM with structured output support
+        llm = MagicMock(spec=ChatOpenAI)
+        structured_llm = MagicMock()
+        structured_llm.ainvoke = AsyncMock(return_value=RAGGenerationOutput(
+            answer="This is the LLM response with citation [doc1]",
+            section_ids=["doc1"],
+            confidence=0.90,
+            language="en"
+        ))
+        llm.with_structured_output = MagicMock(return_value=structured_llm)
         
         rag_client = MagicMock()
         agent = QueryAgent(llm, rag_client)
@@ -96,7 +102,7 @@ class TestTelemetryDataCollection:
         assert "llm_prompt" in result_state
         assert "llm_response" in result_state
         assert result_state["llm_prompt"] is not None
-        assert result_state["llm_response"] == "This is the LLM response"
+        assert result_state["llm_response"] == "This is the LLM response with citation [doc1]"
         assert "What is the brand guideline?" in result_state["llm_prompt"]
         assert "Brand Guide" in result_state["llm_prompt"]
 

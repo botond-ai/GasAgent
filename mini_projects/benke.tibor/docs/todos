@@ -48,17 +48,64 @@
 - [ ] **Feedback analytics dashboard**: Admin UI feedback trends-hez
 
 Újabbak, kategóriázandók:
-- chat summarizing tömörítés szemantika vagy fizikai foglalás miatt trimmel (hosszabb chatek összefoglalója) - overwrite vagy összefűzés (reducderk)
 - profil adatok mentése
-- gyakori bemeneti kérések válaszainak cachelése ne kelljen RAG-elni (adott már?)
-- idempotencia
-- degradáció: ha a RAG nem érhető el, csak summary-only üzemmódban történjen a válasz
-- pydantic model micsoda (típusosság, validáció, pontosság), ToolNode LangGraph képesség használatban van-e, mire jó - Pydantic használat md alapján
-- http kódok (200, 201, 202, 203 204) - Langgraph állapot alapján, pl. LLM válaszolt, workflow továbment stb. - fail safe response működés kialakítása a prompt-ban (ha eltéved az llm/langgraph)
 - LangGraph vagy LLM ismerje fel, milyen domainre érkezett kérdés és a háttérben a megfelelő RAG-et végezze el a megfelelő dokumentumon (fontos, hogy domainenként meg legyenek jelölve a dokumentumok és ha megvan a domain, csak abban keressen tovább)
 
-- timeout kezelés + fallback + retry: ha nem ér el egy API-t, x-szer próbálkozzon, y másodperc után jelezzen a usernek, hogy nem éri el a szolgáltatást, mi legyen...Az x és y ne legyen beégetve, legyen környezeti paraméter
-- összetett ágens tervezési elvek: reasoning layer, operational layer, tool exceutoron layer. Executre: plan node, triage, executor loop, observation, router tool (state-k kezelése), action/update, next step, final answer. Át kell nézni a kódban ezeket az elveket mennyire alkalmazzuk (LangGraph) ami az összetett ágensfejlesztésnek az alapjai. 
+
+- összetett ágens tervezési elvek: reasoning layer, operational layer, tool exceutoron layer. Executre: plan node, triage, executor loop, observation, router tool (state-k, reducerek kezelése), action/update, next step, final answer. Át kell nézni a kódban ezeket az elveket mennyire alkalmazzuk (LangGraph) ami az összetett ágensfejlesztésnek az alapjai. 
 - Routing döntési mintákból melyik lenne alkalmas a projektünkre? input-based routing, state-based routing, tool-availability routing, confidence-based routing
 - LangGraph ismétlődő feladatokon milyen technikát érdemes alkalmazni? pl. paginated API, itemlist stb. Kontrollált rekurzóra gondolok
 - első prompt alapján döntse el automatikusan a rendszer, melyik domain kérdését kell feldolgozni, ezután RAG-eljen a megfelelő domainű dokumentációra és menjen tovább a folyamat
+- milyen performancia optimalizálási javaslataid vannak?
+https://github.com/adrgul/ai_agent_tutorial/blob/main/docs/DELTA_PROMPT.md
+
+- hf (4) multi-tool agent fejlesztés: 
+    - hibakezelés
+        retry node (időszakos api hibák kezelése)
+        fallback model (olcsó-drága model)
+        fail-safe response (auditált, biztonságos hibaüzenet)
+        planner fallback (újratervezés sikertelen tool esetén)
+        guardian node (szabályellenőrzés AI Act compliance)
+    - layerek
+        reasoning layer (LLM gondolkodás): prompting, chain-of-thougt, triage, routing
+        operationel layer: workflow - node-ok, edgek, stat
+        tool execution layer: külső API-k: adatlekérés, írás, számítás
+        memory/RAG/context handling:
+            stateful működés
+            retrival-before-tools
+    Info: https://github.com/adrgul/ai_agent_tutorial/blob/main/docs/AI_AGENT_4_RETEG_ARCHITEKTURA.md
+- rossz válasz jelölő (később ezt prometheus/grafanában gyűjteni)
+- docker konténerek szeparációja (frontend, backend, prometheus, grafana), apik kimérése
+Prometheus/Grafana metrikák:
+    llm hívások ideje, száma 
+    aktív agentek (gauge)
+    api gateway-ek
+    erőforráspazarló működés (pl. hibás, vagy pazarló loopok)
+    latencys (p50,p95,p98)
+        modellenként
+        komponensenként kimérve (pl. qdrant)
+    token usage (llm, vektor)
+    inference counts (hányszor hívtuk az llm-et)
+    RAG metrikák (vector db load, top-k relevance score, embedding generation count, RAG failures)
+    workflow metrikák:
+        döntési pályák (route-ok, agent decision pipeline vizalizáció)
+        jellemző döntési pályák (leggyakrabban használt route-ok)
+        tool hívási hibák
+        újrahívások
+        node szintű futási idők (meddig futottak típusonként retriever, parser, router)
+    cache-elésre vonatkozó metrikák
+    error rates
+    fallback model path követés
+    costs: cost per model, per user, per agent workflow, daily, monthly burn rate, cost anomaly (napi határ átlépése alert), végtelen ciklus gyanús esetek kiszűrése (infinite loop risk)
+    dashboardok (Node, RAG, LLM, Cost) - by environments
+    Alertmanager: Timeout hiba, napi átlag átlépés
+
+Loki: logs
+OpenTelemetry: traces (node, model call, execution trace)
+
+Infók:
+https://github.com/adrgul/ai_agent_tutorial/blob/main/docs/09_ARCHITECTURE_DIAGRAM.drawio
+https://github.com/adrgul/ai_agent_tutorial/blob/main/docs/09_DOCKER_ARCHITECTURE.drawio
+https://github.com/adrgul/ai_agent_tutorial/blob/main/docs/09_MONITORING_PROMPT.md
+https://github.com/adrgul/ai_agent_tutorial/blob/main/docs/09_MONITORING_TEST_PROMPTS.md
+https://github.com/adrgul/ai_agent_tutorial/blob/main/docs/09_PROMETHEUS_GRAFANA_UTMUTATO.md
