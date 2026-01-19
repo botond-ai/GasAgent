@@ -6,7 +6,7 @@ Multi-domain AI agent rendszer Python Django backenddel, LangGraph orchestráci�
 
 KnowledgeRouter egy vállalati belső tudásbázis rendszer, amely:
 
-✅ **LangGraph StateGraph orchestration** - 10 node-os workflow (intent → plan → select_tools → conditional → retrieval/tool_executor → generation → guardrail → feedback_metrics → workflow → memory_update)  
+✅ **LangGraph StateGraph orchestration** - 11 node-os workflow (intent → plan → select_tools → conditional → retrieval/tool_executor → observation → generation → guardrail → feedback_metrics → workflow → memory_update) **+ Replan Loop** ↺  
 ✅ **6 domain-re** szétválasztott tudásbázisokból keres (HR, IT, Finance, Legal, Marketing, General)  
 ✅ **Multi-domain Qdrant collection** domain-specifikus szűréssel (egyetlen collection, gyors filtering)  
 ✅ **Hibrid keresés support** szemantikus (dense vectors) + domain filtering (lexikális BM25 ready)  
@@ -33,6 +33,8 @@ KnowledgeRouter egy vállalati belső tudásbázis rendszer, amely:
 🆕 **Memory Reducer Pattern (v2.7)** - Cumulative memory summarization with semantic fact compression (previous + new → merged summary, max 8 relevant facts)
 🆕 **Request Idempotency (v2.7)** - X-Request-ID header support with Redis cache (5 min TTL) - duplicate requests return cached response instantly
 🆕 **Optional MCP Server (v0.1 alpha)** - Model Context Protocol wrapper exposing Jira/Qdrant/Postgres tools (stdio); run via `pip install -r backend/mcp_server/requirements.txt && python -m backend.mcp_server`
+🆕 **Tool Executor Loop (v2.8)** - Iterative tool execution with asyncio timeout (10s/tool), ToolResult validation, non-blocking error handling
+🆕 **Observation Node + Replan Loop (v2.8)** - LLM-based evaluation: sufficient info? → generate OR replan (max 2x), gap detection, automatic replanning
 
 ## 📋 Tech Stack
 
@@ -44,12 +46,16 @@ KnowledgeRouter egy vállalati belső tudásbázis rendszer, amely:
 - **Database**: PostgreSQL 15 (feedback & analytics)
 - **Frontend**: Tailwind CSS + Vanilla JavaScript (ChatGPT-style UI)
 - **Deployment**: Docker Compose
-- **Testing**: pytest (180 tests, 53% coverage)
+- **Testing**: pytest (180+ tests, 53% coverage)
   - **RAG Optimization**: 27 tests (deduplication, IT overlap boost, integration)
   - **Feedback Ranking**: 15 tests (boost calculation, batch ops)
   - **Error Handling**: 39 tests (retry, token limits)
+  - **Tool Executor Loop**: 6 tests (timeout, error, multi-tool)
+  - **Observation + Replan**: 6 tests (LLM evaluation, replan routing, max limit)
+  - **Integration E2E**: 7 tests (complete workflow, replan loop)
   - **Coverage Highlights**:
     - `openai_clients.py`: **100%** ✅
+    - `tool_registry.py`: **100%** ✅
     - `qdrant_rag_client.py`: **70%** (up from 18%)
     - `atlassian_client.py`: **87%**
 

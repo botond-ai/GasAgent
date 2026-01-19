@@ -3,13 +3,12 @@ Integration tests for complete Tool Executor → Observation → Replan loop.
 Tests end-to-end workflow with real LangGraph execution.
 """
 import pytest
-from unittest.mock import AsyncMock, MagicMock
 
 from services.agent import QueryAgent, AgentState
 from infrastructure.tool_registry import ToolRegistry
 from domain.llm_outputs import (
     ExecutionPlan, ToolStep, ToolSelection, ToolCall,
-    ToolResult, ObservationOutput
+    ObservationOutput
 )
 from langchain_core.messages import HumanMessage
 
