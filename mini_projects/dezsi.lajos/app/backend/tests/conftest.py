@@ -5,10 +5,18 @@ from domain.models import Analysis, TriageDecision, AnswerDraft
 
 @pytest.fixture
 def mock_llm():
-    llm = MagicMock(spec=ILLMClient)
-    llm.generate = AsyncMock()
-    llm.generate_structured = AsyncMock()
-    return llm
+    llm_client = MagicMock(spec=ILLMClient)
+    llm_client.generate = AsyncMock()
+    llm_client.generate_structured = AsyncMock()
+    llm_client.bind_tools = MagicMock()
+    
+    # Mock the underlying llm attribute which is accessed in the agent
+    mock_underlying_llm = AsyncMock()
+    mock_underlying_llm.ainvoke = AsyncMock()
+    
+    llm_client.llm = mock_underlying_llm
+    
+    return llm_client
 
 @pytest.fixture
 def mock_vector_db():

@@ -67,19 +67,28 @@ class GeminiClient(ILLMClient):
         else:
             print(f"DEBUG: Using default model: {model_name}")
 
-        self.llm = ChatGoogleGenerativeAI(model=model_name, temperature=temperature, google_api_key=api_key)
+        self._base_llm = ChatGoogleGenerativeAI(model=model_name, temperature=temperature, google_api_key=api_key)
+        self.llm = self._base_llm
 
     async def generate(self, prompt: str) -> str:
-        response = await self.llm.ainvoke(prompt)
+        # Always use base LLM for standard generation to avoid bound tools interference
+        response = await self._base_llm.ainvoke(prompt)
         return response.content
 
     async def generate_structured(self, prompt: str, response_model: Type[Any]) -> Any:
         try:
-            structured_llm = self.llm.with_structured_output(response_model)
+            # Always use base LLM for structured output
+            structured_llm = self._base_llm.with_structured_output(response_model)
             return await structured_llm.ainvoke(prompt)
         except Exception as e:
             print(f"ERROR in Gemini generate_structured: {e}")
             raise e
+
+    def bind_tools(self, tools: List[Any]):
+        """Binds tools to the underlying LLM."""
+        # Updates the exposed self.llm with bound tools
+        # We start from _base_llm to ensure clean binding each time
+        self.llm = self._base_llm.bind_tools(tools)
 
 class QdrantVectorDB(IVectorDBClient):
     def __init__(self, path: str = "./qdrant_db", collection_name: str = "medical_kb"):
