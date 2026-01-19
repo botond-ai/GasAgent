@@ -241,3 +241,36 @@ class ToolSelection(BaseModel):
         
         return self
 
+
+class ToolResult(BaseModel):
+    """Single tool execution result."""
+    tool_name: str = Field(..., description="Name of the executed tool")
+    status: Literal["success", "error", "timeout"] = Field(..., description="Execution outcome")
+    result: Optional[Any] = Field(default=None, description="Tool output data (if successful)")
+    error: Optional[str] = Field(default=None, description="Error message (if failed)")
+    latency_ms: float = Field(ge=0, description="Execution time in milliseconds")
+    retry_count: int = Field(default=0, ge=0, description="Number of retries attempted")
+    
+    @field_validator('status')
+    @classmethod
+    def validate_status_consistency(cls, v, info):
+        """Ensure status matches error/result fields."""
+        values = info.data
+        if v == "success" and not values.get("result"):
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Tool {values.get('tool_name')} marked success but no result provided")
+        if v in ["error", "timeout"] and not values.get("error"):
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Tool {values.get('tool_name')} marked {v} but no error message")
+        return v
+
+
+class ObservationOutput(BaseModel):
+    """Observation node structured output (minimal v1)."""
+    sufficient: bool = Field(default=True, description="Whether enough info is available to generate")
+    reason: str = Field(min_length=10, max_length=300, description="Short justification")
+    tool_results_count: int = Field(ge=0, description="Number of executed tool results")
+    retrieval_count: int = Field(ge=0, description="Number of retrieved docs (if any)")
+

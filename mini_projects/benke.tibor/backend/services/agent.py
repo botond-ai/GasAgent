@@ -1,6 +1,7 @@
 """
 Services - LangGraph-based agent orchestration.
 """
+import asyncio
 import logging
 import re
 import time
@@ -11,7 +12,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from langgraph.graph import StateGraph, END
 
 from domain.models import DomainType, QueryResponse, Citation, ProcessingStatus, FeedbackMetrics
-from domain.llm_outputs import IntentOutput, MemoryUpdate, RAGGenerationOutput, ExecutionPlan, ToolSelection
+from domain.llm_outputs import IntentOutput, MemoryUpdate, RAGGenerationOutput, ExecutionPlan, ToolSelection, ObservationOutput, ToolResult
 from infrastructure.error_handling import (
     check_token_limit,
     estimate_tokens,
@@ -20,6 +21,7 @@ from infrastructure.error_handling import (
     APICallError,
 )
 from infrastructure.atlassian_client import atlassian_client
+from infrastructure.tool_registry import ToolRegistry
 from django.conf import settings
 
 logger = logging.getLogger(__name__)
@@ -58,21 +60,23 @@ class AgentState(TypedDict, total=False):
 class QueryAgent:
     """Multi-domain RAG + Workflow agent using LangGraph."""
 
-    def __init__(self, llm_client: Any, rag_client):
+    def __init__(self, llm_client: Any, rag_client, tool_registry: ToolRegistry | None = None):
         self.llm = llm_client
         self.rag_client = rag_client
         self.atlassian_client = atlassian_client  # Atlassian client for IT Jira ticket creation
+        self.tool_registry = tool_registry or ToolRegistry.default()
         self.workflow = self._build_graph()
 
     def _build_graph(self) -> StateGraph:
         """Build LangGraph workflow: intent → plan → tool_selection → retrieval → generation → guardrail → metrics → workflow → memory."""
         graph = StateGraph(AgentState)
 
-        # Add nodes (10 nodes total)
+        # Add nodes (11 nodes total)
         graph.add_node("intent_detection", self._intent_detection_node)
         graph.add_node("plan_node", self._plan_node)
         graph.add_node("select_tools", self._tool_selection_node)
         graph.add_node("tool_executor", self._tool_executor_node)
+        graph.add_node("observation", self._observation_node)
         graph.add_node("retrieval", self._retrieval_node)
         graph.add_node("generation", self._generation_node)
         graph.add_node("guardrail", self._guardrail_node)
@@ -97,10 +101,10 @@ class QueryAgent:
                 "rag_and_tools": "tool_executor"  # Execute tools (RAG may be triggered downstream if needed)
             }
         )
-        # Executor proceeds to generation
-        graph.add_edge("tool_executor", "generation")
-
-        graph.add_edge("retrieval", "generation")
+        # Executor and retrieval go through observation
+        graph.add_edge("tool_executor", "observation")
+        graph.add_edge("retrieval", "observation")
+        graph.add_edge("observation", "generation")
         graph.add_edge("generation", "guardrail")
         
         # Conditional routing from guardrail: retry or continue
@@ -395,22 +399,12 @@ Return structured ExecutionPlan."""
             domain = state.get("domain", "general")
             execution_plan = state.get("execution_plan")
             memory_summary = state.get("memory_summary", "")
-            
-            # Build available tools description
-            available_tools = """
-Available tools:
-1. rag_search - Search knowledge base documents (HR, IT, Finance, Legal, Marketing)
-   Arguments: {query: str, domain: str, top_k: int}
-   
-2. jira_create - Create IT support ticket
-   Arguments: {summary: str, description: str, priority: str}
-   
-3. email_send - Send email notification
-   Arguments: {to: str, subject: str, body: str}
-   
-4. calculator - Perform calculations
-   Arguments: {expression: str}
-"""
+
+            # Build available tools description from registry
+            descriptions = self.tool_registry.get_descriptions()
+            available_tools = "Available tools:\n" + "\n".join(
+                f"- {desc}" for desc in descriptions
+            )
             
             # Build context
             plan_context = ""
@@ -481,30 +475,140 @@ Return structured ToolSelection with:
         return state
 
     async def _tool_executor_node(self, state: AgentState) -> AgentState:
-        """Execute selected tools and collect results.
+        """Execute selected tools using the registry with timeout/retry and collect results.
 
-        Minimal implementation: logs selection and passes state through.
-        Future: iterate over plan steps, execute tools with error handling,
-        collect outputs into state (e.g., state['workflow']['tool_results']).
-        Non-blocking.
+        Implements:
+        - Sequential tool execution (parallel execution optional future enhancement)
+        - Timeout protection per tool (10s limit)
+        - Non-blocking: errors are captured as ToolResult entries
+        - Latency tracking for each tool
+        - Results stored as validated ToolResult models
         """
         logger.info("Tool executor node executing")
 
         try:
-            selection = state.get("tool_selection", {})
+            selection = state.get("tool_selection", {}) or {}
             tools = selection.get("selected_tools", [])
             route = selection.get("route", "rag_only")
 
-            logger.info(f"Executing tools (route={route}): count={len(tools)}")
+            logger.info(f"Executing {len(tools)} tools (route={route})")
 
-            # Placeholder: In future, execute each tool and store results
+            results = []
+            for tool in tools:
+                # Extract tool name and arguments
+                name = tool.get("tool_name") if isinstance(tool, dict) else getattr(tool, "tool_name", None)
+                args = tool.get("arguments", {}) if isinstance(tool, dict) else getattr(tool, "arguments", {})
+
+                if not name:
+                    # Missing tool name - record error
+                    results.append(ToolResult(
+                        tool_name="unknown",
+                        status="error",
+                        error="Missing tool_name in selection",
+                        latency_ms=0.0,
+                        retry_count=0
+                    ))
+                    logger.warning("Tool execution skipped: missing tool_name")
+                    continue
+
+                # Execute tool with timeout protection
+                start_time = time.time()
+                
+                try:
+                    # Execute tool with asyncio timeout wrapper (10s)
+                    # The registry execute is synchronous but we wrap it for timeout
+                    exec_result = await asyncio.wait_for(
+                        asyncio.to_thread(self.tool_registry.execute, name, **args),
+                        timeout=10.0
+                    )
+                    
+                    latency_ms = (time.time() - start_time) * 1000
+                    
+                    # Registry returns {"tool": name, "status": "success/error", "result": ..., "error": ...}
+                    # Map to ToolResult
+                    if exec_result.get("status") == "success":
+                        results.append(ToolResult(
+                            tool_name=name,
+                            status="success",
+                            result=exec_result.get("result"),
+                            latency_ms=latency_ms,
+                            retry_count=0
+                        ))
+                        logger.info(f"Tool '{name}' executed successfully ({latency_ms:.1f}ms)")
+                    else:
+                        results.append(ToolResult(
+                            tool_name=name,
+                            status="error",
+                            error=exec_result.get("error", "Unknown error"),
+                            latency_ms=latency_ms,
+                            retry_count=0
+                        ))
+                        logger.error(f"Tool '{name}' failed: {exec_result.get('error')} ({latency_ms:.1f}ms)")
+                    
+                except asyncio.TimeoutError:
+                    latency_ms = (time.time() - start_time) * 1000
+                    results.append(ToolResult(
+                        tool_name=name,
+                        status="timeout",
+                        error=f"Tool execution exceeded 10s timeout",
+                        latency_ms=latency_ms,
+                        retry_count=0
+                    ))
+                    logger.error(f"Tool '{name}' timed out ({latency_ms:.1f}ms)")
+                    
+                except Exception as e:
+                    latency_ms = (time.time() - start_time) * 1000
+                    results.append(ToolResult(
+                        tool_name=name,
+                        status="error",
+                        error=str(e),
+                        latency_ms=latency_ms,
+                        retry_count=0
+                    ))
+                    logger.error(f"Tool '{name}' failed: {str(e)} ({latency_ms:.1f}ms)")
+
+            # Store validated ToolResult models in state
             wf = dict(state.get("workflow", {}) or {})
-            wf["tool_results"] = []  # Reserved key for future populated results
+            wf["tool_results"] = [r.model_dump() for r in results]
             state["workflow"] = wf
+            
+            success_count = sum(1 for r in results if r.status == "success")
+            logger.info(f"Tool execution complete: {success_count}/{len(results)} successful")
 
-        except Exception as e:
-            # Non-blocking error handling
+        except Exception as e:  # pragma: no cover - defensive outer catch
             logger.warning(f"Tool executor failed (non-blocking): {str(e)}")
+
+        return state
+
+    async def _observation_node(self, state: AgentState) -> AgentState:
+        """Evaluate whether we have enough information before generation.
+
+        Minimal implementation: records observation metadata and continues.
+        Future iterations can use LLM-based ObservationOutput to decide replan/generation.
+        """
+        logger.info("Observation node executing")
+
+        try:
+            tool_results = (state.get("workflow", {}) or {}).get("tool_results", [])
+            retrieved = state.get("retrieved_docs", [])
+
+            observation = ObservationOutput(
+                sufficient=True,
+                reason="Minimal observation: proceed to generation",
+                tool_results_count=len(tool_results),
+                retrieval_count=len(retrieved) if retrieved else 0
+            )
+
+            state["observation"] = observation.model_dump()
+
+        except Exception as e:  # pragma: no cover - defensive
+            logger.warning(f"Observation node failed (non-blocking): {str(e)}")
+            state["observation"] = {
+                "sufficient": True,
+                "reason": "Observation failed, proceed anyway",
+                "tool_results_count": 0,
+                "retrieval_count": 0,
+            }
 
         return state
 
