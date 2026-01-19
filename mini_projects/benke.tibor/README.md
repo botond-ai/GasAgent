@@ -6,7 +6,7 @@ Multi-domain AI agent rendszer Python Django backenddel, LangGraph orchestráci�
 
 KnowledgeRouter egy vállalati belső tudásbázis rendszer, amely:
 
-✅ **LangGraph StateGraph orchestration** - 6 node-os workflow (intent → retrieval → generation → guardrail → feedback_metrics → workflow)  
+✅ **LangGraph StateGraph orchestration** - 10 node-os workflow (intent → plan → select_tools → conditional → retrieval/tool_executor → generation → guardrail → feedback_metrics → workflow → memory_update)  
 ✅ **6 domain-re** szétválasztott tudásbázisokból keres (HR, IT, Finance, Legal, Marketing, General)  
 ✅ **Multi-domain Qdrant collection** domain-specifikus szűréssel (egyetlen collection, gyors filtering)  
 ✅ **Hibrid keresés support** szemantikus (dense vectors) + domain filtering (lexikális BM25 ready)  
@@ -205,7 +205,7 @@ benketibor/
 │   │   ├── schema.sql              # PostgreSQL schema (feedback table)
 │   │   └── __init__.py
 │   ├── services/                # Business logic
-│   │   ├── agent.py             # LangGraph agent (4-node workflow: intent → retrieval → generation → workflow)
+│   │   ├── agent.py             # LangGraph agent (StateGraph: intent → plan → select_tools → tool_executor/retrieval → generation → guardrail → feedback_metrics → workflow → memory_update)
 │   │   ├── chat_service.py      # Chat orchestration
 │   │   └── __init__.py
 │   ├── api/                     # API endpoints

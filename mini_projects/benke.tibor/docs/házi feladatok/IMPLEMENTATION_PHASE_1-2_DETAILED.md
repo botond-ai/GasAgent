@@ -100,11 +100,11 @@
 **Fájl:** `backend/services/agent.py`
 - [ ] Update graph edges:
   ```
-  plan_node → tool_selection
-  tool_selection → conditional_edges:
-    - "rag_only": RAG node
-    - "rag_and_tools": tool_executor_loop
-    - "tools_only": tool_executor_loop
+  plan_node → select_tools
+  select_tools → conditional_edges:
+    - "rag_only": retrieval
+    - "rag_and_tools": tool_executor
+    - "tools_only": tool_executor
   ```
 - [ ] Conditional edge function: `_tool_selection_decision()`
 - [ ] Route names: rag_only, rag_and_tools, tools_only
@@ -117,6 +117,8 @@
 - [ ] Test: Conditional routing works
 - [ ] Test: Confidence threshold enforcement
 - [ ] Mock LLM: 4 scenarios (rag, multi-tool, unavailable, error)
+
+Megjegyzés: A `tool_executor` jelenleg minimális implementációval rendelkezik (pass-through és naplózás), a teljes iteratív végrehajtás a következő sprintben (`tool_executor_loop`).
 
 **Checkpoint:** Tool Selection ready & tested ✅
 

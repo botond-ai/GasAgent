@@ -118,17 +118,20 @@
 
 #### LangGraph Orchestration (Production)
 - **StateGraph Workflow**: Complete agent workflow using LangGraph StateGraph
-- **7 Orchestrated Nodes** (v2.6):
+- **10 Orchestrated Nodes** (v2.7):
   - `intent_detection` - Domain classification (keyword + LLM fallback)
+  - `plan_node` - Execution plan generation (steps, estimates)
+  - `select_tools` - Tool selection and routing decision
+  - `tool_executor` - Execute selected tools (minimal in v2.7; full loop in next sprint)
   - `retrieval` - Qdrant RAG search with domain filtering (+ facts-based rewrite)
   - `generation` - Context-aware LLM response generation (+ memory summary & facts)
   - `guardrail` - Response validation (IT citations, contradiction detection)
   - `feedback_metrics` - Telemetry collection (latency, cache hits, token usage)
   - `execute_workflow` - HR/IT workflow automation
   - `memory_update` - Rolling window, summary, facts extraction
-- **State Management**: AgentState with messages, domain, citations, validation_errors, retry_count, metrics
-- **Linear Execution**: intent → retrieval → generation → guardrail → feedback_metrics → workflow → END
-- **Conditional Routing**: Guardrail can route back to generation for retries
+**State Management**: AgentState with messages, domain, citations, validation_errors, retry_count, metrics
+**Execution Flow**: intent → plan → select_tools → conditional → retrieval/tool_executor → generation → guardrail → feedback_metrics → workflow → memory_update → END
+**Conditional Routing**: `select_tools` routes `rag_only`→retrieval, `tools_only`/`rag_and_tools`→tool_executor; `guardrail` can route back to generation for retries
 - **Benefits**: Declarative workflow, easy debugging, state persistence, extensible graph structure
 
 #### Enhanced ABC Interfaces
