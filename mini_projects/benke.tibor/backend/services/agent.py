@@ -11,7 +11,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from langgraph.graph import StateGraph, END
 
 from domain.models import DomainType, QueryResponse, Citation, ProcessingStatus, FeedbackMetrics
-from domain.llm_outputs import IntentOutput, MemoryUpdate, RAGGenerationOutput, ExecutionPlan
+from domain.llm_outputs import IntentOutput, MemoryUpdate, RAGGenerationOutput, ExecutionPlan, ToolSelection
 from infrastructure.error_handling import (
     check_token_limit,
     estimate_tokens,
@@ -50,6 +50,7 @@ class AgentState(TypedDict, total=False):
     memory_facts: list
     # Planning
     execution_plan: Dict[str, Any]  # ExecutionPlan as dict for state serialization
+    tool_selection: Dict[str, Any]  # ToolSelection as dict for state serialization
     # Error handling
     rag_unavailable: bool  # True if RAG retrieval failed
 
@@ -64,12 +65,14 @@ class QueryAgent:
         self.workflow = self._build_graph()
 
     def _build_graph(self) -> StateGraph:
-        """Build LangGraph workflow: intent → plan → retrieval → generation → guardrail → feedback_metrics → workflow."""
+        """Build LangGraph workflow: intent → plan → tool_selection → retrieval → generation → guardrail → metrics → workflow → memory."""
         graph = StateGraph(AgentState)
 
-        # Add nodes (8 nodes total)
+        # Add nodes (10 nodes total)
         graph.add_node("intent_detection", self._intent_detection_node)
         graph.add_node("plan_node", self._plan_node)
+        graph.add_node("select_tools", self._tool_selection_node)
+        graph.add_node("tool_executor", self._tool_executor_node)
         graph.add_node("retrieval", self._retrieval_node)
         graph.add_node("generation", self._generation_node)
         graph.add_node("guardrail", self._guardrail_node)
@@ -82,7 +85,21 @@ class QueryAgent:
 
         # Add edges
         graph.add_edge("intent_detection", "plan_node")
-        graph.add_edge("plan_node", "retrieval")
+        graph.add_edge("plan_node", "select_tools")
+        
+        # Conditional routing from select_tools based on route
+        graph.add_conditional_edges(
+            "select_tools",
+            self._tool_selection_decision,
+            {
+                "rag_only": "retrieval",       # RAG search only
+                "tools_only": "tool_executor", # Execute tools
+                "rag_and_tools": "tool_executor"  # Execute tools (RAG may be triggered downstream if needed)
+            }
+        )
+        # Executor proceeds to generation
+        graph.add_edge("tool_executor", "generation")
+
         graph.add_edge("retrieval", "generation")
         graph.add_edge("generation", "guardrail")
         
@@ -102,6 +119,14 @@ class QueryAgent:
         graph.add_edge("memory_update", END)
 
         return graph.compile()
+
+    def _tool_selection_decision(self, state: AgentState) -> str:
+        """Determine routing based on selected tools."""
+        tool_selection = state.get("tool_selection", {})
+        route = tool_selection.get("route", "rag_only")
+        
+        logger.info(f"Tool selection decision: route={route}")
+        return route
 
     @staticmethod
     def _hash_message(msg: BaseMessage) -> str:
@@ -350,6 +375,137 @@ Return structured ExecutionPlan."""
             # Don't set execution_plan, allow workflow to continue without explicit plan
             state["execution_plan"] = None
         
+        return state
+
+    async def _tool_selection_node(self, state: AgentState) -> AgentState:
+        """Select which tools to use based on query and available tools.
+        
+        LLM decides:
+        - Which tools are needed (RAG, Jira, Email, Calculator)
+        - Tool arguments
+        - Confidence scores
+        - Routing decision (rag_only, tools_only, rag_and_tools)
+        
+        Non-blocking: If tool selection fails, defaults to rag_only route.
+        """
+        logger.info("Tool selection node executing")
+        
+        try:
+            query = state.get("query", "")
+            domain = state.get("domain", "general")
+            execution_plan = state.get("execution_plan")
+            memory_summary = state.get("memory_summary", "")
+            
+            # Build available tools description
+            available_tools = """
+Available tools:
+1. rag_search - Search knowledge base documents (HR, IT, Finance, Legal, Marketing)
+   Arguments: {query: str, domain: str, top_k: int}
+   
+2. jira_create - Create IT support ticket
+   Arguments: {summary: str, description: str, priority: str}
+   
+3. email_send - Send email notification
+   Arguments: {to: str, subject: str, body: str}
+   
+4. calculator - Perform calculations
+   Arguments: {expression: str}
+"""
+            
+            # Build context
+            plan_context = ""
+            if execution_plan:
+                plan_context = f"\n\nExecution plan suggests: {execution_plan.get('reasoning', '')}"
+            
+            memory_context = ""
+            if memory_summary:
+                memory_context = f"\n\nMemory context: {memory_summary}"
+            
+            # Build prompt for tool selection
+            prompt = f"""You are selecting tools to answer a user query.
+
+Query: {query}
+Domain: {domain}{plan_context}{memory_context}
+
+{available_tools}
+
+Think step-by-step:
+1. What information or actions do I need to answer this query?
+2. Which tools can provide that information or perform those actions?
+3. What arguments should I pass to each tool?
+4. How confident am I that each tool is the right choice?
+5. Should I use RAG only, tools only, or both?
+
+Selection criteria:
+- Use rag_search for knowledge base queries (policies, procedures, guidelines)
+- Use jira_create for IT support requests (VPN, software, hardware issues)
+- Use email_send for notification or communication needs
+- Use calculator for mathematical calculations
+- Combine tools when needed (e.g., RAG for context + Jira for ticket creation)
+
+Return structured ToolSelection with:
+- reasoning: Why these tools? (20-500 characters)
+- selected_tools: List of 1-3 tools with arguments and confidence
+- fallback_plan: What to do if tools unavailable (10-300 characters)
+- route: rag_only / tools_only / rag_and_tools
+"""
+            
+            # Use structured output with Pydantic validation
+            structured_llm = self.llm.with_structured_output(ToolSelection)
+            tool_selection = await structured_llm.ainvoke([HumanMessage(content=prompt)])
+            
+            # Convert ToolSelection to dict for state serialization
+            state["tool_selection"] = tool_selection.model_dump()
+            
+            logger.info(
+                f"Tool selection: {len(tool_selection.selected_tools)} tools, "
+                f"route: {tool_selection.route}, "
+                f"reasoning: {tool_selection.reasoning[:50]}..."
+            )
+            
+        except Exception as e:
+            # Non-blocking error handling: default to RAG-only route
+            logger.warning(f"Tool selection failed (non-blocking): {str(e)}, defaulting to rag_only")
+            state["tool_selection"] = {
+                "reasoning": "Tool selection failed, using default RAG-only route",
+                "selected_tools": [{
+                    "tool_name": "rag_search",
+                    "arguments": {"query": state.get("query", ""), "domain": state.get("domain", "general")},
+                    "confidence": 0.8,
+                    "reasoning": "Default fallback to RAG search"
+                }],
+                "fallback_plan": "Continue with RAG-only search",
+                "route": "rag_only"
+            }
+        
+        return state
+
+    async def _tool_executor_node(self, state: AgentState) -> AgentState:
+        """Execute selected tools and collect results.
+
+        Minimal implementation: logs selection and passes state through.
+        Future: iterate over plan steps, execute tools with error handling,
+        collect outputs into state (e.g., state['workflow']['tool_results']).
+        Non-blocking.
+        """
+        logger.info("Tool executor node executing")
+
+        try:
+            selection = state.get("tool_selection", {})
+            tools = selection.get("selected_tools", [])
+            route = selection.get("route", "rag_only")
+
+            logger.info(f"Executing tools (route={route}): count={len(tools)}")
+
+            # Placeholder: In future, execute each tool and store results
+            wf = dict(state.get("workflow", {}) or {})
+            wf["tool_results"] = []  # Reserved key for future populated results
+            state["workflow"] = wf
+
+        except Exception as e:
+            # Non-blocking error handling
+            logger.warning(f"Tool executor failed (non-blocking): {str(e)}")
+
         return state
 
     async def _retrieval_node(self, state: AgentState) -> AgentState:

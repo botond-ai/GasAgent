@@ -165,3 +165,79 @@ class ExecutionPlan(BaseModel):
                     raise ValueError(f"Step {step.step_id} depends on non-existent step {dep_id}")
         return self
 
+
+class ToolCall(BaseModel):
+    """Single tool call with arguments."""
+    tool_name: Literal["rag_search", "jira_create", "email_send", "calculator"] = Field(
+        description="Name of the tool to execute"
+    )
+    arguments: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Tool arguments as key-value pairs"
+    )
+    confidence: float = Field(
+        ge=0.0, le=1.0,
+        description="Confidence score for this tool selection (0-1)"
+    )
+    reasoning: str = Field(
+        min_length=10, max_length=200,
+        description="Why this tool was selected"
+    )
+    
+    @field_validator('confidence')
+    @classmethod
+    def validate_confidence_threshold(cls, v: float) -> float:
+        """Warn if confidence is below 0.5."""
+        if v < 0.5:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Low tool selection confidence: {v:.2f}, consider alternative tools")
+        return round(v, 2)
+
+
+class ToolSelection(BaseModel):
+    """LLM tool selection decision with multiple tools."""
+    reasoning: str = Field(
+        min_length=20, max_length=500,
+        description="Overall reasoning for tool selection strategy"
+    )
+    selected_tools: List[ToolCall] = Field(
+        min_items=1, max_items=3,
+        description="List of selected tools (max 3)"
+    )
+    fallback_plan: str = Field(
+        min_length=10, max_length=300,
+        description="What to do if selected tools are unavailable"
+    )
+    route: Literal["rag_only", "tools_only", "rag_and_tools"] = Field(
+        default="rag_only",
+        description="Routing decision based on selected tools"
+    )
+    
+    @model_validator(mode='after')
+    def validate_route_consistency(self) -> 'ToolSelection':
+        """Ensure route matches selected tools."""
+        tool_names = [tool.tool_name for tool in self.selected_tools]
+        has_rag = "rag_search" in tool_names
+        has_other_tools = any(t != "rag_search" for t in tool_names)
+        
+        # Infer correct route based on tools
+        if has_rag and has_other_tools:
+            expected_route = "rag_and_tools"
+        elif has_rag:
+            expected_route = "rag_only"
+        else:
+            expected_route = "tools_only"
+        
+        # Auto-correct route if inconsistent
+        if self.route != expected_route:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                f"Route mismatch: declared '{self.route}' but tools suggest '{expected_route}'. "
+                f"Auto-correcting to '{expected_route}'"
+            )
+            self.route = expected_route
+        
+        return self
+
