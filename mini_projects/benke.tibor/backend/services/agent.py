@@ -11,7 +11,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from langgraph.graph import StateGraph, END
 
 from domain.models import DomainType, QueryResponse, Citation, ProcessingStatus, FeedbackMetrics
-from domain.llm_outputs import IntentOutput, MemoryUpdate, RAGGenerationOutput
+from domain.llm_outputs import IntentOutput, MemoryUpdate, RAGGenerationOutput, ExecutionPlan
 from infrastructure.error_handling import (
     check_token_limit,
     estimate_tokens,
@@ -48,6 +48,8 @@ class AgentState(TypedDict, total=False):
     # Memory
     memory_summary: str
     memory_facts: list
+    # Planning
+    execution_plan: Dict[str, Any]  # ExecutionPlan as dict for state serialization
     # Error handling
     rag_unavailable: bool  # True if RAG retrieval failed
 
@@ -62,11 +64,12 @@ class QueryAgent:
         self.workflow = self._build_graph()
 
     def _build_graph(self) -> StateGraph:
-        """Build LangGraph workflow: intent → retrieval → generation → guardrail → feedback_metrics → workflow."""
+        """Build LangGraph workflow: intent → plan → retrieval → generation → guardrail → feedback_metrics → workflow."""
         graph = StateGraph(AgentState)
 
-        # Add nodes (7 nodes total)
+        # Add nodes (8 nodes total)
         graph.add_node("intent_detection", self._intent_detection_node)
+        graph.add_node("plan_node", self._plan_node)
         graph.add_node("retrieval", self._retrieval_node)
         graph.add_node("generation", self._generation_node)
         graph.add_node("guardrail", self._guardrail_node)
@@ -78,7 +81,8 @@ class QueryAgent:
         graph.set_entry_point("intent_detection")
 
         # Add edges
-        graph.add_edge("intent_detection", "retrieval")
+        graph.add_edge("intent_detection", "plan_node")
+        graph.add_edge("plan_node", "retrieval")
         graph.add_edge("retrieval", "generation")
         graph.add_edge("generation", "guardrail")
         
@@ -274,6 +278,78 @@ Respond in JSON format."""
         state["messages"] = self._dedup_messages([HumanMessage(content=state["query"])])
         logger.info(f"Detected domain: {domain} (confidence: {intent_output.confidence:.3f}, reasoning: {intent_output.reasoning[:50]}...)")
 
+        return state
+
+    async def _plan_node(self, state: AgentState) -> AgentState:
+        """Generate execution plan using LLM step-by-step reasoning.
+        
+        This node creates a structured plan with:
+        - Step-by-step reasoning (why this plan?)
+        - Tool selections (which tools to use, in what order)
+        - Dependencies and parallelization (can steps run in parallel?)
+        - Cost and time estimates (resource usage prediction)
+        
+        Non-blocking: If planning fails, execution continues without plan.
+        """
+        logger.info("Plan node executing")
+        
+        try:
+            query = state.get("query", "")
+            domain = state.get("domain", "general")
+            memory_summary = state.get("memory_summary", "")
+            
+            # Build context for planning
+            memory_context = ""
+            if memory_summary:
+                memory_context = f"\n\nMemory context: {memory_summary}"
+            
+            # Build prompt with CoT guidance for planning
+            prompt = f"""You are an AI assistant planning how to answer a user query.
+
+Query: {query}
+Domain: {domain}{memory_context}
+
+Available tools:
+1. rag_search - Search knowledge base for information
+2. jira_create - Create or retrieve IT tickets
+3. email_send - Send emails
+4. calculator - Perform calculations
+
+Think step-by-step:
+1. What information do I need to answer this query?
+2. Which tools should I use and in what order?
+3. Are there dependencies or parallelization opportunities?
+4. What's the estimated cost (0-1, where 0 is free and 1 is expensive)?
+5. What's the estimated execution time in milliseconds?
+
+Create an execution plan with:
+- Reasoning: Why this plan? (10-1000 characters)
+- Steps: List of steps to execute (1-5 steps max)
+  - For each step: step_id (1-10), tool_name, description, arguments dict, dependencies (other step IDs), required flag
+- Cost estimate: 0-1 scale
+- Time estimate: milliseconds (100-120000ms)
+
+Return structured ExecutionPlan."""
+            
+            # Use structured output with Pydantic validation
+            structured_llm = self.llm.with_structured_output(ExecutionPlan)
+            plan = await structured_llm.ainvoke([HumanMessage(content=prompt)])
+            
+            # Convert ExecutionPlan to dict for state serialization
+            state["execution_plan"] = plan.model_dump()
+            
+            logger.info(
+                f"Plan generated: {len(plan.steps)} steps, "
+                f"estimated {plan.estimated_time_ms}ms, cost {plan.estimated_cost:.2f}, "
+                f"reasoning: {plan.reasoning[:50]}..."
+            )
+            
+        except Exception as e:
+            # Non-blocking error handling: log and continue
+            logger.warning(f"Plan generation failed (non-blocking): {str(e)}")
+            # Don't set execution_plan, allow workflow to continue without explicit plan
+            state["execution_plan"] = None
+        
         return state
 
     async def _retrieval_node(self, state: AgentState) -> AgentState:

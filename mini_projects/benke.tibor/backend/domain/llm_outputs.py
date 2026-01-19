@@ -128,3 +128,40 @@ class TurnMetrics(BaseModel):
             datetime: lambda v: v.isoformat()
         }
 
+
+class ToolStep(BaseModel):
+    """Single tool execution step in plan."""
+    step_id: int = Field(ge=1, le=10, description="Step sequence number (1-10)")
+    tool_name: str = Field(min_length=1, max_length=50, description="Tool to execute (e.g., 'rag_search')")
+    description: str = Field(min_length=5, max_length=200, description="What this step does")
+    arguments: Dict[str, Any] = Field(default_factory=dict, description="Tool arguments (key-value)")
+    depends_on: List[int] = Field(default_factory=list, description="Step IDs this depends on (for parallel execution)")
+    required: bool = Field(default=True, description="Is this step required or optional?")
+
+
+class ExecutionPlan(BaseModel):
+    """LLM-generated step-by-step execution plan."""
+    reasoning: str = Field(min_length=10, max_length=1000, description="Why this plan was chosen")
+    steps: List[ToolStep] = Field(min_items=1, max_items=5, description="Ordered tool execution steps")
+    estimated_cost: float = Field(ge=0, le=1.0, description="Estimated cost 0-1 (relative)")
+    estimated_time_ms: int = Field(ge=100, le=120000, description="Estimated execution time (100ms-120s)")
+    
+    @field_validator('steps')
+    @classmethod
+    def validate_step_ids(cls, v: List[ToolStep]) -> List[ToolStep]:
+        """Ensure step IDs are sequential and unique."""
+        step_ids = [step.step_id for step in v]
+        if len(step_ids) != len(set(step_ids)):
+            raise ValueError("Duplicate step IDs found")
+        return v
+    
+    @model_validator(mode='after')
+    def validate_dependencies(self) -> 'ExecutionPlan':
+        """Ensure all dependencies reference existing steps."""
+        valid_step_ids = {step.step_id for step in self.steps}
+        for step in self.steps:
+            for dep_id in step.depends_on:
+                if dep_id not in valid_step_ids:
+                    raise ValueError(f"Step {step.step_id} depends on non-existent step {dep_id}")
+        return self
+
