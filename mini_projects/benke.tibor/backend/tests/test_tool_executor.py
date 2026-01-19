@@ -1,10 +1,7 @@
 import pytest
-import asyncio
-from unittest.mock import AsyncMock, patch
 
 from services.agent import QueryAgent
 from infrastructure.tool_registry import ToolRegistry
-from infrastructure.error_handling import TimeoutError, APICallError
 
 
 class DummyLLM:

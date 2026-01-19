@@ -158,7 +158,7 @@ class QueryAgent:
             return "replan"
         
         if next_action == "replan" and replan_count >= 2:
-            logger.warning(f"Max replan limit (2) reached. Forcing GENERATE despite insufficient info.")
+            logger.warning("Max replan limit (2) reached. Forcing GENERATE despite insufficient info.")
         
         logger.info(f"Observation decision: GENERATE (replan_count={replan_count})")
         return "generate"
@@ -585,7 +585,7 @@ Return structured ToolSelection with:
                     results.append(ToolResult(
                         tool_name=name,
                         status="timeout",
-                        error=f"Tool execution exceeded 10s timeout",
+                        error="Tool execution exceeded 10s timeout",
                         latency_ms=latency_ms,
                         retry_count=0
                     ))

@@ -8,7 +8,6 @@ from pydantic import ValidationError
 
 from domain.llm_outputs import ToolSelection, ToolCall
 from services.agent import QueryAgent, AgentState
-from langchain_core.messages import HumanMessage
 
 
 class TestToolSelectionModel:

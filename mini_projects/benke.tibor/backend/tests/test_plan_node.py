@@ -3,11 +3,10 @@ Unit tests for Plan Node functionality.
 Tests ExecutionPlan generation, validation, and error handling.
 """
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 from pydantic import ValidationError
 
 from domain.llm_outputs import ExecutionPlan, ToolStep
-from domain.models import DomainType
 from services.agent import QueryAgent, AgentState
 from langchain_core.messages import HumanMessage
 

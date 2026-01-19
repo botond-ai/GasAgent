@@ -2,10 +2,11 @@
 Centralized error handling and retry logic for external API calls.
 Handles OpenAI rate limits, timeouts, and server errors with exponential backoff.
 """
+import asyncio
 import logging
 import time
 import functools
-from typing import Callable, Any, TypeVar, Optional
+from typing import Callable, Any, TypeVar, Coroutine
 from openai import (
     APIError,
     APIConnectionError,
@@ -223,10 +224,6 @@ def retry_with_exponential_backoff(
         
         return wrapper
     return decorator
-
-
-import asyncio
-from typing import Coroutine
 
 
 class TimeoutError(Exception):
