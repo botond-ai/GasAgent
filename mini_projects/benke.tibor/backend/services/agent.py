@@ -104,7 +104,17 @@ class QueryAgent:
         # Executor and retrieval go through observation
         graph.add_edge("tool_executor", "observation")
         graph.add_edge("retrieval", "observation")
-        graph.add_edge("observation", "generation")
+        
+        # Conditional routing from observation: replan or generate
+        graph.add_conditional_edges(
+            "observation",
+            self._observation_decision,
+            {
+                "replan": "plan_node",     # Loop back to planning if insufficient info
+                "generate": "generation"   # Proceed to generation if sufficient
+            }
+        )
+        
         graph.add_edge("generation", "guardrail")
         
         # Conditional routing from guardrail: retry or continue
@@ -131,6 +141,27 @@ class QueryAgent:
         
         logger.info(f"Tool selection decision: route={route}")
         return route
+    
+    def _observation_decision(self, state: AgentState) -> str:
+        """Determine routing based on observation: replan or generate.
+        
+        Max 2 replans allowed. After that, force generation.
+        """
+        observation = state.get("observation", {})
+        replan_count = state.get("replan_count", 0)
+        next_action = observation.get("next_action", "generate")
+        
+        # Enforce max replan limit
+        if next_action == "replan" and replan_count < 2:
+            state["replan_count"] = replan_count + 1
+            logger.info(f"Observation decision: REPLAN (attempt {state['replan_count']}/2)")
+            return "replan"
+        
+        if next_action == "replan" and replan_count >= 2:
+            logger.warning(f"Max replan limit (2) reached. Forcing GENERATE despite insufficient info.")
+        
+        logger.info(f"Observation decision: GENERATE (replan_count={replan_count})")
+        return "generate"
 
     @staticmethod
     def _hash_message(msg: BaseMessage) -> str:
@@ -305,6 +336,10 @@ Respond in JSON format."""
 
         state["domain"] = domain
         state["messages"] = self._dedup_messages([HumanMessage(content=state["query"])])
+        
+        # Initialize replan counter
+        state["replan_count"] = 0
+        
         logger.info(f"Detected domain: {domain} (confidence: {intent_output.confidence:.3f}, reasoning: {intent_output.reasoning[:50]}...)")
 
         return state
@@ -583,31 +618,93 @@ Return structured ToolSelection with:
     async def _observation_node(self, state: AgentState) -> AgentState:
         """Evaluate whether we have enough information before generation.
 
-        Minimal implementation: records observation metadata and continues.
-        Future iterations can use LLM-based ObservationOutput to decide replan/generation.
+        LLM-based evaluation:
+        - Analyzes tool results and retrieval outputs
+        - Identifies information gaps
+        - Decides: generate answer OR replan (if insufficient)
+        - Max 2 replans allowed (replan_count tracking)
         """
         logger.info("Observation node executing")
 
         try:
             tool_results = (state.get("workflow", {}) or {}).get("tool_results", [])
             retrieved = state.get("retrieved_docs", [])
+            query = state.get("query", "")
+            execution_plan = state.get("execution_plan", {})
+            
+            # Build context for LLM evaluation
+            tool_results_summary = []
+            for i, result in enumerate(tool_results, 1):
+                status = result.get("status", "unknown")
+                tool_name = result.get("tool_name", "unknown")
+                if status == "success":
+                    result_data = result.get("result", {})
+                    tool_results_summary.append(f"{i}. {tool_name}: SUCCESS - {result_data}")
+                elif status == "error":
+                    error = result.get("error", "unknown error")
+                    tool_results_summary.append(f"{i}. {tool_name}: ERROR - {error}")
+                else:
+                    tool_results_summary.append(f"{i}. {tool_name}: {status.upper()}")
+            
+            retrieval_summary = f"{len(retrieved)} documents retrieved" if retrieved else "No documents retrieved"
+            
+            # LLM evaluation prompt
+            prompt = f"""Evaluate if we have enough information to answer the user's query.
 
-            observation = ObservationOutput(
-                sufficient=True,
-                reason="Minimal observation: proceed to generation",
-                tool_results_count=len(tool_results),
-                retrieval_count=len(retrieved) if retrieved else 0
-            )
+**Original Query:** {query}
 
+**Execution Plan:** {execution_plan.get('reasoning', 'N/A')}
+
+**Tool Results:**
+{chr(10).join(tool_results_summary) if tool_results_summary else 'No tools executed'}
+
+**Retrieval Results:**
+{retrieval_summary}
+
+**Your Task:**
+1. Do we have enough information to generate a complete answer?
+2. Are there any critical gaps or missing information?
+3. Should we proceed to generate the answer, or replan and gather more info?
+
+**Guidelines:**
+- If tool results are sufficient → sufficient=true, next_action=generate
+- If critical info is missing → sufficient=false, next_action=replan, list gaps
+- If tools failed but retrieval succeeded → may still be sufficient
+- If everything failed → insufficient, suggest replan
+
+Return:
+- sufficient: bool (do we have enough info?)
+- next_action: "generate" or "replan"
+- gaps: list of missing information (if any)
+- reasoning: explanation for your decision (10-500 chars)
+"""
+            
+            # Use structured output
+            structured_llm = self.llm.with_structured_output(ObservationOutput)
+            observation = await structured_llm.ainvoke([HumanMessage(content=prompt)])
+            
+            # Add counts to observation
+            observation.tool_results_count = len(tool_results)
+            observation.retrieval_count = len(retrieved) if retrieved else 0
+            
             state["observation"] = observation.model_dump()
+            
+            logger.info(
+                f"Observation: sufficient={observation.sufficient}, "
+                f"next_action={observation.next_action}, "
+                f"gaps={len(observation.gaps)}"
+            )
 
         except Exception as e:  # pragma: no cover - defensive
             logger.warning(f"Observation node failed (non-blocking): {str(e)}")
+            # Fallback: assume sufficient and proceed
             state["observation"] = {
                 "sufficient": True,
-                "reason": "Observation failed, proceed anyway",
-                "tool_results_count": 0,
-                "retrieval_count": 0,
+                "next_action": "generate",
+                "gaps": [],
+                "reasoning": f"Observation failed ({str(e)}), proceeding to generation",
+                "tool_results_count": len(tool_results) if tool_results else 0,
+                "retrieval_count": len(retrieved) if retrieved else 0,
             }
 
         return state

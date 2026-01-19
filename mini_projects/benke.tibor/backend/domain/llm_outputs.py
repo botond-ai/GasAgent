@@ -268,9 +268,50 @@ class ToolResult(BaseModel):
 
 
 class ObservationOutput(BaseModel):
-    """Observation node structured output (minimal v1)."""
-    sufficient: bool = Field(default=True, description="Whether enough info is available to generate")
-    reason: str = Field(min_length=10, max_length=300, description="Short justification")
-    tool_results_count: int = Field(ge=0, description="Number of executed tool results")
-    retrieval_count: int = Field(ge=0, description="Number of retrieved docs (if any)")
+    """Observation node structured output for evaluating sufficiency."""
+    sufficient: bool = Field(..., description="Do we have enough information to answer?")
+    next_action: Literal["generate", "replan"] = Field(
+        default="generate",
+        description="Should we generate answer or replan?"
+    )
+    gaps: List[str] = Field(
+        default_factory=list,
+        description="List of missing information or gaps (max 5)"
+    )
+    reasoning: str = Field(
+        min_length=10,
+        max_length=500,
+        description="Explanation for the decision"
+    )
+    tool_results_count: int = Field(default=0, ge=0, description="Number of executed tool results")
+    retrieval_count: int = Field(default=0, ge=0, description="Number of retrieved docs (if any)")
+    
+    @field_validator('gaps')
+    @classmethod
+    def limit_gaps(cls, v: List[str]) -> List[str]:
+        """Limit gaps to 5 items."""
+        return v[:5] if v else []
+    
+    @model_validator(mode='after')
+    def validate_action_consistency(self) -> 'ObservationOutput':
+        """Ensure next_action matches sufficient flag."""
+        if not self.sufficient and self.next_action == "generate" and self.gaps:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                f"Observation marked insufficient with gaps but next_action=generate. "
+                f"Auto-correcting to replan."
+            )
+            self.next_action = "replan"
+        
+        if self.sufficient and self.next_action == "replan":
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(
+                f"Observation marked sufficient but next_action=replan. "
+                f"Auto-correcting to generate."
+            )
+            self.next_action = "generate"
+        
+        return self
 
