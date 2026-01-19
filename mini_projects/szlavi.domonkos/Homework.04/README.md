@@ -1,24 +1,28 @@
-# Meeting Minutes Embedding CLI (Homework.02)
+# Meeting Minutes Embedding CLI (Homework.04)
 
-AI Meeting Assistant app 1.0 that creates OpenAI embeddings for company meeting minutes (or any text files), stores them in a local ChromaDB vector store, performs nearest-neighbor retrieval, and optionally generates LLM-augmented responses using a RAG (Retrieval-Augmented Generation) pattern. The project supports two modes of operation:
+AI Meeting Assistant app 2.0 that creates OpenAI embeddings for company meeting minutes (or any text files), stores them in a local ChromaDB vector store, performs nearest-neighbor retrieval, and optionally generates LLM-augmented responses using a RAG (Retrieval-Augmented Generation) pattern. The project supports two modes of operation:
 
 - Batch mode (default when a `data/` directory exists): reads `.md`/`.txt` files from `./data`, embeds and indexes them, and prints nearest neighbors (and optionally generated responses) for each file.
 - Interactive mode: when no `data/` folder is present, the app starts an interactive prompt where you can enter free-text queries which are embedded, stored, searched and optionally augmented with LLM responses.
 
-App integrates the Google Calendar API for sending meeting invites to appropriate participaants.
+**NEW in Homework.04:** Multi-step agent orchestration using **LangGraph** with intelligent tool routing, RAG-informed planning, and automated meeting summarization. The app integrates the Google Calendar API, IP Geolocation service, and Vector Database for comprehensive multi-tool workflows.
 
 Quick overview
 - Language: Python 3.11+
 - Vector DB: ChromaDB (duckdb+parquet persistence)
 - Embeddings: OpenAI Embeddings API (model configurable via `.env`)
 - CLI: interactive terminal loop and batch `data/` processing
+- **NEW:** LangGraph multi-step agent orchestration with tool routing
+- **NEW:** RAG-informed execution planning and meeting summarization
+- **NEW:** Integration with Google Calendar and IP Geolocation services
 
 Files
 - `app/config.py` — loads `.env` and exposes typed configuration
 - `app/embeddings.py` — `EmbeddingService` abstraction and `OpenAIEmbeddingService` implementation
 - `app/vector_store.py` — `VectorStore` abstraction and `ChromaVectorStore` implementation (semantic + hybrid search)
 - `app/rag_agent.py` — `RAGAgent` LLM response generation using retrieved documents
-- `app/cli.py` — `EmbeddingApp` orchestration, interactive CLI and `process_directory` for batch processing, integrated with RAG
+- `app/langgraph_workflow.py` — **NEW** `MeetingAssistantWorkflow` with 7-node LangGraph orchestration
+- `app/cli.py` — `EmbeddingApp` orchestration, interactive CLI and `process_directory` for batch processing, integrated with RAG and LangGraph
 - `app/main.py` — application entrypoint wiring dependencies and auto-detecting `data/` folder
 - `requirements.txt` — Python dependencies
 - `.env.example` — example environment variables
@@ -294,6 +298,119 @@ IP_GEOLOCATION_TIMEOUT=10                # Request timeout in seconds
 - Accuracy varies depending on the geolocation data provider
 - Consider caching results locally to reduce API usage and improve response times
 
+LangGraph Multi-Step Agent Workflow
+------------------------------------
+
+**NEW FEATURE:** Homework.04 includes a sophisticated LangGraph-based workflow orchestration system for complex multi-step agent operations.
+
+### Overview
+
+The LangGraph workflow provides intelligent orchestration of multi-step tasks involving planning, tool routing, execution, observation, and summarization. It enables autonomous decision-making with RAG-informed context awareness.
+
+### Seven Workflow Nodes
+
+1. **plan_node** — Generates execution plan from user input
+   - Analyzes user request
+   - Retrieves relevant context from RAG database
+   - Uses LLM to create structured execution plan
+
+2. **executor_loop** — Orchestrates step-by-step execution
+   - Manages step iteration
+   - Routes to tool_router or summary_node
+
+3. **tool_router** — Intelligently routes steps to appropriate tools
+   - Calendar operations → Google Calendar tool
+   - IP lookup → IP Geolocation tool
+   - Document search → RAG search tool
+
+4. **action_node** — Executes selected tool
+   - Calls appropriate service
+   - Handles errors gracefully
+
+5. **observation_node** — Validates and updates state
+   - Records action results
+   - Updates workflow state
+   - Moves to next step
+
+6. **summary_node** — Generates comprehensive meeting summary
+   - Combines execution results
+   - Uses LLM for natural language summary
+
+7. **final_answer_node** — Formats complete final report
+   - Lists all executed steps with status
+   - Includes meeting summary and errors
+
+### Interactive Usage
+
+Use the `/workflow` command in interactive mode:
+
+```bash
+# Example: Multi-tool research request
+/workflow show my calendar and find related project documents
+
+# Example: Geolocation and infrastructure query
+/workflow Where are our servers? Check IP 8.8.8.8 and find infrastructure docs
+
+# Example: Meeting preparation
+/workflow Prepare for tomorrow's meetings: show calendar and find project documents
+```
+
+### Workflow Output
+
+```
+Execution Plan (2 steps):
+  ✓ Step 1: Retrieve calendar events (google_calendar) - completed
+  ✓ Step 2: Search project documentation (rag_search) - completed
+
+Meeting Summary:
+Tomorrow's schedule includes 2 meetings. Related project documents found:
+- Project Charter (relevance: 0.96)
+- Technical Requirements (relevance: 0.93)
+
+Final Answer:
+[Complete formatted report with execution steps and results]
+```
+
+### Documentation
+
+Comprehensive documentation is available for the LangGraph workflow:
+
+- **[LANGGRAPH_WORKFLOW.md](docs/LANGGRAPH_WORKFLOW.md)** — Architecture guide, node descriptions, state management patterns, tool integration details
+- **[LANGGRAPH_QUICKSTART.md](docs/LANGGRAPH_QUICKSTART.md)** — Installation, CLI usage, programmatic usage, 3 detailed example workflows, troubleshooting
+- **[LANGGRAPH_IMPLEMENTATION.md](docs/LANGGRAPH_IMPLEMENTATION.md)** — Implementation details, component descriptions, testing coverage, performance characteristics
+- **[LANGGRAPH_CHECKLIST.md](LANGGRAPH_CHECKLIST.md)** — Complete verification checklist, feature summary, node execution flow diagram
+
+### Configuration
+
+Enable LangGraph workflow automatically when running with RAG agent:
+
+```bash
+OPENAI_API_KEY=your-key          # Required for LLM planning
+OPENAI_LLM_MODEL=gpt-4o-mini     # Model for planning/summarization
+OPENAI_LLM_TEMPERATURE=0.7       # Creativity level
+OPENAI_LLM_MAX_TOKENS=1024       # Response length limit
+
+# Optional tools
+GOOGLE_CALENDAR_CREDENTIALS_FILE=./client_credentials.json
+IP_GEOLOCATION_API_KEY=your-key
+```
+
+### Key Features
+
+- **Autonomous Planning**: LLM generates execution plans from natural language requests
+- **RAG-Informed**: Retrieves context from vector database for intelligent decision-making
+- **Multi-Tool Integration**: Routes tasks to Calendar, Geolocation, and RAG Search tools
+- **Error Resilience**: Continues execution despite individual tool failures
+- **Complete Audit Trail**: Logs all steps, results, and observations
+- **Natural Language Output**: Generates readable meeting summaries
+
+### Examples
+
+See the documentation files for detailed examples:
+- Check Calendar and Search Documents
+- Multi-Tool Research Request  
+- Meeting Preparation Workflow
+
 Testing
 --------------
 
@@ -308,8 +425,16 @@ Tests cover:
 - Embedding service behavior
 - Vector store operations (semantic, BM25, hybrid search)
 - RAG agent response generation and caching
+- **LangGraph workflow components** (plan generation, tool routing, execution)
+- **Workflow node tests** (all 7 nodes thoroughly tested)
 - CLI output formatting
 - Integration with mocked OpenAI and ChromaDB
+
+Run LangGraph workflow tests specifically:
+
+```bash
+pytest tests/test_langgraph_workflow.py -v
+```
 
 Notes and next steps
 - The code follows SOLID-aligned abstractions so different embedding providers, vector stores, LLM backends, or calendar services can be swapped in.
@@ -317,3 +442,35 @@ Notes and next steps
 - RAG generation currently uses a simple system prompt; consider extending with domain-specific instructions or chains of thought.
 - Consider adding CLI flags to configure batch behavior (e.g., `--mode`, `--k`, `--alpha`, `--rag`) or support recursive directory traversal.
 - Calendar integration can be extended to create events, search by organizer, or fetch specific calendar resources.
+
+**LangGraph Workflow Enhancements:**
+- Parallel execution of independent workflow steps for improved performance
+- Conditional branching based on tool execution results
+- Tool chaining with data passing between steps
+- Workflow state persistence and recovery
+- Multi-turn conversation support for iterative refinement
+- Custom tool framework for user-defined operations
+- Advanced caching strategies for frequently used queries
+
+Documentation Reference
+------------------------
+
+Complete documentation for all features is available:
+
+**Core Features:**
+- [README.md](README.md) — This file, project overview
+
+**LangGraph Workflow (Homework.04 NEW):**
+- [docs/LANGGRAPH_WORKFLOW.md](docs/LANGGRAPH_WORKFLOW.md) — Architecture guide and node descriptions
+- [docs/LANGGRAPH_QUICKSTART.md](docs/LANGGRAPH_QUICKSTART.md) — Quick start guide with examples
+- [docs/LANGGRAPH_IMPLEMENTATION.md](docs/LANGGRAPH_IMPLEMENTATION.md) — Implementation summary
+- [LANGGRAPH_CHECKLIST.md](LANGGRAPH_CHECKLIST.md) — Verification checklist
+
+**Other Resources:**
+- [IP Geolocation README](IP_GEOLOCATION_README.md) — IP geolocation service details
+- [Google Calendar README](GOOGLE_CALENDAR_README.md) — Calendar integration setup
+- [Tool Clients Guide](docs/TOOL_CLIENTS_GUIDE.md) — External API client documentation
+- [Tool Clients Summary](docs/TOOL_CLIENTS_SUMMARY.md) — Implementation summary and architecture
+
+**Test Suite:**
+- [tests/test_langgraph_workflow.py](tests/test_langgraph_workflow.py) — Comprehensive tests and examples

@@ -10,6 +10,7 @@ The app starts in batch or interactive mode depending on whether a `data/` direc
 If RAG agent is configured (via env vars), retrieval results are augmented with LLM responses.
 If Google Calendar is configured, calendar commands are available in interactive mode.
 Tool clients (geolocation, weather, crypto, forex) are auto-initialized if available.
+LangGraph workflow orchestrates multi-step agent operations.
 """
 from __future__ import annotations
 
@@ -24,6 +25,7 @@ from .cli import CLI
 from .rag_agent import RAGAgent
 from .google_calendar import GoogleCalendarService
 from .tool_clients import IPAPIGeolocationClient, OpenWeatherMapClient, CoinGeckoClient, ExchangeRateAPIClient
+from .langgraph_workflow import MeetingAssistantWorkflow
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -100,6 +102,26 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:
         logging.debug("Forex client not available: %s", exc)
 
+    # Initialize LangGraph workflow
+    workflow = None
+    try:
+        if rag_agent:
+            workflow = MeetingAssistantWorkflow(
+                api_key=cfg.openai_api_key,
+                vector_store=vector_store,
+                rag_agent=rag_agent,
+                google_calendar_service=calendar_service,
+                geolocation_client=geolocation_client,
+                llm_model=cfg.llm_model,
+                llm_temperature=cfg.llm_temperature,
+                llm_max_tokens=cfg.llm_max_tokens,
+            )
+            logging.info("LangGraph workflow initialized")
+        else:
+            logging.debug("LangGraph workflow skipped (RAG agent not available)")
+    except Exception as exc:
+        logging.warning("LangGraph workflow not available: %s", exc)
+
     cli = CLI(
         emb_service=emb_service,
         vector_store=vector_store,
@@ -109,6 +131,7 @@ def main(argv: list[str] | None = None) -> int:
         weather_client=weather_client,
         crypto_client=crypto_client,
         forex_client=forex_client,
+        workflow=workflow,
     )
     # If a `data/` directory exists in the current working directory, process files in batch mode.
     data_dir = os.path.join(os.getcwd(), "data")
