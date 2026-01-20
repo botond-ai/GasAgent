@@ -3,8 +3,6 @@ Integration tests for LangGraph compilation and structure validation.
 Tests graph topology, node connections, conditional edges, and compilation.
 """
 import pytest
-from unittest.mock import MagicMock
-from langgraph.graph import StateGraph
 
 from services.agent import QueryAgent, AgentState
 from infrastructure.tool_registry import ToolRegistry
@@ -43,20 +41,10 @@ async def test_graph_has_all_required_nodes():
     # LangGraph compiled graphs expose nodes through internal structure
     graph = agent.workflow
     
-    # Expected nodes in our 11-node workflow
-    expected_nodes = {
-        "intent_detection",
-        "plan",
-        "tool_selection",
-        "retrieval",
-        "tool_executor",
-        "observation",
-        "generation",
-        "guardrail",
-        "feedback_metrics",
-        "workflow_execution",
-        "memory_update"
-    }
+    # Expected nodes in our 11-node workflow:
+    # intent_detection, plan, tool_selection, retrieval, tool_executor,
+    # observation, generation, guardrail, feedback_metrics,
+    # workflow_execution, memory_update
     
     # LangGraph stores nodes in the compiled graph
     # We can verify by checking the graph was built with these nodes
@@ -413,7 +401,9 @@ async def test_graph_state_schema_validation():
     """Test that AgentState has all required fields for graph execution."""
     llm = DummyLLM()
     registry = ToolRegistry.default()
+    # Agent compilation validates state schema
     agent = QueryAgent(llm, rag_client=None, tool_registry=registry)
+    assert agent.workflow is not None  # Use agent to avoid unused warning
     
     # Create a valid state with all required fields
     state = AgentState(
@@ -492,7 +482,7 @@ async def test_all_decision_functions_are_callable():
     registry = ToolRegistry.default()
     agent = QueryAgent(llm, rag_client=None, tool_registry=registry)
     
-    # Verify decision functions exist
+    # Verify all decision functions exist and are callable
     assert hasattr(agent, '_tool_selection_decision')
     assert callable(agent._tool_selection_decision)
     

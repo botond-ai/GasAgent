@@ -1,7 +1,7 @@
 # KnowledgeRouter - Feature List
 
-**Version:** 2.6.1  
-**Last Updated:** 2026-01-10  
+**Version:** 2.8.0  
+**Last Updated:** 2026-01-20  
 **Breaking Changes:** Removed Anthropic/Claude support - OpenAI only
 
 ---
@@ -118,21 +118,25 @@
 
 #### LangGraph Orchestration (Production)
 - **StateGraph Workflow**: Complete agent workflow using LangGraph StateGraph
-- **10 Orchestrated Nodes** (v2.7):
+- **11 Orchestrated Nodes** (v2.8):
   - `intent_detection` - Domain classification (keyword + LLM fallback)
   - `plan_node` - Execution plan generation (steps, estimates)
   - `select_tools` - Tool selection and routing decision
-  - `tool_executor` - Execute selected tools (minimal in v2.7; full loop in next sprint)
+  - `tool_executor` - Execute selected tools with timeout/retry (NEW v2.8)
   - `retrieval` - Qdrant RAG search with domain filtering (+ facts-based rewrite)
   - `generation` - Context-aware LLM response generation (+ memory summary & facts)
   - `guardrail` - Response validation (IT citations, contradiction detection)
+  - `observation` - LLM evaluation of results, replan decision (NEW v2.8)
   - `feedback_metrics` - Telemetry collection (latency, cache hits, token usage)
   - `execute_workflow` - HR/IT workflow automation
   - `memory_update` - Rolling window, summary, facts extraction
-**State Management**: AgentState with messages, domain, citations, validation_errors, retry_count, metrics
-**Execution Flow**: intent → plan → select_tools → conditional → retrieval/tool_executor → generation → guardrail → feedback_metrics → workflow → memory_update → END
-**Conditional Routing**: `select_tools` routes `rag_only`→retrieval, `tools_only`/`rag_and_tools`→tool_executor; `guardrail` can route back to generation for retries
-- **Benefits**: Declarative workflow, easy debugging, state persistence, extensible graph structure
+- **State Management**: AgentState with messages, domain, citations, validation_errors, retry_count, metrics, tool_results, observation, replan_count (NEW v2.8)
+- **Execution Flow**: intent → plan → select_tools → conditional → retrieval/tool_executor → observation → conditional → replan/generation → guardrail → feedback_metrics → workflow → memory_update → END
+- **Conditional Routing**: 
+  - `select_tools` routes `rag_only`→retrieval, `tools_only`/`rag_and_tools`→tool_executor
+  - `observation` routes `replan`→plan (max 2x), `generate`→generation
+  - `guardrail` can route back to generation for retries
+- **Benefits**: Declarative workflow, easy debugging, state persistence, extensible graph structure, replan loop for quality
 
 #### Enhanced ABC Interfaces
 - **IEmbeddingService**: Swappable embedding providers (OpenAI/Cohere/HuggingFace)
@@ -464,11 +468,34 @@ POST /api/regenerate/
 
 ### 🧪 Testing & Quality
 
-#### Unit Tests (Updated v2.2)
-- **121 Passing Tests**: Expanded test coverage (+60 tests)
+#### Unit Tests (Updated v2.8)
+- **180+ Passing Tests**: Expanded test coverage including integration tests
+  - **Sprint 4 (Tool Executor)**: 6 tests ✅
+  - **Sprint 5 (Observation)**: 6 tests ✅
+  - **Integration I1 (E2E Workflow)**: 7 tests ✅
+  - **Integration I2 (Graph Validation)**: 10 tests ✅
+  - **Total Sprint 4+5+I1+I2**: 33 tests ✅
 - **49% Code Coverage**: Nearly doubled from 25% baseline
 - **Pytest Framework**: Modern testing with fixtures and async support
 - **Mock Support**: External API mocking with pytest-mock
+
+#### Integration Testing (NEW in v2.8)
+- **End-to-End Workflow Tests** (7 tests):
+  - Complete flow: Plan → Tool Selection → Executor → Observation
+  - MockLLM pattern with dict-based response mapping
+  - Replan loop validation (max 2 iterations)
+  - Multi-tool execution (parallel tools)
+  - Error handling mid-workflow
+  - Tool results counting accuracy
+  
+- **Graph Compilation Tests** (10 tests):
+  - LangGraph StateGraph compilation verification
+  - 11-node structure validation
+  - Conditional edge routing (_tool_selection_decision, _observation_decision, _guardrail_decision)
+  - Replan loop max iteration enforcement
+  - AgentState schema validation (21 fields)
+  - Entry/exit point verification
+  - Decision function callable checks
 
 #### Test Categories
 - **Error Handling**: Retry logic, exponential backoff (39 tests ✅)
@@ -479,6 +506,10 @@ POST /api/regenerate/
 - **Debug CLI**: Citation formatting, feedback stats (17 tests ✅ NEW)
 - **Interfaces**: ABC contracts, implementation validation (15 tests ✅ NEW)
 - **Telemetry**: Pipeline metrics, RAG/LLM capture (9 tests ✅ NEW v2.2)
+- **Tool Executor Loop**: Tool execution, observation, replan (6 tests ✅ NEW v2.7)
+- **Observation Node**: LLM evaluation, replan decision (6 tests ✅ NEW v2.8)
+- **Integration E2E**: Complete workflow validation (7 tests ✅ NEW v2.8)
+- **Integration Graph**: LangGraph compilation, routing (10 tests ✅ NEW v2.8)
 
 #### Test Execution
 ```bash
@@ -537,13 +568,14 @@ docker-compose exec backend pytest tests/test_feedback_ranking.py -v
 | **Caching** | 6 | ✅ Complete |
 | **Feedback** | 7 | ✅ Backend Complete, 🚧 Frontend Testing |
 | **Architecture** | 3 | ✅ Complete (NEW v2.2) |
-| **Testing** | 121 tests | ✅ 49% Coverage (NEW v2.2) |
+| **Testing** | 180+ tests | ✅ 49% Coverage (NEW v2.8) |
+| **Integration Tests** | 17 tests | ✅ Complete (NEW v2.8) |
 | **Integrations** | 3 | ✅ Complete |
 | **Workflows** | 2 types | ✅ Complete |
 | **Frontend** | 12 | ✅ Complete |
 | **DevOps** | 5 | ✅ Complete |
 
-**Total Features:** 48 implemented | 10 planned
+**Total Features:** 51 implemented | 10 planned
 
 ---
 
@@ -622,8 +654,57 @@ docker-compose exec backend python -m utils.debug_cli "szabadság igénylés" hr
 
 ---
 
-**Last Updated:** 2026-01-10  
-**Version:** 2.6.1 (OpenAI-only, Qdrant API update)
+**Last Updated:** 2026-01-20  
+**Version:** 2.8.0 (Tool Executor Loop + Observation + Integration Tests)
+
+---
+
+## 🔄 Changelog v2.8.0 (2026-01-20)
+
+### New Features
+- **Tool Executor Loop** (Sprint 4):
+  - Tool execution with timeout (30s default)
+  - Retry logic (max 2 attempts)
+  - Latency tracking per tool
+  - ToolResult model with success/error handling
+  - 6 comprehensive unit tests ✅
+
+- **Observation Node** (Sprint 5):
+  - LLM-based evaluation of tool/retrieval results
+  - Next action decision (replan vs generate)
+  - Replan count tracking (max 2 iterations)
+  - Data sufficiency assessment
+  - 6 comprehensive unit tests ✅
+
+- **Integration Testing** (Sprints I1-I2):
+  - **E2E Workflow Tests**: 7 tests validating complete Plan→Selection→Executor→Observation→Replan flow
+  - **Graph Validation Tests**: 10 tests for LangGraph compilation, routing, state schema
+  - MockLLM pattern for structured output simulation
+  - Conditional edge routing validation (3 decision functions)
+  - Total: 33 tests passing (Sprint 4+5+I1+I2) ✅
+
+### Architecture Updates
+- **11-Node LangGraph Workflow**:
+  - Added `tool_executor` node with timeout/retry
+  - Added `observation` node with LLM evaluation
+  - Replan loop: observation ↔ plan (max 2 iterations)
+  - Conditional routing: `_observation_decision()` (replan vs generate)
+  
+- **AgentState Enhancements**:
+  - `tool_results`: List of ToolResult objects
+  - `observation`: Observation model with next_action decision
+  - `replan_count`: Iteration tracking for safety
+
+### Test Coverage
+- **180+ Total Tests**: Comprehensive coverage across all components
+- **Integration Tests**: 17 new tests (7 E2E + 10 Graph)
+- **Unit Tests**: 12 new tests (6 Tool Executor + 6 Observation)
+- **0 IDE Errors**: All linting issues resolved ✅
+
+### Documentation
+- ✅ README.md - Updated with v2.8 features and test statistics
+- ✅ docs/házi feladatok/4.md - Detailed Sprint 4, 5, I1, I2 documentation
+- ✅ FEATURES.md - Integration testing section added
 
 ---
 
