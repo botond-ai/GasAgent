@@ -904,10 +904,44 @@ Parameters:
 - file_paths: List of file paths to upload (provided by the system)
 - file_names: List of original file names"""
     
+    def _validate_input(self, event_name: str, location: str, date_str: str) -> Dict[str, str]:
+        """
+        Validate and sanitize user inputs.
+        Returns dict with 'errors' key if validation fails, or sanitized values.
+        """
+        errors = []
+        
+        # Validate event_name
+        if not event_name or not event_name.strip():
+            errors.append("Event name cannot be empty")
+        elif len(event_name) > 100:
+            errors.append(f"Event name too long ({len(event_name)} chars). Maximum 100 characters.")
+        
+        # Validate location
+        if not location or not location.strip():
+            errors.append("Location cannot be empty")
+        elif len(location) > 100:
+            errors.append(f"Location too long ({len(location)} chars). Maximum 100 characters.")
+        
+        # Validate date
+        if date_str:
+            parsed_date = self._parse_date(date_str)
+            if parsed_date.startswith("ERROR:"):
+                errors.append(parsed_date)
+        
+        if errors:
+            return {"errors": errors}
+        
+        return {
+            "event_name": event_name.strip(),
+            "location": location.strip(),
+            "date": date_str.strip() if date_str else None
+        }
+    
     def _parse_date(self, date_str: str) -> str:
         """
         Parse date string and convert to YYYY.MM.DD format.
-        Handles various date formats.
+        Handles various date formats with validation.
         """
         import re
         from datetime import datetime
@@ -916,6 +950,12 @@ Parameters:
             return datetime.now().strftime("%Y.%m.%d")
         
         date_str = date_str.strip()
+        
+        # Validate date is not in the future by more than 1 day
+        # (allow some flexibility for timezone differences)
+        current_date = datetime.now()
+        future_limit = datetime(current_date.year + 1, 12, 31)  # Max 1 year in future
+        past_limit = datetime(1900, 1, 1)  # Reasonable past limit
         
         # Try common date formats
         formats = [
@@ -938,6 +978,13 @@ Parameters:
         for fmt in formats:
             try:
                 parsed = datetime.strptime(date_str, fmt)
+                
+                # Validate date range
+                if parsed < past_limit:
+                    return f"ERROR: Date too far in the past (before 1900)"
+                if parsed > future_limit:
+                    return f"ERROR: Date too far in the future (after {future_limit.year})"
+                
                 return parsed.strftime("%Y.%m.%d")
             except ValueError:
                 continue
@@ -948,25 +995,38 @@ Parameters:
         for fmt in formats:
             try:
                 parsed = datetime.strptime(date_str_clean, fmt)
+                
+                # Validate date range
+                if parsed < past_limit:
+                    return f"ERROR: Date too far in the past (before 1900)"
+                if parsed > future_limit:
+                    return f"ERROR: Date too far in the future (after {future_limit.year})"
+                
                 return parsed.strftime("%Y.%m.%d")
             except ValueError:
                 continue
         
-        # If all else fails, return today's date
-        logger.warning(f"Could not parse date '{date_str}', using today's date")
-        return datetime.now().strftime("%Y.%m.%d")
+        # If all else fails, return error
+        logger.warning(f"Could not parse date '{date_str}'")
+        return f"ERROR: Could not parse date '{date_str}'. Please use format like: YYYY-MM-DD, DD/MM/YYYY, or 'January 15, 2024'"
     
     def _sanitize_folder_name(self, name: str) -> str:
         """Sanitize folder name by removing/replacing invalid characters and capitalizing first letter."""
         import re
         # Replace invalid characters with underscores
         sanitized = re.sub(r'[<>:"/\\|?*]', '_', name)
+        # Remove control characters and excessive whitespace
+        sanitized = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', sanitized)
+        sanitized = re.sub(r'\s+', ' ', sanitized)
         # Remove leading/trailing spaces and dots
         sanitized = sanitized.strip(' .')
+        # Limit length
+        if len(sanitized) > 100:
+            sanitized = sanitized[:100].rstrip()
         # Capitalize first letter
         if sanitized:
             sanitized = sanitized[0].upper() + sanitized[1:]
-        return sanitized
+        return sanitized if sanitized else "Untitled"
     
     def _get_mime_type(self, filename: str) -> str:
         """Get MIME type based on file extension."""
@@ -1079,6 +1139,21 @@ Parameters:
                         "needs_info": missing
                     }
                 
+                # Validate and sanitize inputs
+                validation_result = self._validate_input(event_name, location, date)
+                if "errors" in validation_result:
+                    error_msg = "Input validation failed:\n" + "\n".join(validation_result["errors"])
+                    return {
+                        "success": False,
+                        "error": error_msg,
+                        "system_message": f"Photo upload validation failed: {validation_result['errors'][0]}"
+                    }
+                
+                # Use validated inputs
+                event_name = validation_result["event_name"]
+                location = validation_result["location"]
+                date = validation_result.get("date") or date
+                
                 if not file_paths and not file_data:
                     return {
                         "success": False,
@@ -1101,9 +1176,18 @@ Parameters:
                 
                 # Check if folder already exists
                 existing = await self.drive_client.find_folder(folder_name, photo_memories_id)
+                folder_already_existed = False
                 if existing.get("found"):
                     event_folder_id = existing["folder_id"]
-                    logger.info(f"Using existing folder: {folder_name}")
+                    folder_already_existed = True
+                    logger.info(f"Using existing folder: {folder_name} (ID: {event_folder_id})")
+                    
+                    # Check how many files are already in the folder
+                    existing_contents = await self.drive_client.list_folder_contents(event_folder_id)
+                    existing_file_count = len([item for item in existing_contents.get("contents", []) if item["type"] == "file"])
+                    
+                    if existing_file_count > 0:
+                        logger.warning(f"Folder '{folder_name}' already contains {existing_file_count} files. New files will be added to it.")
                 else:
                     # Create the event folder
                     folder_result = await self.drive_client.create_folder(folder_name, photo_memories_id)
@@ -1114,18 +1198,32 @@ Parameters:
                             "system_message": f"Failed to create folder '{folder_name}'"
                         }
                     event_folder_id = folder_result["folder_id"]
-                    logger.info(f"Created folder: {folder_name} with ID: {event_folder_id}")
+                    logger.info(f"Created new folder: {folder_name} with ID: {event_folder_id}")
                 
-                # Upload files
+                # Upload files with improved error tracking
                 uploaded_files = []
                 failed_files = []
+                quota_exceeded = False
                 
                 num_files = len(file_paths) if file_paths else len(file_data) if file_data else 0
                 file_names = file_names or [f"photo_{i+1}.jpg" for i in range(num_files)]
                 
+                logger.info(f"Starting upload of {num_files} files to folder {event_folder_id}")
+                
                 for i in range(num_files):
                     file_name = file_names[i] if i < len(file_names) else f"photo_{i+1}.jpg"
                     mime_type = self._get_mime_type(file_name)
+                    
+                    # Get file size for reporting
+                    file_size = 0
+                    try:
+                        if file_paths and i < len(file_paths):
+                            import os
+                            file_size = os.path.getsize(file_paths[i])
+                        elif file_data and i < len(file_data):
+                            file_size = len(file_data[i])
+                    except:
+                        pass
                     
                     try:
                         if file_paths and i < len(file_paths):
@@ -1151,22 +1249,50 @@ Parameters:
                             uploaded_files.append({
                                 "name": file_name,
                                 "id": result.get("file_id"),
+                                "size": result.get("size", file_size),
                                 "web_link": result.get("web_link")
                             })
-                            logger.info(f"Uploaded: {file_name}")
+                            logger.info(f"Uploaded: {file_name} ({file_size/1024:.1f} KB)")
                         else:
+                            error_msg = result.get("error", "Unknown error")
+                            error_code = result.get("error_code")
+                            is_retryable = result.get("retryable", False)
+                            
+                            # Check for quota exceeded
+                            if error_code == 2008 or "quota" in error_msg.lower():
+                                quota_exceeded = True
+                            
                             failed_files.append({
                                 "name": file_name,
-                                "error": result.get("error", "Unknown error")
+                                "size": file_size,
+                                "error": error_msg,
+                                "error_code": error_code,
+                                "retryable": is_retryable
                             })
-                            logger.error(f"Failed to upload {file_name}: {result.get('error')}")
+                            logger.error(f"Failed to upload {file_name}: {error_msg} (code: {error_code})")
+                            
+                            # Stop if quota exceeded
+                            if quota_exceeded:
+                                logger.error("Storage quota exceeded, stopping upload")
+                                # Mark remaining files as not attempted
+                                for j in range(i + 1, num_files):
+                                    remaining_name = file_names[j] if j < len(file_names) else f"photo_{j+1}.jpg"
+                                    failed_files.append({
+                                        "name": remaining_name,
+                                        "size": 0,
+                                        "error": "Not attempted - storage quota exceeded",
+                                        "retryable": False
+                                    })
+                                break
                     
                     except Exception as e:
                         failed_files.append({
                             "name": file_name,
-                            "error": str(e)
+                            "size": file_size,
+                            "error": str(e),
+                            "retryable": False
                         })
-                        logger.error(f"Exception uploading {file_name}: {e}")
+                        logger.error(f"Exception uploading {file_name}: {e}", exc_info=True)
                 
                 # Get folder contents after upload
                 folder_contents = await self.drive_client.list_folder_contents(event_folder_id)
@@ -1174,13 +1300,42 @@ Parameters:
                 # Get Photo_Memories structure
                 photo_memories_structure = await self.drive_client.get_folder_structure(photo_memories_id)
                 
-                # Build response
-                summary = f"📸 **Photo Upload Complete!**\n\n"
-                summary += f"📂 **Folder Created/Used:** {folder_name}\n"
+                # Build response with detailed failure information
+                if quota_exceeded:
+                    summary = f"⚠️ **Photo Upload Partially Complete - Quota Exceeded**\n\n"
+                elif failed_files and not uploaded_files:
+                    summary = f"❌ **Photo Upload Failed**\n\n"
+                elif failed_files:
+                    summary = f"⚠️ **Photo Upload Partially Complete**\n\n"
+                else:
+                    summary = f"📸 **Photo Upload Complete!**\n\n"
+                
+                # Show folder status
+                if folder_already_existed:
+                    summary += f"📂 **Folder Used (Existing):** {folder_name}\n"
+                    if existing_file_count > 0:
+                        summary += f"ℹ️ _Note: This folder already contained {existing_file_count} file(s). New files were added to it._\n"
+                else:
+                    summary += f"📂 **Folder Created:** {folder_name}\n"
                 summary += f"✅ **Successfully Uploaded:** {len(uploaded_files)} file(s)\n"
                 
                 if failed_files:
                     summary += f"❌ **Failed:** {len(failed_files)} file(s)\n"
+                    
+                    # Show detailed failure information
+                    if quota_exceeded:
+                        summary += f"\n⚠️ **Storage quota exceeded!** Please free up space in your pCloud account.\n"
+                    
+                    # List failed files with details
+                    summary += f"\n**Failed Files:**\n"
+                    for failed in failed_files[:10]:  # Show first 10 failures
+                        size_kb = failed.get('size', 0) / 1024
+                        error = failed.get('error', 'Unknown error')
+                        retry_info = " (retryable)" if failed.get('retryable') else ""
+                        summary += f"  ❌ {failed['name']} ({size_kb:.1f} KB): {error}{retry_info}\n"
+                    
+                    if len(failed_files) > 10:
+                        summary += f"  ... and {len(failed_files) - 10} more\n"
                 
                 # Show files in the uploaded folder
                 summary += f"\n**📁 Files in '{folder_name}':**\n"
@@ -1205,18 +1360,27 @@ Parameters:
                 else:
                     summary += f"  _Only this folder exists_\n"
                 
+                # Determine overall success
+                overall_success = len(uploaded_files) > 0 and not quota_exceeded
+                
                 return {
-                    "success": True,
+                    "success": overall_success,
                     "message": summary,
                     "data": {
                         "folder_name": folder_name,
                         "folder_id": event_folder_id,
                         "uploaded_files": uploaded_files,
                         "failed_files": failed_files,
+                        "quota_exceeded": quota_exceeded,
                         "folder_contents": folder_contents.get("contents", []),
                         "photo_memories_structure": photo_memories_structure.get("subfolders", [])
                     },
-                    "system_message": f"Uploaded {len(uploaded_files)} photos to '{folder_name}'"
+                    "system_message": f"Uploaded {len(uploaded_files)}/{num_files} photos to '{folder_name}'" + 
+                                    (f" ({len(failed_files)} failed)" if failed_files else "") +
+                                    (" - QUOTA EXCEEDED" if quota_exceeded else "") +
+                                    (f" (added to existing folder)" if folder_already_existed else ""),
+                    "folder_already_existed": folder_already_existed,
+                    "existing_file_count": existing_file_count if folder_already_existed else 0
                 }
             
             else:
