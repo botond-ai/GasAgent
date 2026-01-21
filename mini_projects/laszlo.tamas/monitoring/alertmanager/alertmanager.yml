@@ -1,0 +1,25 @@
+# AlertManager Configuration
+# Frontend alert only (no webhook/email for now)
+
+global:
+  resolve_timeout: 5m
+
+route:
+  group_by: ['alertname', 'severity']
+  group_wait: 10s
+  group_interval: 10s
+  repeat_interval: 12h
+  receiver: 'frontend-alert'
+
+receivers:
+  - name: 'frontend-alert'
+    # No webhook/email configured yet
+    # Alerts will be visible in AlertManager UI only
+    # Access at: http://localhost:9093
+
+inhibit_rules:
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname']

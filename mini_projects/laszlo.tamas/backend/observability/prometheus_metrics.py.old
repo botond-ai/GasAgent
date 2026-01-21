@@ -1,0 +1,280 @@
+"""
+Prometheus Metrics for Knowledge Router PROD
+
+MONITORING_IMPLEMENTATION_PLAN.md compatible - Phase 1.5
+
+CRITICAL: LOW-cardinality labels ONLY!
+- ✅ Allowed: intent, model, tool_name, search_mode, status (~50 unique values total)
+- ❌ FORBIDDEN: tenant_id, user_id, request_id (high-cardinality → time series explosion)
+
+Tenant/user-level aggregation → PostgreSQL workflow_executions table
+
+Metrics Categories:
+1. Workflow-level: Duration, requests, iterations
+2. LLM: Tokens, cost, latency, fallbacks
+3. Agent: Iterations, tool usage, errors
+4. RAG: Chunks retrieved, relevance scores, search latency
+5. Cache: Hit/miss rates (4-tier)
+"""
+
+from prometheus_client import Counter, Histogram, Gauge, Info
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+# ===== WORKFLOW METRICS =====
+
+workflow_requests_total = Counter(
+    'workflow_requests_total',
+    'Total workflow executions',
+    ['intent']  # LOW-cardinality: search_knowledge, list_documents, store_memory
+)
+
+workflow_duration = Histogram(
+    'workflow_duration_seconds',
+    'Workflow execution duration in seconds',
+    ['intent', 'success'],
+    buckets=[0.5, 1.0, 2.0, 5.0, 10.0, 30.0, 60.0]  # 0.5s to 60s
+)
+
+workflow_errors_total = Counter(
+    'workflow_errors_total',
+    'Total workflow errors',
+    ['error_type', 'node_name']  # error_type: timeout, validation, llm_error, etc.
+)
+
+
+# ===== AGENT METRICS =====
+
+agent_iterations = Histogram(
+    'agent_iterations_total',
+    'Number of agent iterations per workflow',
+    ['success'],
+    buckets=[1, 2, 3, 5, 7, 10]  # Most workflows: 1-3 iterations
+)
+
+agent_reflections_total = Counter(
+    'agent_reflections_total',
+    'Number of reflection/self-correction attempts',
+    ['decision']  # retry, continue
+)
+
+agent_max_iterations_reached = Counter(
+    'agent_max_iterations_reached_total',
+    'Workflows that hit MAX_ITERATIONS limit',
+    ['reason']  # loop_detected, tool_error, timeout
+)
+
+
+# ===== TOOL METRICS =====
+
+tool_usage = Counter(
+    'tool_usage_total',
+    'Tool invocations by name and status',
+    ['tool_name', 'status']  # tool_name: search_vectors, get_currency_rate, etc. (low-cardinality: ~15 tools)
+)
+
+tool_duration = Histogram(
+    'tool_duration_seconds',
+    'Tool execution duration',
+    ['tool_name'],
+    buckets=[0.1, 0.5, 1.0, 2.0, 5.0, 10.0]
+)
+
+
+# ===== LLM METRICS =====
+
+llm_requests_total = Counter(
+    'llm_requests_total',
+    'Total LLM API requests',
+    ['model', 'operation', 'status']  # model: gpt-4o-mini, gpt-4o; operation: chat, embedding
+)
+
+llm_tokens_total = Counter(
+    'llm_tokens_total',
+    'Total tokens consumed',
+    ['model', 'operation']  # operation: prompt, completion, embedding
+)
+
+llm_cost_usd_total = Counter(
+    'llm_cost_usd_total',
+    'Total LLM cost in USD',
+    ['model']
+)
+
+llm_latency_seconds = Histogram(
+    'llm_latency_seconds',
+    'LLM API latency',
+    ['model', 'operation'],
+    buckets=[0.5, 1.0, 2.0, 5.0, 10.0, 30.0]
+)
+
+model_fallback_count = Counter(
+    'model_fallback_count',
+    'Model fallback events (heavy → light)',
+    ['from_model', 'to_model', 'reason']  # reason: rate_limit, timeout, error
+)
+
+
+# ===== RAG PIPELINE METRICS =====
+
+rag_chunks_retrieved = Histogram(
+    'rag_chunks_retrieved_count',
+    'Number of chunks retrieved from RAG',
+    ['search_mode'],  # vector, keyword, hybrid
+    buckets=[0, 1, 3, 5, 10, 20, 50]
+)
+
+rag_relevance_score_avg = Gauge(
+    'rag_relevance_score_avg',
+    'Average relevance score of retrieved chunks',
+    ['search_mode']
+)
+
+rag_relevance_score_distribution = Histogram(
+    'rag_relevance_score_distribution',
+    'Distribution of chunk relevance scores',
+    ['search_mode'],
+    buckets=[0.0, 0.3, 0.5, 0.7, 0.85, 0.95, 1.0]
+)
+
+rag_empty_results = Counter(
+    'rag_empty_results_total',
+    'RAG searches returning 0 chunks',
+    ['search_mode', 'intent']
+)
+
+
+# ===== QDRANT METRICS =====
+
+qdrant_search_duration = Histogram(
+    'qdrant_search_duration_seconds',
+    'Qdrant vector search latency',
+    ['collection'],
+    buckets=[0.01, 0.05, 0.1, 0.5, 1.0, 2.0]
+)
+
+qdrant_errors_total = Counter(
+    'qdrant_errors_total',
+    'Qdrant operation errors',
+    ['operation', 'error_type']  # operation: search, upsert, delete
+)
+
+
+# ===== EMBEDDING METRICS =====
+
+embedding_generation_duration = Histogram(
+    'embedding_generation_duration_seconds',
+    'Time to generate embeddings',
+    ['model'],
+    buckets=[0.1, 0.5, 1.0, 2.0, 5.0]
+)
+
+embedding_cache_hit = Counter(
+    'embedding_cache_hit_total',
+    'Embedding cache hits',
+    ['cache_tier']  # memory, redis
+)
+
+
+# ===== CACHE METRICS (4-TIER) =====
+
+cache_hit_total = Counter(
+    'cache_hit_total',
+    'Cache hits by tier and resource type',
+    ['tier', 'resource_type']  # tier: memory, redis, database; resource_type: system_prompt, tenant, user, embedding
+)
+
+cache_miss_total = Counter(
+    'cache_miss_total',
+    'Cache misses by tier and resource type',
+    ['tier', 'resource_type']
+)
+
+cache_eviction_total = Counter(
+    'cache_eviction_total',
+    'Cache evictions (LRU)',
+    ['tier', 'reason']  # reason: size_limit, ttl_expired
+)
+
+
+# ===== DATABASE METRICS =====
+
+db_query_duration = Histogram(
+    'db_query_duration_seconds',
+    'Database query latency',
+    ['operation', 'table'],  # operation: select, insert, update; table: chat_sessions, workflow_executions
+    buckets=[0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0]
+)
+
+db_connection_pool_size = Gauge(
+    'db_connection_pool_size',
+    'Current database connection pool size',
+    ['pool_name']
+)
+
+db_errors_total = Counter(
+    'db_errors_total',
+    'Database errors',
+    ['error_type', 'table']
+)
+
+
+# ===== RETRY & TIMEOUT METRICS =====
+
+retry_attempts_total = Counter(
+    'retry_attempts_total',
+    'Retry attempts by service',
+    ['service', 'operation']  # service: openai, qdrant, postgres
+)
+
+timeout_total = Counter(
+    'timeout_total',
+    'Timeout events',
+    ['service', 'operation']
+)
+
+
+# ===== SLA VIOLATION METRICS =====
+
+sla_violation_total = Counter(
+    'sla_violation_total',
+    'SLA threshold violations',
+    ['metric_type', 'threshold']  # metric_type: latency, cost, error_rate
+)
+
+
+# ===== QUERY REWRITE METRICS =====
+
+query_rewrite_enabled = Counter(
+    'query_rewrite_enabled_total',
+    'Query rewrite feature usage',
+    ['enabled', 'intent']  # enabled: true, false (A/B testing)
+)
+
+query_rewrite_transformations = Counter(
+    'query_rewrite_transformations_total',
+    'Types of query transformations applied',
+    ['transformation_type']  # pronoun_resolution, keyword_expansion, etc.
+)
+
+
+# ===== SYSTEM INFO =====
+
+system_info = Info(
+    'knowledge_router_system',
+    'Knowledge Router system information'
+)
+
+# Set system info at module import
+system_info.info({
+    'version': '1.0.0',
+    'environment': 'production',
+    'python_version': '3.11',
+    'langgraph_version': '0.2.0',
+    'monitoring_plan': 'MONITORING_IMPLEMENTATION_PLAN.md'
+})
+
+
+logger.info("✅ Prometheus metrics initialized (LOW-cardinality labels only)")

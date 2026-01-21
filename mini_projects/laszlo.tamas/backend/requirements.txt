@@ -1,0 +1,50 @@
+# FastAPI
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic>=2.7.4  # >= 2.7.4 required by langgraph>=0.2.0
+pydantic-settings>=2.0.0  # Required for BaseSettings
+python-multipart==0.0.6
+slowapi==0.1.9  # Rate limiting middleware
+
+# OpenAI
+openai==1.54.0
+httpx==0.27.0
+
+# Database
+psycopg2-binary==2.9.9
+qdrant-client==1.7.0
+
+# Observability - Metrics
+prometheus_client>=0.19.0
+
+# Observability - Distributed Tracing (OpenTelemetry)
+opentelemetry-api==1.21.0
+opentelemetry-sdk==1.21.0
+opentelemetry-exporter-otlp==1.21.0
+opentelemetry-instrumentation-fastapi==0.42b0
+opentelemetry-instrumentation-sqlalchemy==0.42b0
+opentelemetry-instrumentation-requests==0.42b0
+opentelemetry-instrumentation-httpx==0.42b0
+
+# Document Processing
+pypdf==5.1.0
+PyMuPDF==1.23.8  # For TOC extraction and page tracking
+chardet==5.2.0
+
+# LangChain & LangGraph
+# Version constraints explanation:
+# - langgraph==0.2.0: Minimum version for ToolNode support (prebuilt.ToolNode)
+# - langchain-core>=0.2.27: Required by langgraph 0.2.0 (was <0.2.0 with langgraph 0.0.26)
+# - langchain-openai>=0.1.0: Compatible with langchain-core 0.2.x (0.0.5 only supports <0.2)
+# - langchain-text-splitters>=0.2.0: Compatible with langchain-core 0.2.x
+langchain-core>=0.2.27,<0.3.0
+langchain-openai>=0.1.0
+langchain-text-splitters>=0.2.0
+langgraph==0.2.0
+
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+pytest-mock==3.12.0
+pytest-env==1.1.3
