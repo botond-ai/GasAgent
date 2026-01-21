@@ -1,0 +1,20 @@
+{
+  "session_id": "session_1768897762830_ik5mshuyq",
+  "messages": [
+    {
+      "role": "user",
+      "content": "List my Photo_Memories folders",
+      "timestamp": "2026-01-20T08:29:24.207818",
+      "metadata": null
+    },
+    {
+      "role": "user",
+      "content": "Mutasd a Photo_Memories mappáimat",
+      "timestamp": "2026-01-20T08:29:44.466168",
+      "metadata": null
+    }
+  ],
+  "summary": null,
+  "created_at": "2026-01-20T08:29:24.199042",
+  "updated_at": "2026-01-20T08:29:44.468723"
+}
