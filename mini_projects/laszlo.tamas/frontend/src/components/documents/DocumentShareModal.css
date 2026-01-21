@@ -1,0 +1,221 @@
+/* Share Modal Overlay */
+.share-modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.6);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 10000;
+  animation: fadeIn 0.2s ease-in;
+}
+
+/* Modal Content */
+.share-modal-content {
+  background: white;
+  border-radius: 12px;
+  width: 90%;
+  max-width: 550px;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+  animation: slideUp 0.3s ease-out;
+}
+
+/* Modal Header */
+.share-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid #e0e0e0;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 12px 12px 0 0;
+}
+
+.share-modal-header h2 {
+  margin: 0;
+  font-size: 1.5em;
+  color: white;
+  font-weight: 600;
+}
+
+.share-modal-header .close-button {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  font-size: 1.5em;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s;
+  padding: 0;
+  line-height: 1;
+}
+
+.share-modal-header .close-button:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Document Info Box */
+.document-info-box {
+  padding: 20px 24px;
+  background-color: #f8f9fa;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.document-info-box h3 {
+  margin: 0 0 8px 0;
+  font-size: 1.2em;
+  color: #333;
+}
+
+.document-info-box .document-source {
+  margin: 0;
+  font-size: 0.9em;
+  color: #666;
+}
+
+/* Visibility Status */
+.visibility-status {
+  padding: 20px 24px;
+}
+
+.visibility-status h4 {
+  margin: 0 0 15px 0;
+  font-size: 1em;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.visibility-card {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  padding: 20px;
+  border-radius: 8px;
+  border: 2px solid;
+}
+
+.visibility-card.private {
+  background-color: #f0f4f8;
+  border-color: #6c757d;
+}
+
+.visibility-card.tenant-wide {
+  background-color: #e8f4f8;
+  border-color: #17a2b8;
+}
+
+.visibility-icon {
+  font-size: 2.5em;
+}
+
+.visibility-details strong {
+  display: block;
+  font-size: 1.1em;
+  margin-bottom: 5px;
+  color: #333;
+}
+
+.visibility-details p {
+  margin: 0;
+  color: #666;
+  font-size: 0.95em;
+}
+
+/* Info Box */
+.info-box {
+  padding: 20px 24px;
+  background-color: #fffbea;
+  border-top: 1px solid #e0e0e0;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.info-box p {
+  margin: 0 0 10px 0;
+  color: #555;
+  font-size: 0.95em;
+}
+
+.info-box ul {
+  margin: 10px 0 10px 20px;
+  padding: 0;
+}
+
+.info-box li {
+  margin: 8px 0;
+  color: #555;
+}
+
+.info-box .future-note {
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px solid #e0d5a0;
+  color: #777;
+  font-size: 0.9em;
+}
+
+/* Modal Footer */
+.share-modal-footer {
+  padding: 15px 24px;
+  display: flex;
+  justify-content: flex-end;
+  border-top: 1px solid #e0e0e0;
+}
+
+.close-footer-button {
+  padding: 10px 24px;
+  background-color: #6c757d;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 1em;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.close-footer-button:hover {
+  background-color: #5a6268;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+  .share-modal-content {
+    width: 95%;
+    max-height: 90vh;
+  }
+
+  .share-modal-header,
+  .document-info-box,
+  .visibility-status,
+  .info-box,
+  .share-modal-footer {
+    padding: 15px 20px;
+  }
+}

@@ -1,0 +1,9 @@
+﻿TEST DOCUMENT
+
+This is a test document for Knowledge Router RAG system.
+It contains information about vacation policies.
+
+Vacation Policy:
+- Employees can request vacation with 2 weeks notice
+- Maximum vacation days: 20 per year
+- Unused vacation days cannot be carried over

@@ -1,0 +1,259 @@
+services:
+  # PostgreSQL - Local database
+  postgres:
+    image: postgres:15-alpine
+    container_name: knowledge_router_postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-k_r_}
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "${POSTGRES_EXTERNAL_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+  # Qdrant - Local vector database
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: knowledge_router_qdrant
+    ports:
+      - "${QDRANT_HTTP_EXTERNAL_PORT:-6333}:6333"
+      - "${QDRANT_GRPC_EXTERNAL_PORT:-6334}:6334"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    environment:
+      - QDRANT__SERVICE__HTTP_PORT=6333
+      - QDRANT__SERVICE__GRPC_PORT=6334
+    restart: unless-stopped
+
+  # Excel MCP Server - External tool server for Excel operations
+  excel-mcp-server:
+    image: python:3.11-slim
+    container_name: knowledge_router_excel_mcp
+    working_dir: /app
+    environment:
+      - EXCEL_FILES_PATH=/app/excel_files
+      - FASTMCP_PORT=8017
+      - FASTMCP_HOST=0.0.0.0
+    volumes:
+      - ./data/excel_files:/app/excel_files
+    ports:
+      - "8017:8017"
+    command: >
+      sh -c "pip install --no-cache-dir excel-mcp-server &&
+             python -m excel_mcp streamable-http"
+    restart: unless-stopped
+
+  # Backend - FastAPI application
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: knowledge_router_backend
+    ports:
+      - "${BACKEND_EXTERNAL_PORT:-8000}:8000"
+    environment:
+      # OpenAI - 3-Tier Model Architecture
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_MODEL_LIGHT=${OPENAI_MODEL_LIGHT:-gpt-4.1-mini}
+      - OPENAI_MODEL_MEDIUM=${OPENAI_MODEL_MEDIUM:-gpt-4.1}
+      - OPENAI_MODEL_HEAVY=${OPENAI_MODEL_HEAVY:-gpt-o1-mini}
+      - OPENAI_MODEL_EMBEDDING=${OPENAI_MODEL_EMBEDDING:-text-embedding-3-large}
+      
+      # PostgreSQL (local container)
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-k_r_}
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      
+      # Qdrant (local container)
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - QDRANT_API_KEY=
+      - QDRANT_USE_HTTPS=false
+      - QDRANT_COLLECTION_PREFIX=${QDRANT_COLLECTION_PREFIX:-k_r_}
+      
+      # Excel MCP Server
+      - EXCEL_MCP_SERVER_URL=http://excel-mcp-server:8017/mcp
+      
+      # Application
+      - USE_LANGGRAPH=true
+      
+      # Observability - Tracing (OpenTelemetry)
+      - ENABLE_TRACES=true
+      - OTEL_SERVICE_NAME=knowledge-router-backend
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4317
+      - OTEL_EXPORTER_OTLP_INSECURE=true
+      - OTEL_TRACE_SAMPLING_RATIO=1.0
+      
+      # Observability - Metrics (Prometheus)
+      - ENABLE_METRICS=true
+      
+      # Observability - Logging (Loki)
+      - ENABLE_LOGS=true
+      - LOG_FORMAT=json
+      - LOKI_URL=http://loki:3100
+      - LOKI_URL=http://loki:3100
+    depends_on:
+      postgres:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      excel-mcp-server:
+        condition: service_started
+    volumes:
+      - ./backend:/app
+      - ./data/seed:/app/data/seed:ro
+      - ./data/excel_files:/app/data/excel_files
+      - ./docs:/docs:ro
+      - ./test_documents:/test_documents:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 3s
+      timeout: 10s
+      retries: 10
+      start_period: 15s
+
+  # Frontend - React + Vite with Nginx
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        - VITE_API_URL=/api
+    container_name: knowledge_router_frontend
+    ports:
+      - "${FRONTEND_EXTERNAL_PORT:-3000}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ========================================================================
+  # OBSERVABILITY STACK (Triple-Pillar: Metrics, Logs, Traces)
+  # ========================================================================
+
+  # Prometheus - Metrics aggregation & alerting
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    container_name: knowledge_router_prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=15d'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+    depends_on:
+      - backend
+
+  # Grafana - Unified visualization (Metrics + Logs + Traces)
+  grafana:
+    image: grafana/grafana:10.2.2
+    container_name: knowledge_router_grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_SERVER_ROOT_URL=http://localhost:3001
+      - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/provisioning/dashboards/prometheus-ai-metrics.json
+      # Logging configuration (controlled by system.ini GRAFANA_CONTINUOUS_LOGGING)
+      # OFF (error): Only errors and critical issues logged
+      # ON (debug): Verbose logging including all queries and health checks
+      - GF_LOG_LEVEL=debug
+      - GF_LOG_MODE=console
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - grafana_data:/var/lib/grafana
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+      - loki
+      - tempo
+
+  # Loki - Log aggregation (structured JSON logs)
+  loki:
+    image: grafana/loki:2.9.3
+    container_name: knowledge_router_loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./monitoring/loki/loki.yml:/etc/loki/loki.yml:ro
+      - loki_data:/loki
+    command: -config.file=/etc/loki/loki.yml
+    restart: unless-stopped
+
+  # Tempo - Distributed tracing (OpenTelemetry)
+  tempo:
+    image: grafana/tempo:2.3.1
+    container_name: knowledge_router_tempo
+    ports:
+      - "3200:3200"   # Tempo HTTP
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+      - "14268:14268" # Jaeger ingest
+    volumes:
+      - ./monitoring/tempo/tempo.yml:/etc/tempo/tempo.yml:ro
+      - tempo_data:/tmp/tempo
+    command: -config.file=/etc/tempo/tempo.yml
+    restart: unless-stopped
+
+  # AlertManager - Alert routing (for future webhook/email integration)
+  alertmanager:
+    image: prom/alertmanager:v0.26.0
+    container_name: knowledge_router_alertmanager
+    ports:
+      - "9093:9093"
+    volumes:
+      - ./monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+
+volumes:
+  postgres_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data/postgres
+  qdrant_storage:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data/qdrant
+  excel_files:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./data/excel_files
+  # Observability volumes
+  prometheus_data:
+  grafana_data:
+  loki_data:
+  tempo_data:
+  alertmanager_data:

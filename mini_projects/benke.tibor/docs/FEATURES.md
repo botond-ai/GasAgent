@@ -1,11 +1,88 @@
 # KnowledgeRouter - Feature List
 
-**Version:** 2.4  
-**Last Updated:** 2026-01-05
+**Version:** 2.6.1  
+**Last Updated:** 2026-01-10  
+**Breaking Changes:** Removed Anthropic/Claude support - OpenAI only
 
 ---
 
 ## ✅ Implemented Features
+
+### 🛡️ Quality Assurance - Response Validation & Retry Logic (NEW in v2.5)
+
+#### Guardrail Node (Citation Validation)
+
+#### Error Detection Capabilities
+
+#### Test Coverage
+  - IT/non-IT domain handling
+  - Retry logic progression
+  - Edge cases (empty citations, multiple references)
+ - **Integration Ready**: Integrated into 7-node LangGraph pipeline (with memory_update)
+
+
+### 📈 Telemetry & Metrics (NEW in v2.5)
+
+#### Feedback Metrics Node
+- **Latency Tracking**: End-to-end pipeline `total_latency_ms` and LLM latency
+- **Retrieval Quality**: Top-1 similarity score, citation count
+- **Token Estimates**: Prompt and response token estimates for budget control
+- **Cache Flags**: Embedding and query cache hit indicators (placeholders)
+- **Non-Blocking**: Metrics collection never blocks the workflow
+- **State Integration**: Metrics exposed in API response for frontend debug panel
+
+---
+
+### 🧠 Memory (NEW in v2.6)
+
+#### Memory Update Node
+- **Rolling Window**: Keeps last `N` messages (default `8`) to control context size
+- **SHA256 Deduplication**: Removes duplicate messages (role + normalized content)
+- **Conversation Summary**: 3–4 sentence LLM summary updated as needed
+- **Known Facts**: Extracts up to 5 atomic facts (short bullets) for future turns
+- **Prompt Integration**: Summary + facts added to generation prompt to steer answers
+- **RAG Query Rewrite**: Augments retrieval query with up to 3 facts for better recall
+- **Non-Blocking**: Any LLM errors in memory stage are logged and ignored
+- **Config**: `MEMORY_MAX_MESSAGES=8`
+
+#### Tests
+- backend/tests/test_memory.py: Rolling window, summary/facts extraction, non-blocking behavior
+- Integration suite updated to pass with 7-node pipeline
+
+---
+
+### 🤖 LLM Provider
+
+- **Provider**: OpenAI GPT-4o Mini (gpt-4o-mini)
+- **Embedding**: text-embedding-3-small (1536 dimensions)
+- **Config**: OPENAI_API_KEY, OPENAI_MODEL in .env
+- **Factory**: OpenAIClientFactory (singleton pattern)
+- **Docs**: Installation and README updated with OpenAI setup
+
+---
+
+### 🧩 Optional MCP Server (v0.1 alpha)
+
+- **Purpose**: Expose existing infra clients (Jira, Qdrant, Postgres) as Model Context Protocol tools
+- **Transport**: stdio (ready for HTTP/SSE later)
+- **Tools**: Jira ticket create/search, Qdrant semantic search/retrieve, Postgres feedback/analytics
+- **Isolation**: Standalone module (`backend/mcp_server`), no changes to core backend
+- **Getting Started**: `pip install -r backend/mcp_server/requirements.txt && python -m backend.mcp_server`
+
+---
+
+### ✨ Message Deduplication Reducer (NEW in v2.6)
+
+- **SHA256-Based**: Deduplicates messages by role + normalized content
+- **Applied**: After initial HumanMessage and after AIMessage append
+- **Benefits**: Reduces prompt noise, stabilizes generation, lowers token usage
+
+---
+
+### 🧩 Resilience Improvements
+
+- **RAG Retrieval Try/Catch**: Continues gracefully with empty citations on retrieval errors
+- **Guardrail Conditional Routing**: Retry path to generation or continue to feedback_metrics
 
 ### 🎫 IT Domain - Qdrant Semantic Search & Jira Integration (NEW in v2.3)
 
@@ -41,13 +118,17 @@
 
 #### LangGraph Orchestration (Production)
 - **StateGraph Workflow**: Complete agent workflow using LangGraph StateGraph
-- **4 Orchestrated Nodes**:
+- **7 Orchestrated Nodes** (v2.6):
   - `intent_detection` - Domain classification (keyword + LLM fallback)
-  - `retrieval` - Qdrant RAG search with domain filtering
-  - `generation` - Context-aware LLM response generation
+  - `retrieval` - Qdrant RAG search with domain filtering (+ facts-based rewrite)
+  - `generation` - Context-aware LLM response generation (+ memory summary & facts)
+  - `guardrail` - Response validation (IT citations, contradiction detection)
+  - `feedback_metrics` - Telemetry collection (latency, cache hits, token usage)
   - `execute_workflow` - HR/IT workflow automation
-- **State Management**: AgentState TypedDict with messages, domain, citations, workflow
-- **Linear Execution**: intent → retrieval → generation → workflow → END
+  - `memory_update` - Rolling window, summary, facts extraction
+- **State Management**: AgentState with messages, domain, citations, validation_errors, retry_count, metrics
+- **Linear Execution**: intent → retrieval → generation → guardrail → feedback_metrics → workflow → END
+- **Conditional Routing**: Guardrail can route back to generation for retries
 - **Benefits**: Declarative workflow, easy debugging, state persistence, extensible graph structure
 
 #### Enhanced ABC Interfaces
@@ -538,5 +619,46 @@ docker-compose exec backend python -m utils.debug_cli "szabadság igénylés" hr
 
 ---
 
-**Last Updated:** 2025-12-18  
-**Version:** 2.2 (Telemetry & Observability Release)
+**Last Updated:** 2026-01-10  
+**Version:** 2.6.1 (OpenAI-only, Qdrant API update)
+
+---
+
+## 🔄 Changelog v2.6.1 (2026-01-10)
+
+### Breaking Changes
+- **Removed Anthropic/Claude support**: Simplified to OpenAI-only stack
+- **Deleted**: `backend/infrastructure/anthropic_clients.py`
+- **Removed**: `LLM_PROVIDER` environment variable (no longer needed)
+- **Updated**: All documentation to reflect OpenAI-only configuration
+
+### Bug Fixes
+- **Qdrant API update**: Fixed `.search()` → `.query_points()` for qdrant-client 1.16.2
+- **Embedding model**: Standardized on `text-embedding-3-small` (1536 dim)
+- **Redis cache**: Added automatic flush on embedding model change
+
+### Configuration Changes
+```bash
+# Before (v2.6):
+LLM_PROVIDER=anthropic|openai
+ANTHROPIC_API_KEY=sk-ant-...
+CLAUDE_MODEL=claude-3-5-sonnet-20241022
+
+# After (v2.6.1):
+OPENAI_API_KEY=sk-proj-...
+OPENAI_MODEL=gpt-4o-mini
+EMBEDDING_MODEL=text-embedding-3-small
+```
+
+### Documentation Updates
+- ✅ README.md - Tech stack and setup simplified
+- ✅ INSTALLATION.md - Removed Claude/Anthropic sections
+- ✅ FEATURES.md - Updated LLM provider section
+- ✅ MEMORY.md - Updated configuration examples
+
+### Test Results
+- ✅ Integration tests: 11/11 passed
+- ✅ Live query test: Marketing domain successful (12.73s latency)
+- ✅ Qdrant API: `query_points()` working correctly
+
+

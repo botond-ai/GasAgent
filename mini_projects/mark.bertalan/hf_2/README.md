@@ -1,23 +1,50 @@
-# Embedding-Based Document Processing System
+# RAG (Retrieval-Augmented Generation) System
 
-A production-ready Python application for processing text documents using vector embeddings and similarity search. Built with clean architecture principles, dependency injection, and SOLID design patterns.
+A production-ready Python application for answering questions using Retrieval-Augmented Generation (RAG). The system processes text documents using vector embeddings, retrieves relevant context, and generates natural language answers using large language models. Built with clean architecture principles, dependency injection, and SOLID design patterns.
 
 ## Overview
 
-This system converts text documents into vector embeddings using OpenAI's API, stores them in a ChromaDB vector database, and enables semantic similarity search using multiple distance metrics (cosine similarity and k-nearest neighbors).
+This RAG system converts text documents into vector embeddings using OpenAI's API, stores them in a ChromaDB vector database, retrieves relevant documents through semantic similarity search, and generates contextual answers using OpenAI's language models (GPT-4o-mini by default).
 
 ### Key Features
 
+- **RAG Pipeline**: Complete Retrieval-Augmented Generation workflow from query to natural language answer
+- **LLM Integration**: Uses OpenAI's language models (GPT-4o-mini, GPT-3.5-turbo, etc.) for answer generation
 - **Vector Embedding Generation**: Converts text to high-dimensional vectors using OpenAI's embedding models
 - **Smart Text Chunking**: Automatically splits large documents into configurable chunks with optional overlap
 - **Individual Chunk Storage**: Each chunk stored separately with full metadata tracking (no averaging)
 - **Rich Metadata**: Tracks source document, domain, chunk position, and total chunks for each embedding
 - **Multi-Algorithm Search**: Supports both cosine similarity and KNN (Euclidean distance) search methods
+- **Context-Aware Answers**: LLM generates responses based on retrieved relevant document chunks
 - **Domain Organization**: Processes documents from multiple domain directories (HR, Dev, Support, Management)
 - **Persistent Storage**: Uses ChromaDB for efficient vector storage and retrieval
 - **Clean Architecture**: Implements SOLID principles with dependency injection and abstract interfaces
 - **Docker Support**: Includes containerization for consistent deployment
 - **Production-Ready**: Comprehensive error handling, logging, and configuration management
+
+### RAG Workflow
+
+The system implements a complete RAG pipeline:
+
+1. **Document Processing** (One-time setup):
+   - Load markdown documents from domain directories (HR, Dev, Support, etc.)
+   - Split documents into chunks (configurable size with optional overlap)
+   - Generate vector embeddings for each chunk using OpenAI's embedding API
+   - Store chunks with embeddings and metadata in ChromaDB
+
+2. **Query Processing** (Runtime):
+   - User enters a natural language question
+   - Convert question to vector embedding
+   - Search vector database for most similar document chunks
+   - Retrieve top-k most relevant chunks (default: 3)
+
+3. **Answer Generation** (RAG):
+   - Format retrieved chunks as context
+   - Send context + user question to LLM (GPT-4o-mini)
+   - LLM generates natural language answer based on retrieved information
+   - Display answer along with source documents for transparency
+
+This approach combines the precision of semantic search with the natural language capabilities of large language models, ensuring answers are both accurate and well-grounded in your document collection.
 
 ## Architecture
 
@@ -36,10 +63,11 @@ The application follows SOLID principles:
 ```
 mini_projects/mark.bertalan/hf_2/
 ├── scripts/                    # Application source code
-│   ├── interfaces.py          # Abstract base classes (Embedder, VectorDB)
+│   ├── interfaces.py          # Abstract base classes (Embedder, VectorDB, LLM)
 │   ├── embeddings.py          # OpenAI embedding implementation
+│   ├── llm.py                 # OpenAI LLM implementation for RAG
 │   ├── vector_store.py        # Vector database implementation
-│   ├── application.py         # Main application orchestrator
+│   ├── application.py         # Main application orchestrator with RAG
 │   ├── config.py              # Configuration management
 │   └── main.py                # Entry point
 ├── requirements.txt           # Python dependencies
@@ -67,6 +95,11 @@ Defines abstract contracts for core functionality:
 - `similarity_search(embedding, k)`: Cosine similarity search, returns results with metadata
 - `knn_search(embedding, k)`: Euclidean distance search, returns results with metadata
 
+**LLM (Abstract Base Class)**
+- `generate(prompt, context, max_tokens)`: Generate natural language response
+  - Takes user prompt and retrieved document chunks as context
+  - Returns generated answer text from the language model
+
 #### 2. Service Implementations
 
 **OpenAIEmbedder** (`embeddings.py`)
@@ -84,6 +117,13 @@ Defines abstract contracts for core functionality:
 - Dual search algorithms: cosine similarity and KNN
 - Automatic collection management
 
+**OpenAI LLM Client** (`llm.py`)
+- Implements `LLM` interface
+- Uses OpenAI Chat Completions API (gpt-4o-mini, gpt-3.5-turbo, etc.)
+- Formats retrieved context documents for the LLM
+- Includes system prompt for context-based answering
+- Comprehensive error handling for API failures
+
 #### 3. Application Orchestrator (`application.py`)
 
 **EmbeddingApp Class**
@@ -93,11 +133,12 @@ Core workflow coordinator that:
 2. Processes markdown documents from domain directories
 3. Generates embeddings for each document chunk
 4. Stores each chunk separately with rich metadata (source doc, domain, chunk position)
-5. Executes similarity searches using both algorithms with metadata retrieval
+5. Executes RAG pipeline: retrieves relevant chunks and generates natural language answers
 
 Key Methods:
 - `store_and_embed_documents(root_dir)`: Batch process documents into chunks
 - `process_query(text, k)`: Embed query and search for similar chunks
+- `process_query_with_rag(text, k, max_tokens)`: Complete RAG pipeline with LLM answer generation
 - Helper methods for domain parsing, content normalization, and document loading
 
 **Metadata Structure**:
@@ -114,6 +155,7 @@ Each stored chunk includes:
 Centralized configuration with environment variable support:
 - `openai_api_key`: OpenAI API authentication (required)
 - `embedding_model`: Model identifier (default: text-embedding-3-small)
+- `llm_model`: LLM model for answer generation (default: gpt-4o-mini)
 - `embedding_chunk_size`: Maximum characters per chunk (default: 500)
 - `overlap`: Overlapping characters between chunks (default: 0)
 - `chroma_db_path`: Database storage location (default: ./chroma_db)
@@ -188,7 +230,8 @@ Create a `.env` file (see `.env.example` for template):
 OPENAI_API_KEY=sk-your-api-key-here
 
 # Optional (with defaults)
-EMBEDDING_MODEL=text-embedding-3-small    # OpenAI model name
+EMBEDDING_MODEL=text-embedding-3-small    # OpenAI embedding model name
+LLM_MODEL=gpt-4o-mini                     # OpenAI LLM model for answer generation
 EMBEDDING_CHUNK_SIZE=500                  # Max characters per chunk
 OVERLAP=0                                 # Overlapping characters between chunks
 CHROMA_DB_PATH=./chroma_db               # Database storage path
@@ -224,8 +267,9 @@ embedding_sources/  (or your DOCUMENTS_ROOT)
 
 ```python
 from scripts.config import Config
-from scripts.embeddings import OpenAIEmbedder
-from scripts.vector_store import VectorStore  # Your implementation
+from scripts.embeddings import OpenAIEmbeddingClient
+from scripts.vector_store import ChromaVectorStore
+from scripts.llm import OpenAILLMClient
 from scripts.application import EmbeddingApp
 from pathlib import Path
 
@@ -233,19 +277,32 @@ from pathlib import Path
 config = Config.from_env()
 
 # Initialize components
-embedder = OpenAIEmbedder(
-    api_key=config.openai_api_key,
-    model=config.embedding_model
+embedder = OpenAIEmbeddingClient(
+    token=config.openai_api_key,
+    model_name=config.embedding_model,
+    chunk_size=config.embedding_chunk_size,
+    overlap=config.overlap
 )
-vector_db = VectorStore(...)  # Initialize your vector store
+vector_db = ChromaVectorStore(
+    db_path=config.chroma_db_path,
+    collection_name=config.collection_name
+)
+llm = OpenAILLMClient(
+    token=config.openai_api_key,
+    model_name=config.llm_model
+)
 
 # Create application
-app = EmbeddingApp(embedder, vector_db)
+app = EmbeddingApp(embedder, vector_db, llm)
 
 # Process documents
-app.store_and_embed_documents(Path("./data"))
+app.store_and_embed_documents(config.documents_root)
 
-# Query for similar chunks
+# RAG Query: Get natural language answer based on relevant documents
+query_id, results, answer = app.process_query_with_rag("What are the employee benefits?", k=3)
+print(f"Answer: {answer}")
+
+# Or just search without LLM generation
 query_id, results = app.process_query("employee benefits policy", k=5)
 
 # Results structure:
@@ -272,6 +329,12 @@ source venv/bin/activate  # Windows: venv\Scripts\activate
 python -m scripts.main
 ```
 
+The application will:
+1. Load and embed all documents from your configured domains
+2. Start an interactive prompt where you can ask questions
+3. For each question, retrieve relevant documents and generate an AI answer
+4. Display the generated answer along with the source document chunks used
+
 ### Docker Usage
 
 #### Build the Docker Image
@@ -290,8 +353,13 @@ docker run -it --env-file .env embedding-demo
 
 ### EmbeddingApp
 
-#### `__init__(embedding_service: Embedder, vector_store: VectorDB)`
+#### `__init__(embedding_service: Embedder, vector_store: VectorDB, llm: Optional[LLM] = None)`
 Initialize with dependency-injected components.
+
+**Parameters:**
+- `embedding_service`: Embedder implementation for text-to-vector conversion
+- `vector_store`: VectorDB implementation for storage and retrieval
+- `llm`: Optional LLM implementation for RAG answer generation
 
 #### `store_and_embed_documents(root_dir: Path) -> None`
 Process all markdown files from configured domain directories.
@@ -318,6 +386,23 @@ Generate embedding for query and search for similar document chunks.
     - `knn`: List of (id, euclidean_distance, text, metadata) tuples
   - `metadata`: Dict with 'source_document_id', 'chunk_index', 'total_chunks', 'domain'
 
+#### `process_query_with_rag(text: str, k: int = 3, max_tokens: int = 500) -> Tuple[str, Dict[str, List], str]`
+Execute complete RAG pipeline: retrieve relevant documents and generate natural language answer.
+
+**Parameters:**
+- `text`: User's question or query
+- `k`: Number of documents to retrieve for context (default: 3)
+- `max_tokens`: Maximum tokens for LLM response (default: 500)
+
+**Returns:**
+- Tuple of (query_id, results_dict, generated_answer)
+  - `query_id`: UUID for this query
+  - `results_dict`: Search results (same format as `process_query`)
+  - `generated_answer`: Natural language answer from the LLM
+
+**Raises:**
+- `ValueError`: If LLM was not provided during initialization
+
 ### OpenAIEmbedder
 
 #### `__init__(token: str, model_name: str = "text-embedding-3-small", chunk_size: int = None, overlap: int = 0)`
@@ -340,6 +425,32 @@ Generate embedding vectors for input text chunks.
   - Each chunk_text is a string segment from the original text
   - Each embedding_vector is a list of floats (1536 dimensions for default model)
   - Single-element list if text fits in one chunk
+
+**Raises:**
+- `requests.exceptions.RequestException`: Network/HTTP errors
+- `KeyError/IndexError/JSONDecodeError`: Malformed API responses
+
+### OpenAILLMClient
+
+#### `__init__(token: str, model_name: str = "gpt-4o-mini", endpoint: str | None = None)`
+Initialize OpenAI LLM service for text generation.
+
+**Parameters:**
+- `token`: OpenAI API key
+- `model_name`: Chat model identifier (default: gpt-4o-mini)
+  - Other options: gpt-3.5-turbo, gpt-4, gpt-4-turbo, etc.
+- `endpoint`: Optional custom API endpoint
+
+#### `generate(prompt: str, context: List[str], max_tokens: int = 500) -> str`
+Generate natural language response based on prompt and retrieved context.
+
+**Parameters:**
+- `prompt`: User's question or query
+- `context`: List of relevant document chunks from vector search
+- `max_tokens`: Maximum tokens to generate (default: 500)
+
+**Returns:**
+- Generated answer text from the LLM
 
 **Raises:**
 - `requests.exceptions.RequestException`: Network/HTTP errors
@@ -409,6 +520,31 @@ class CustomVectorDB(VectorDB):
 
     def knn_search(self, embedding: List[float], k: int = 3) -> List[Tuple]:
         # Return: List of (id, distance, text, metadata)
+        pass
+```
+
+### Adding New LLM Providers
+
+Implement the `LLM` interface:
+
+```python
+from scripts.interfaces import LLM
+from typing import List
+
+class CustomLLM(LLM):
+    def generate(self, prompt: str, context: List[str],
+                 max_tokens: int = 500) -> str:
+        # Format context and prompt for your LLM
+        formatted_prompt = self._format_prompt(prompt, context)
+
+        # Call your LLM API
+        response = your_llm_api_call(formatted_prompt, max_tokens)
+
+        # Return generated text
+        return response
+
+    def _format_prompt(self, prompt: str, context: List[str]) -> str:
+        # Your custom prompt formatting logic
         pass
 ```
 

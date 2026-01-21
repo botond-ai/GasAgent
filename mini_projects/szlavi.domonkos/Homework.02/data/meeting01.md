@@ -4,4 +4,6 @@
 
  Meeting téma: AI bevezetése a vállalat backoffice rendszerébe
  
- Résztvevők:
+ Résztvevők: test user 1; test user 2; Szabó József; Kiss Pista;
+
+ Meeting jegyzetek: Hozzon létre a projekt csapat egy új AI agentet, ami hagjegyzetet tud készíteni a megbeszélésekről. Ennek érdekében szervezni kell egy megbeszélést amin ott lesz a DPO, a CTO, Nagy Péter és Kis János.

@@ -66,8 +66,21 @@ class PostgresClient:
     async def close(self):
         """Close connection pool."""
         if self.pool:
-            await self.pool.close()
-            logger.info("🔌 Postgres connection pool closed")
+            try:
+                await self.pool.close()
+                logger.info("🔌 Postgres connection pool closed")
+            except Exception as e:
+                # On Windows ProactorEventLoop, closing after loop shutdown can fail
+                logger.warning(f"⚠️ Pool close failed (fallback to terminate): {e}")
+                try:
+                    self.pool.terminate()
+                    logger.info("🔌 Postgres connection pool terminated")
+                except Exception as e2:
+                    logger.warning(f"⚠️ Pool terminate failed: {e2}")
+            finally:
+                # Reset pool and init lock
+                self.pool = None
+                self._init_lock = None
     
     def is_available(self) -> bool:
         """

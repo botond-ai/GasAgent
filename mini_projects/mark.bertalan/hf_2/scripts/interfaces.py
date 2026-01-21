@@ -1,5 +1,4 @@
 
-
 from abc import ABC, abstractmethod
 from typing import List, Tuple, Optional, Literal, Dict, Any
 
@@ -76,5 +75,29 @@ class VectorDB(ABC):
             List of tuples (id, euclidean_distance, text, metadata) ordered by distance.
             Lower distance means higher similarity.
             Metadata is optional dict containing chunk information.
+        """
+        pass
+
+
+class LLM(ABC):
+    """Abstract interface for Large Language Model text generation."""
+
+    @abstractmethod
+    def generate(
+        self,
+        prompt: str,
+        context: List[str],
+        max_tokens: int = 500
+    ) -> str:
+        """
+        Generate a response based on the prompt and retrieved context.
+
+        Args:
+            prompt: The user's question or query.
+            context: List of relevant document chunks retrieved from vector search.
+            max_tokens: Maximum number of tokens to generate.
+
+        Returns:
+            Generated response text from the LLM.
         """
         pass

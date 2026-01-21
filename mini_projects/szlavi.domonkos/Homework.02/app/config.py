@@ -15,6 +15,11 @@ class Config:
     openai_api_key: str
     embedding_model: str
     chroma_persist_dir: str
+    llm_model: str
+    llm_temperature: float
+    llm_max_tokens: int
+    google_calendar_credentials_file: str | None = None
+    google_calendar_token_file: str | None = None
 
 
 def load_config(env_path: str | None = None) -> Config:
@@ -34,5 +39,21 @@ def load_config(env_path: str | None = None) -> Config:
 
     model = os.getenv("OPENAI_EMBEDDING_MODEL", "text-embedding-3-small")
     chroma_dir = os.getenv("CHROMA_PERSIST_DIR", "./chroma_db")
+    llm_model_name = os.getenv("OPENAI_LLM_MODEL", "gpt-4o-mini")
+    llm_temp = float(os.getenv("OPENAI_LLM_TEMPERATURE", "0.7"))
+    llm_tokens = int(os.getenv("OPENAI_LLM_MAX_TOKENS", "1024"))
+    
+    # Google Calendar configuration (optional)
+    google_creds_file = os.getenv("GOOGLE_CALENDAR_CREDENTIALS_FILE", None)
+    google_token_file = os.getenv("GOOGLE_CALENDAR_TOKEN_FILE", "./token.pickle")
 
-    return Config(openai_api_key=api_key, embedding_model=model, chroma_persist_dir=chroma_dir)
+    return Config(
+        openai_api_key=api_key,
+        embedding_model=model,
+        chroma_persist_dir=chroma_dir,
+        llm_model=llm_model_name,
+        llm_temperature=llm_temp,
+        llm_max_tokens=llm_tokens,
+        google_calendar_credentials_file=google_creds_file,
+        google_calendar_token_file=google_token_file,
+    )

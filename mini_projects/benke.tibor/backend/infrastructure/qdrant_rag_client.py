@@ -234,13 +234,13 @@ class QdrantRAGClient(IRAGClient):
             )
             
             # Layer 3: Qdrant search with cached embedding
-            search_results = self.qdrant_client.search(
+            search_results = self.qdrant_client.query_points(
                 collection_name=self.collection_name,
-                query_vector=query_embedding,
+                query=query_embedding,
                 query_filter=domain_filter,
                 limit=top_k,
                 with_payload=True
-            )
+            ).points
             
             # Convert to Citations
             citations = []

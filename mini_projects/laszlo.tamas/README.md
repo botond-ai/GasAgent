@@ -1,58 +1,49 @@
-# AI Course Playground
+# Knowledge Router
 
-Educational workspace for building multi-tenant RAG chat systems with FastAPI, React, and LangGraph.
+> Multi-tenant RAG rendszer LangGraph workflow-val és real-time chat interface
 
-## 📁 Workspace Structure
+## Gyors indítás
 
-### Active Projects
+```bash
+cp .env.example .env
+# Állítsd be az OPENAI_API_KEY-t az .env fájlban
+docker-compose up --build
+```
 
-#### HomeWork 1 : `ai_chat_phase1/`
+**Hozzáférés:** http://localhost:3000 (Frontend) | http://localhost:8000/docs (API)
 
-A complete, working multi-user chat application with OpenAI API integration. This is Phase 1 of a larger AI system, focusing on foundational chat functionality with external API calls.
+## Fő funkciók
 
-**Project Overview:**
-- ✅ External API integration (OpenAI Chat Completions)
-- ✅ Multi-user support (3 test users)
-- ✅ Short-term conversation history in SQLite
-- ✅ Clean, testable architecture
-- ✅ Docker containerization
+- **Multi-tenant Chat** - Tenant és user szintű elkülönítés → [részletek](docs/features/chat-workflow.md)
+- **Dokumentum feldolgozás** - Upload, chunking, RAG indexing → [részletek](docs/features/document-processing.md)
+- **Hibrid keresés** - Vector + keyword search kombinációja → [részletek](docs/features/hybrid-search.md)
+- **Hosszútávú memória** - User context + memory consolidation → [részletek](docs/features/memory-management.md)
+- **Excel integráció** - MCP server Excel műveletek → [részletek](docs/features/excel-tools.md)
+- **Külső API-k** - Időjárás, deviza, GitHub → [részletek](docs/features/external-apis.md)
+- **Query optimalizáció** - Automatic query rewriting → [részletek](docs/features/query-optimization.md)
+- **Workflow tracking** - Node-level execution monitoring → [részletek](docs/features/workflow-tracking.md)
 
-**Note:** This is Phase 1 ONLY. No LangGraph, no tools, no RAG, no vector database.
+## Architektúra
 
----
+**4-rétegű LangGraph design:** Reasoning → Tool Execution → Operational → Memory
+[Teljes architektúra →](docs/architecture/SYSTEM_OVERVIEW.md)
 
-#### NOT UPLOADED, ONLY PREPARATION FOR V02 : `_archive_/ai_chat_phase15/` 
+## API
 
-Multi-tenant chat system with LangGraph workflow and PostgreSQL. This is Phase 1.5, transitioning from single-user SQLite-based system to scalable, multi-tenant architecture.
+- **Chat endpoint:** `POST /api/chat/`
+- **Document upload:** `POST /api/workflows/document-processing`
+- **Session management:** `/api/sessions/{id}/messages`
+- **[Teljes API referencia →](docs/api/API_REFERENCE.md)**
 
-**Project Overview:**
-- ✅ **Multi-tenant architecture** (tenant-based data isolation)
-- ✅ **LangGraph workflow** (2-node processing pipeline)
-- ✅ **3-level hierarchical system prompts** (Application → Tenant → User)
-- ✅ PostgreSQL database with normalized schema
-- ✅ Document management (private/tenant visibility)
-- ✅ Long-term memory preparation (Qdrant-ready data model)
-- ✅ Short-term conversation history (20 messages)
+## Konfiguráció
 
-**Note:** Phase 1.5 introduces LangGraph and multi-tenancy, but no RAG or vector store yet.
+| Környezeti változó | Leírás |
+|-------------------|--------|
+| `OPENAI_API_KEY` | OpenAI API kulcs (kötelező) |
+| `OPENAI_MODEL_HEAVY` | Heavy model - komplex reasoning, RAG szintézis |
+| `OPENAI_MODEL_MEDIUM` | Medium model - standard RAG, kiegyensúlyozott |
+| `OPENAI_MODEL_LIGHT` | Light model - routing, tool selection |
+| `QDRANT_URL` | Vector database URL |
+| `POSTGRES_DB` | PostgreSQL database név |
 
----
-
-#### HomeWork 2 : `ai_chat_edu_v02/` ⭐ SUBMITTED
-
-Complete RAG-enabled multi-tenant chat system with document upload, chunking, embeddings, and intelligent retrieval. This implements the full assignment: upload documents → process (chunk + embed) → store in vector database → query with LLM-based answers.
-
-**Project Overview:**
-- ✅ **Document upload & processing** (PDF, TXT, Markdown → chunk → embed → Qdrant)
-- ✅ **RAG-based answering** (similarity search + LLM generation with sources)
-- ✅ **Intelligent agent routing** (CHAT | RAG | LIST | EXPLICIT_MEMORY decisions)
-- ✅ **Qdrant vector database** (3072-dim embeddings with tenant isolation)
-- ✅ **2 LangGraph workflows** (unified chat orchestration + document processing)
-- ✅ **Explicit memory system** (LLM-based fact extraction + long-term storage)
-- ✅ **3-tier caching** (Memory → PostgreSQL → LLM for 47ms→13ms speedup)
-- ✅ **Multi-tenant architecture** (isolated data per tenant in PostgreSQL + Qdrant)
-
-**Note:** This is the complete RAG implementation. Document processing automated via single API call, intelligent routing prevents unnecessary RAG lookups.
-
-
-
+[Teljes konfigurációs útmutató →](docs/operations/DEPLOYMENT.md)

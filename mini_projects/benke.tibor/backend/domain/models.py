@@ -198,3 +198,47 @@ class FeedbackStats(BaseModel):
     top_liked_citations: List[Dict[str, Any]] = Field(default_factory=list)
     top_disliked_citations: List[Dict[str, Any]] = Field(default_factory=list)
 
+
+class FeedbackMetrics(BaseModel):
+    """Pipeline execution metrics for telemetry."""
+    # Retrieval metrics
+    retrieval_score_top1: Optional[float] = None  # Top result semantic similarity (0-1)
+    retrieval_count: int = 0  # Number of results retrieved
+    dedup_count: int = 0  # Number of duplicates removed
+    
+    # Generation metrics
+    llm_latency_ms: Optional[float] = None  # Time to generate response (milliseconds)
+    llm_tokens_used: Optional[int] = None  # Tokens consumed by LLM
+    llm_tokens_input: Optional[int] = None  # Input tokens
+    llm_tokens_output: Optional[int] = None  # Output tokens
+    
+    # Cache metrics
+    cache_hit_embedding: bool = False  # Embedding was from cache
+    cache_hit_query: bool = False  # Query result was from cache
+    
+    # Validation metrics
+    validation_errors: List[str] = Field(default_factory=list)
+    retry_count: int = 0
+    
+    # Timestamps
+    request_start: Optional[datetime] = None
+    request_end: Optional[datetime] = None
+    total_latency_ms: Optional[float] = None
+    
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "retrieval_score_top1": 0.87,
+                "retrieval_count": 5,
+                "dedup_count": 1,
+                "llm_latency_ms": 1243.5,
+                "llm_tokens_used": 156,
+                "cache_hit_embedding": True,
+                "cache_hit_query": False,
+                "validation_errors": [],
+                "retry_count": 0,
+                "total_latency_ms": 2150.3
+            }
+        }
+
+

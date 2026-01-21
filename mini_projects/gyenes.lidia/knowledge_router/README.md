@@ -1,32 +1,27 @@
-# AI Internal Knowledge Router - Fejlesztési Terv
+# 🧠 Knowledge Router & Weather Agent
 
-Ezt a projektet választottam kidolgozásra. A cél egy intelligens vállalati tudásirányító ágens létrehozása LangGraph segítségével.
+Ez a projekt egy intelligens ágens prototípusa, amely képes **routing (útválasztó)** logikát alkalmazni a felhasználó szándéka alapján. Két fő modult integrál: egy belső vállalati tudásbázist (RAG alapú kereséssel) és egy külső időjárás-lekérdező eszközt.
 
-## Tervezett mérföldkövek
+## 🚀 Funkciók
 
-1. **Router Logika:** Intent felismerés (HR vs IT vs Legal).
-2. **RAG Implementáció:** Egy választott domain (pl. HR) tudásbázisának beépítése.
-3. **Multi-Vector Store:** A logika kiterjesztése több témakörre.
-4. **Workflow Automatizáció:** Mockolt API hívások (Jira, File creation).
+1. **Intent Routing:** A rendszer felismeri, hogy a felhasználó belső céges információt keres (pl. "VPN hiba") vagy külső adatot (pl. "időjárás").
+2. **RAG (Retrieval-Augmented Generation):**
+    * **Vector Store:** ChromaDB használata a dokumentumok tárolására.
+    * **Embeddings:** OpenAI `text-embedding-3-small` modell a szemantikus kereséshez.
+    * **LLM:** GPT-4o a válaszok generálásához (ha van érvényes API kulcs).
+3. **Weather Tool (External API):**
+    * Integráció a `wttr.in` REST API-val.
+    * **Resiliency:** Beépített hibatűrés és "Demo Mód". Ha az API nem elérhető (timeout) vagy hibás a bemenet, a rendszer nem omlik össze, hanem mock adatot szolgáltat.
+4. **Minőségbiztosítás:**
+    * Objektum-orientált felépítés (`src/` mappa).
+    * Automatizált tesztek (`pytest`).
 
-## Tech Stack
+## 🛠️ Telepítés
 
-- Python
-- LangChain / LangGraph
-- OpenAI API
-- Vector DB (Pinecone vagy Chroma)
+A projekt Python 3.10+ környezetet igényel.
 
-## Knowledge Router - Document Search Module
+1. **Klónozás és belépés:**
 
-Ez a modul a "Knowledge Router" ágens projekt alapköve. Egy objektum-orientált dokumentumkezelő és kereső rendszert valósít meg, amely előkészíti a terepet a későbbi vektoros (RAG) kereséshez.
+    ```bash
 
-## Funkciók
-
-- **Dokumentum betöltés:** JSON alapú tudásbázis kezelése.
-- **Keresés:** Kulcsszó alapú keresés címben, tartalomban és címkékben.
-- **Típusosság:** Python Type Hints és DataClasses használata a robusztus kódért.
-
-## Telepítés
-
-```bash
-pip install pytest
+   cd knowledge_router

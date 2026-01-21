@@ -47,6 +47,7 @@ This application demonstrates SOLID principles:
 from scripts.config import Config
 from scripts.embeddings import OpenAIEmbeddingClient
 from scripts.vector_store import ChromaVectorStore
+from scripts.llm import OpenAILLMClient
 from scripts.application import EmbeddingApp
 from typing import List, Tuple, Optional, Dict, Any
 
@@ -134,12 +135,19 @@ def main() -> None:
             db_path=config.chroma_db_path,
             collection_name=config.collection_name
         )
-        
+
+        # Initialize LLM service (concrete implementation)
+        llm_service = OpenAILLMClient(
+            token=config.openai_api_key,
+            model_name=config.llm_model
+        )
+
         # Create application with injected dependencies
         # (app depends on abstractions, not concrete classes)
         app = EmbeddingApp(
             embedding_service=embedding_service,
-            vector_store=vector_store
+            vector_store=vector_store,
+            llm=llm_service
         )
         
         # Embed documents for RAG
@@ -160,12 +168,19 @@ def main() -> None:
                     print("Please enter a non-empty prompt.")
                     continue
                 
-                # Process the query
+                # Process the query with RAG
                 print("\nProcessing...")
-                query_id, results = app.process_query(user_input, k=3)
-                
-                # Display results
-                print(f"\n✓ Stored with ID: {query_id}")
+                query_id, results, generated_answer = app.process_query_with_rag(user_input, k=3)
+
+                # Display generated answer
+                print(f"\n✓ Query ID: {query_id}")
+                print("\n" + "="*60)
+                print("🤖 GENERATED ANSWER:")
+                print("="*60)
+                print(generated_answer)
+                print("="*60)
+
+                # Display retrieved context for reference
                 print(format_cosine_results(results['cosine']))
                 print(format_knn_results(results['knn']))
                 

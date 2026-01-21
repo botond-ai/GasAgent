@@ -4,7 +4,7 @@ Handles IT policy retrieval from Confluence and ticket creation in Jira.
 """
 import os
 import logging
-from typing import Dict, Optional, List
+from typing import Dict, Optional
 import httpx
 from bs4 import BeautifulSoup
 
