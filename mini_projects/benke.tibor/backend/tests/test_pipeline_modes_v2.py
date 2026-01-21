@@ -7,7 +7,6 @@ Tests:
 3. Performance expectations documentation
 """
 
-import pytest
 import inspect
 from django.conf import settings
 

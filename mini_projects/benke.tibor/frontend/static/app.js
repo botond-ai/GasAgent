@@ -752,3 +752,103 @@ async function createJiraTicket(query, answer) {
         addMessage('❌ Hiba történt a ticket létrehozásakor.', 'error');
     }
 }
+
+/**
+ * Fetch and display monitoring statistics from Prometheus metrics.
+ * Parses Prometheus text format and extracts key metrics.
+ */
+async function fetchMonitoringStats() {
+    try {
+        const response = await fetch('http://localhost:8001/api/metrics/');
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const metricsText = await response.text();
+        
+        // Parse Prometheus metrics (simple text parsing)
+        const lines = metricsText.split('\n');
+        const metrics = {};
+        
+        lines.forEach(line => {
+            if (line.startsWith('#') || !line.trim()) return;
+            
+            // Extract metric name and value - improved regex for labels
+            const match = line.match(/^([a-z_]+)(?:\{[^}]+\})?\s+([0-9.eE+-]+)/);
+            if (match) {
+                const metricName = match[1];
+                const value = parseFloat(match[2]);
+                
+                if (!metrics[metricName]) {
+                    metrics[metricName] = [];
+                }
+                metrics[metricName].push(value);
+            }
+        });
+        
+        // Calculate stats
+        const totalRequests = metrics['knowledgerouter_requests_total'] 
+            ? metrics['knowledgerouter_requests_total'].reduce((a, b) => a + b, 0) 
+            : 0;
+        
+        const cacheHits = metrics['knowledgerouter_cache_hits_total']
+            ? metrics['knowledgerouter_cache_hits_total'].reduce((a, b) => a + b, 0)
+            : 0;
+        
+        const cacheMisses = metrics['knowledgerouter_cache_misses_total']
+            ? metrics['knowledgerouter_cache_misses_total'].reduce((a, b) => a + b, 0)
+            : 0;
+        
+        const cacheHitRate = (cacheHits + cacheMisses) > 0
+            ? ((cacheHits / (cacheHits + cacheMisses)) * 100).toFixed(1)
+            : '0.0';
+        
+        const llmCalls = metrics['knowledgerouter_llm_calls_total']
+            ? metrics['knowledgerouter_llm_calls_total'].reduce((a, b) => a + b, 0)
+            : 0;
+        
+        const activeRequests = metrics['knowledgerouter_active_requests']
+            ? Math.max(...metrics['knowledgerouter_active_requests'])
+            : 0;
+        
+        const errors = metrics['knowledgerouter_errors_total']
+            ? metrics['knowledgerouter_errors_total'].reduce((a, b) => a + b, 0)
+            : 0;
+        
+        // Latency calculation from histogram _count and _sum metrics
+        const latencyCount = metrics['knowledgerouter_latency_seconds_count']
+            ? metrics['knowledgerouter_latency_seconds_count'].reduce((a, b) => a + b, 0)
+            : 0;
+        
+        const latencySum = metrics['knowledgerouter_latency_seconds_sum']
+            ? metrics['knowledgerouter_latency_seconds_sum'].reduce((a, b) => a + b, 0)
+            : 0;
+        
+        const avgLatency = latencyCount > 0
+            ? ((latencySum / latencyCount) * 1000).toFixed(0) + 'ms'
+            : '-';
+        
+        // Update UI
+        document.getElementById('monitorTotalRequests').textContent = totalRequests;
+        document.getElementById('monitorCacheHitRate').textContent = cacheHitRate + '%';
+        document.getElementById('monitorAvgLatency').textContent = avgLatency;
+        document.getElementById('monitorLlmCalls').textContent = llmCalls;
+        document.getElementById('monitorActiveRequests').textContent = activeRequests;
+        document.getElementById('monitorErrors').textContent = errors;
+        
+    } catch (error) {
+        console.error('Failed to fetch monitoring stats:', error);
+        document.getElementById('monitorTotalRequests').textContent = 'Error';
+        document.getElementById('monitorCacheHitRate').textContent = 'Error';
+        document.getElementById('monitorAvgLatency').textContent = 'Error';
+        document.getElementById('monitorLlmCalls').textContent = 'Error';
+        document.getElementById('monitorActiveRequests').textContent = 'Error';
+        document.getElementById('monitorErrors').textContent = 'Error';
+    }
+}
+
+// Auto-fetch monitoring stats every 10 seconds
+setInterval(fetchMonitoringStats, 10000);
+// Initial fetch on page load
+setTimeout(fetchMonitoringStats, 1000);
+

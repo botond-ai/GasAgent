@@ -1,6 +1,6 @@
 # KnowledgeRouter - Feature List
 
-**Version:** 2.9.0 (Production Hardened)  
+**Version:** 2.11.0 (Monitoring Upgrade)  
 **Last Updated:** 2026-01-21  
 **Breaking Changes:** 
 - Removed Anthropic/Claude support - OpenAI only
@@ -85,6 +85,84 @@
 - **Config**: OPENAI_API_KEY, OPENAI_MODEL in .env
 - **Factory**: OpenAIClientFactory (singleton pattern)
 - **Docs**: Installation and README updated with OpenAI setup
+
+---
+
+### 📊 Prometheus + Grafana Monitoring (NEW in v2.11)
+
+#### Real-Time Metrics Collection
+- **11 Metric Types**:
+  - `knowledgerouter_requests_total` - Counter (by domain, status, pipeline_mode)
+  - `knowledgerouter_latency_seconds` - Histogram (p50/p95/p99 latency)
+  - `knowledgerouter_llm_calls_total` - Counter (by model, status, purpose)
+  - `knowledgerouter_llm_latency_seconds` - Histogram (LLM call latency)
+  - `knowledgerouter_cache_hits_total` - Counter (by cache_type)
+  - `knowledgerouter_cache_misses_total` - Counter (by cache_type)
+  - `knowledgerouter_errors_total` - Counter (by error_type, component)
+  - `knowledgerouter_tool_executions_total` - Counter (by tool_name, status)
+  - `knowledgerouter_rag_latency_seconds` - Histogram (RAG retrieval time)
+  - `knowledgerouter_active_requests` - Gauge (concurrent requests)
+  - `knowledgerouter_replan_loops_total` - Counter (by reason, domain)
+
+#### API Endpoint
+- **GET /api/metrics/** - Prometheus text format endpoint
+- **Auto-scraped**: Prometheus scrapes every 15 seconds
+- **Format**: Standard Prometheus exposition format
+
+#### Grafana Dashboards
+- **KnowledgeRouter Monitoring** - Main dashboard
+  - Request Rate (by domain)
+  - Latency percentiles (p50/p95/p99)
+  - LLM Call Rate (by model)
+  - Cache Hit Rate
+  - Active Requests (real-time)
+  - Error Rate (by type)
+- **Access**: http://localhost:3001 (admin/admin)
+- **Auto-provisioned**: Datasource + dashboard on startup
+
+#### Debug Panel Integration
+- **📊 Monitoring Stats** section in debug panel
+- **Auto-refresh**: Every 10 seconds
+- **Metrics displayed**:
+  - Total Requests
+  - Cache Hit Rate (%)
+  - Avg Latency (ms)
+  - LLM Calls
+  - Active Requests (real-time)
+  - Error Count
+- **Manual refresh**: 🔄 Refresh Stats button
+
+#### Tests
+- **backend/tests/test_monitoring.py**: 22 tests (86% coverage)
+  - MetricsAPIView endpoint tests
+  - Metrics collection tests (all 11 types)
+  - Concurrent updates
+  - Edge cases (zero latency, unicode labels)
+  - Integration tests
+
+#### Implementation
+- **prometheus-client**: Python client library (v0.19.0)
+- **MetricsCollector**: Helper class for all metrics
+- **Custom registry**: Isolated from default Prometheus registry
+- **Non-blocking**: Metrics collection never blocks requests
+- **Thread-safe**: Concurrent metric updates supported
+
+#### Configuration
+- **prometheus.yml**: Scrape config (15s interval)
+- **grafana/provisioning/**:
+  - `datasources/prometheus.yml` - Auto-configured datasource
+  - `dashboards/dashboard.yml` - Dashboard provider
+  - `dashboards/knowledgerouter.json` - Dashboard definition
+
+#### Docs
+- **docs/MONITORING.md**: Complete monitoring guide
+  - Quick Start
+  - Metric definitions
+  - Dashboard panels
+  - Key queries
+  - Testing
+  - Production recommendations
+  - Troubleshooting
 
 ---
 

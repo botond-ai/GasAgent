@@ -20,6 +20,7 @@ from infrastructure.error_handling import (
     TimeoutError,
     APICallError,
 )
+from infrastructure.prometheus_metrics import MetricsCollector
 from infrastructure.atlassian_client import atlassian_client
 from infrastructure.tool_registry import ToolRegistry
 from django.conf import settings
@@ -1032,9 +1033,33 @@ Respond with:
         # ⏱️ METRIC: LLM generation latency
         import time
         llm_start = time.time()
-        response = await self.llm.ainvoke([HumanMessage(content=prompt)])
-        llm_latency_ms = (time.time() - llm_start) * 1000
-        logger.info(f"🤖 LLM generation latency: {llm_latency_ms:.0f}ms (domain={state.get('domain')})")
+        try:
+            response = await self.llm.ainvoke([HumanMessage(content=prompt)])
+            llm_latency_sec = time.time() - llm_start
+            llm_latency_ms = llm_latency_sec * 1000
+            logger.info(f"🤖 LLM generation latency: {llm_latency_ms:.0f}ms (domain={state.get('domain')})")
+            
+            # Record LLM metrics
+            model_name = getattr(self.llm, 'model_name', 'gpt-4o-mini')
+            MetricsCollector.record_llm_call(
+                model=model_name,
+                status='success',
+                purpose='generation',
+                latency_seconds=llm_latency_sec
+            )
+        except Exception as e:
+            llm_latency_sec = time.time() - llm_start
+            logger.error(f"❌ LLM generation failed: {e}")
+            
+            # Record failed LLM call
+            model_name = getattr(self.llm, 'model_name', 'gpt-4o-mini')
+            MetricsCollector.record_llm_call(
+                model=model_name,
+                status='error',
+                purpose='generation'
+            )
+            MetricsCollector.record_error(error_type='llm_generation', component='agent')
+            raise
         
         response_text = response.content if hasattr(response, 'content') else str(response)
         
@@ -1531,65 +1556,82 @@ Respond with:
         """
         import time
         start_time = time.time()
-        logger.info(f"⚡ SIMPLE PIPELINE: user={user_id}, query={query[:50]}...")
         
-        # Step 1: Intent Detection (keyword-based, fast)
-        domain = await self._detect_intent_simple(query)
-        logger.info(f"Domain detected: {domain}")
+        # Track active requests
+        MetricsCollector.increment_active_requests()
         
-        # Step 2: RAG Retrieval
-        citations = await self.rag_client.retrieve_for_domain(
-            query=query,
-            top_k=10,
-            domain=domain
-        )
-        logger.info(f"Retrieved {len(citations)} documents")
-        
-        # Step 3: Generation
-        state = {
-            "query": query,
-            "domain": domain,
-            "citations": [c.model_dump() for c in citations],
-            "retrieved_docs": citations,
-            "messages": [],
-            "validation_errors": [],
-            "retry_count": 0,
-        }
-        state = await self._generation_node(state)
-        
-        # Step 4: Guardrail (IT domain only)
-        if domain == "it":
-            state = await self._guardrail_node(state)
+        try:
+            logger.info(f"⚡ SIMPLE PIPELINE: user={user_id}, query={query[:50]}...")
             
-            # Retry if validation failed
-            if state.get("validation_errors") and state.get("retry_count", 0) < 2:
-                logger.warning(f"Guardrail retry {state['retry_count']}/2")
-                state = await self._generation_node(state)
+            # Step 1: Intent Detection (keyword-based, fast)
+            domain = await self._detect_intent_simple(query)
+            logger.info(f"Domain detected: {domain}")
+            
+            # Step 2: RAG Retrieval
+            citations = await self.rag_client.retrieve_for_domain(
+                query=query,
+                top_k=10,
+                domain=domain
+            )
+            logger.info(f"Retrieved {len(citations)} documents")
+            
+            # Step 3: Generation
+            state = {
+                "query": query,
+                "domain": domain,
+                "citations": [c.model_dump() for c in citations],
+                "retrieved_docs": citations,
+                "messages": [],
+                "validation_errors": [],
+                "retry_count": 0,
+            }
+            state = await self._generation_node(state)
+            
+            # Step 4: Guardrail (IT domain only)
+            if domain == "it":
                 state = await self._guardrail_node(state)
+                
+                # Retry if validation failed
+                if state.get("validation_errors") and state.get("retry_count", 0) < 2:
+                    logger.warning(f"Guardrail retry {state['retry_count']}/2")
+                    state = await self._generation_node(state)
+                    state = await self._guardrail_node(state)
+            
+            # Build response
+            total_latency = (time.time() - start_time) * 1000
+            logger.info(f"⚡ SIMPLE PIPELINE completed in {total_latency:.0f}ms")
+            
+            # Record request metrics
+            MetricsCollector.record_request(
+                domain=domain.value if hasattr(domain, 'value') else str(domain),
+                status='success',
+                pipeline_mode='simple_pipeline',
+                latency_seconds=total_latency / 1000
+            )
+            
+            from domain.models import ProcessingStatus
+            processing_status = ProcessingStatus.SUCCESS
+            if state.get("validation_errors"):
+                processing_status = ProcessingStatus.VALIDATION_FAILED
+            
+            response = QueryResponse(
+                domain=state["domain"],
+                answer=state["output"]["answer"],
+                citations=[Citation(**c) for c in state["citations"]],
+                workflow={"mode": "simple_pipeline", "latency_ms": total_latency},
+                processing_status=processing_status,
+                validation_errors=state.get("validation_errors", []),
+                retry_count=state.get("retry_count", 0),
+                rag_context=state.get("rag_context"),
+                llm_prompt=state.get("llm_prompt"),
+                llm_response=state.get("llm_response"),
+            )
+            
+            return response
         
-        # Build response
-        total_latency = (time.time() - start_time) * 1000
-        logger.info(f"⚡ SIMPLE PIPELINE completed in {total_latency:.0f}ms")
-        
-        from domain.models import ProcessingStatus
-        processing_status = ProcessingStatus.SUCCESS
-        if state.get("validation_errors"):
-            processing_status = ProcessingStatus.VALIDATION_FAILED
-        
-        response = QueryResponse(
-            domain=state["domain"],
-            answer=state["output"]["answer"],
-            citations=[Citation(**c) for c in state["citations"]],
-            workflow={"mode": "simple_pipeline", "latency_ms": total_latency},
-            processing_status=processing_status,
-            validation_errors=state.get("validation_errors", []),
-            retry_count=state.get("retry_count", 0),
-            rag_context=state.get("rag_context"),
-            llm_prompt=state.get("llm_prompt"),
-            llm_response=state.get("llm_response"),
-        )
-        
-        return response
+        finally:
+            # Always decrement active requests (even on error)
+            MetricsCollector.decrement_active_requests()
     
     async def _detect_intent_simple(self, query: str) -> str:
         """Fast keyword-based intent detection (no LLM call)."""

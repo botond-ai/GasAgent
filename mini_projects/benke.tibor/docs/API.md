@@ -25,7 +25,9 @@
   - [POST /api/feedback/citation/](#post-apifeedbackcitation) **NEW**
   - [GET /api/feedback/stats/](#get-apifeedbackstats) **NEW**
   - [GET /api/google-drive/files/](#get-apigoogle-drivefiles)
+  - [GET /api/metrics/](#get-apimetrics) **NEW (v2.11)**
 - [Data Models](#data-models)
+- [Monitoring](#monitoring) **NEW (v2.11)**
 - [Cache Invalidation Strategy](#cache-invalidation-strategy)
 - [Feedback System](#feedback-system) **NEW**
 - [Status Codes](#status-codes)
@@ -1593,9 +1595,154 @@ curl http://localhost:8001/api/feedback/stats/?domain=hr
 
 ---
 
+### GET `/api/metrics/`
+
+**Prometheus metrics endpoint - real-time system telemetry.**
+
+Prometheus text format metrikák az alkalmazás teljesítményéről és állapotáról.
+
+#### Request
+
+**Headers:**
+```
+Accept: text/plain
+```
+
+**Query Parameters:** Nincs
+
+#### Response
+
+**Success (200 OK):**
+```
+Content-Type: text/plain; version=0.0.4; charset=utf-8
+```
+
+```prometheus
+# HELP knowledgerouter_requests_total Total number of requests processed
+# TYPE knowledgerouter_requests_total counter
+knowledgerouter_requests_total{domain="it",pipeline_mode="simple_pipeline",status="success"} 42.0
+
+# HELP knowledgerouter_latency_seconds Request processing latency in seconds
+# TYPE knowledgerouter_latency_seconds histogram
+knowledgerouter_latency_seconds_bucket{domain="it",le="0.5",pipeline_mode="simple_pipeline"} 5.0
+knowledgerouter_latency_seconds_bucket{domain="it",le="1.0",pipeline_mode="simple_pipeline"} 15.0
+knowledgerouter_latency_seconds_sum{domain="it",pipeline_mode="simple_pipeline"} 523.45
+knowledgerouter_latency_seconds_count{domain="it",pipeline_mode="simple_pipeline"} 42.0
+
+# HELP knowledgerouter_llm_calls_total Total number of LLM API calls
+# TYPE knowledgerouter_llm_calls_total counter
+knowledgerouter_llm_calls_total{model="gpt-4o-mini",purpose="generation",status="success"} 38.0
+
+# HELP knowledgerouter_cache_hits_total Total number of cache hits
+# TYPE knowledgerouter_cache_hits_total counter
+knowledgerouter_cache_hits_total{cache_type="redis"} 156.0
+
+# HELP knowledgerouter_active_requests Number of currently active requests
+# TYPE knowledgerouter_active_requests gauge
+knowledgerouter_active_requests 2.0
+
+# HELP knowledgerouter_errors_total Total number of errors
+# TYPE knowledgerouter_errors_total counter
+knowledgerouter_errors_total{component="agent",error_type="llm_generation"} 3.0
+```
+
+#### Metric Types
+
+| Metric Name | Type | Labels | Description |
+|-------------|------|--------|-------------|
+| `knowledgerouter_requests_total` | Counter | domain, status, pipeline_mode | Total requests by domain |
+| `knowledgerouter_latency_seconds` | Histogram | domain, pipeline_mode | Request latency (p50/p95/p99) |
+| `knowledgerouter_llm_calls_total` | Counter | model, status, purpose | LLM API calls |
+| `knowledgerouter_llm_latency_seconds` | Histogram | model, purpose | LLM call latency |
+| `knowledgerouter_cache_hits_total` | Counter | cache_type | Cache hits |
+| `knowledgerouter_cache_misses_total` | Counter | cache_type | Cache misses |
+| `knowledgerouter_errors_total` | Counter | error_type, component | Errors by type |
+| `knowledgerouter_tool_executions_total` | Counter | tool_name, status | Tool executions |
+| `knowledgerouter_rag_latency_seconds` | Histogram | domain | RAG retrieval time |
+| `knowledgerouter_active_requests` | Gauge | - | Active concurrent requests |
+| `knowledgerouter_replan_loops_total` | Counter | reason, domain | Replan iterations |
+
+#### Examples
+
+```bash
+# Get all metrics
+curl http://localhost:8001/api/metrics/
+
+# Filter by metric name (Prometheus query)
+curl http://localhost:9090/api/v1/query?query=knowledgerouter_requests_total
+
+# Latency percentiles (PromQL)
+curl http://localhost:9090/api/v1/query?query=histogram_quantile(0.95,rate(knowledgerouter_latency_seconds_bucket[5m]))
+```
+
+**Notes:**
+- Auto-scraped by Prometheus every 15 seconds
+- Metrics persist in Prometheus time-series DB
+- Grafana dashboards visualize metrics at http://localhost:3001
+
+---
+
+## 📊 Monitoring
+
+### Prometheus
+- **URL**: http://localhost:9090
+- **Scrape Interval**: 15 seconds
+- **Target**: http://backend:8000/api/metrics/
+- **Retention**: 15 days (default)
+
+### Grafana
+- **URL**: http://localhost:3001
+- **Login**: admin / admin
+- **Dashboard**: KnowledgeRouter Monitoring
+- **Panels**:
+  - Request Rate (by domain)
+  - Latency percentiles (p50/p95/p99)
+  - LLM Call Rate
+  - Cache Hit Rate
+  - Active Requests
+  - Error Rate
+
+### Debug Panel
+- **Location**: Bottom-right corner of app UI
+- **Section**: 📊 Monitoring Stats
+- **Auto-refresh**: Every 10 seconds
+- **Manual refresh**: 🔄 Refresh Stats button
+- **Metrics**:
+  - Total Requests
+  - Cache Hit Rate (%)
+  - Avg Latency (ms)
+  - LLM Calls
+  - Active Requests (real-time)
+  - Error Count
+
+### Key Metrics
+
+**Cache Hit Rate:**
+```
+(cache_hits / (cache_hits + cache_misses)) * 100
+```
+
+**Average Latency:**
+```
+latency_sum / latency_count
+```
+
+**Request Rate (per second):**
+```
+rate(knowledgerouter_requests_total[5m])
+```
+
+**95th Percentile Latency:**
+```
+histogram_quantile(0.95, rate(knowledgerouter_latency_seconds_bucket[5m]))
+```
+
+---
+
 ## 🔗 Related Documentation
 
 - [Main README](../README.md)
+- [Monitoring Guide](MONITORING.md)
 - [Redis Cache Architecture](REDIS_CACHE.md)
 - [Installation Guide](../INSTALLATION.md)
 - [Error Handling Architecture](ERROR_HANDLING.md) (coming soon)
@@ -1603,5 +1750,5 @@ curl http://localhost:8001/api/feedback/stats/?domain=hr
 
 ---
 
-**Last Updated:** December 17, 2025  
+**Last Updated:** January 21, 2026  
 **Maintained by:** KnowledgeRouter Team

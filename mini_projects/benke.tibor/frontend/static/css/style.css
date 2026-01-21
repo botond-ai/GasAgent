@@ -630,6 +630,7 @@ main {
             height: 20px;
         }
         
+        #monitoringBtn,
         #resetBtn {
             padding: 0.5rem 1rem;
             font-size: 1.1rem;
@@ -639,6 +640,13 @@ main {
             cursor: pointer;
             color: white;
             transition: all 0.2s;
+        }
+        
+        #monitoringBtn:hover {
+            background: #10b981;
+            border-color: #10b981;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
         }
         
         #resetBtn:hover {

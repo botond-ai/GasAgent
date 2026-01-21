@@ -1,7 +1,7 @@
 # KnowledgeRouter - Vállalati Tudásirányító & Workflow-Automata
 
-**Version:** 2.9.0 (Production Hardened)  
-**Status:** ✅ Stable (Critical bugfixes applied 2026-01-21)
+**Version:** 2.11.0 (Monitoring Upgrade)  
+**Status:** ✅ Stable (Prometheus + Grafana added 2026-01-21)
 
 Multi-domain AI agent rendszer Python Django backenddel, LangGraph orchestrációval és modern Tailwind CSS frontenddel (ChatGPT-style UI).
 
@@ -65,18 +65,21 @@ KnowledgeRouter egy vállalati belső tudásbázis rendszer, amely:
 - **Vector DB**: Qdrant (self-hosted)
 - **Cache**: Redis 7 (embedding + query result cache)
 - **Database**: PostgreSQL 15 (feedback & analytics)
+- **Monitoring**: Prometheus + Grafana (metrics & dashboards)
 - **Frontend**: Tailwind CSS + Vanilla JavaScript (ChatGPT-style UI)
-- **Deployment**: Docker Compose
-- **Testing**: pytest (180+ tests, 53% coverage)
+- **Deployment**: Docker Compose (6 services)
+- **Testing**: pytest (200+ tests, 54% coverage)
   - **RAG Optimization**: 27 tests (deduplication, IT overlap boost, integration)
   - **Feedback Ranking**: 15 tests (boost calculation, batch ops)
   - **Error Handling**: 39 tests (retry, token limits)
   - **Tool Executor Loop**: 6 tests (timeout, error, multi-tool)
   - **Observation + Replan**: 6 tests (LLM evaluation, replan routing, max limit)
   - **Integration E2E**: 7 tests (complete workflow, replan loop)
+  - **Monitoring**: 22 tests (metrics API, collection, edge cases)
   - **Coverage Highlights**:
     - `openai_clients.py`: **100%** ✅
     - `tool_registry.py`: **100%** ✅
+    - `prometheus_metrics.py`: **86%** ✅
     - `qdrant_rag_client.py`: **70%** (up from 18%)
     - `atlassian_client.py`: **87%**
 
