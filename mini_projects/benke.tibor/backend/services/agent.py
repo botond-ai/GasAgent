@@ -12,7 +12,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from langgraph.graph import StateGraph, END
 
 from domain.models import DomainType, QueryResponse, Citation, ProcessingStatus, FeedbackMetrics
-from domain.llm_outputs import IntentOutput, MemoryUpdate, RAGGenerationOutput, ExecutionPlan, ToolSelection, ObservationOutput, ToolResult
+from domain.llm_outputs import ToolResult
 from infrastructure.error_handling import (
     check_token_limit,
     estimate_tokens,
@@ -53,6 +53,8 @@ class AgentState(TypedDict, total=False):
     # Planning
     execution_plan: Dict[str, Any]  # ExecutionPlan as dict for state serialization
     tool_selection: Dict[str, Any]  # ToolSelection as dict for state serialization
+    observation_result: Dict[str, Any]  # ObservationOutput as dict for state serialization
+    replan_count: int  # Number of replan iterations (max 2)
     # Error handling
     rag_unavailable: bool  # True if RAG retrieval failed
 
@@ -76,7 +78,7 @@ class QueryAgent:
         graph.add_node("plan_node", self._plan_node)
         graph.add_node("select_tools", self._tool_selection_node)
         graph.add_node("tool_executor", self._tool_executor_node)
-        graph.add_node("observation", self._observation_node)
+        graph.add_node("observation_check", self._observation_node)
         graph.add_node("retrieval", self._retrieval_node)
         graph.add_node("generation", self._generation_node)
         graph.add_node("guardrail", self._guardrail_node)
@@ -98,16 +100,26 @@ class QueryAgent:
             {
                 "rag_only": "retrieval",       # RAG search only
                 "tools_only": "tool_executor", # Execute tools
-                "rag_and_tools": "tool_executor"  # Execute tools (RAG may be triggered downstream if needed)
+                "rag_and_tools": "tool_executor"  # Execute tools first, then retrieval
             }
         )
-        # Executor and retrieval go through observation
-        graph.add_edge("tool_executor", "observation")
-        graph.add_edge("retrieval", "observation")
+        
+        # After tool_executor: if rag_and_tools → go to retrieval, else observation_check
+        graph.add_conditional_edges(
+            "tool_executor",
+            lambda state: "retrieval" if state.get("tool_selection", {}).get("route") == "rag_and_tools" else "observation_check",
+            {
+                "retrieval": "retrieval",  # rag_and_tools case: do RAG after tools
+                "observation_check": "observation_check"  # tools_only case: skip to observation
+            }
+        )
+        
+        # Retrieval always goes to observation
+        graph.add_edge("retrieval", "observation_check")
         
         # Conditional routing from observation: replan or generate
         graph.add_conditional_edges(
-            "observation",
+            "observation_check",
             self._observation_decision,
             {
                 "replan": "plan_node",     # Loop back to planning if insufficient info
@@ -146,15 +158,16 @@ class QueryAgent:
         """Determine routing based on observation: replan or generate.
         
         Max 2 replans allowed. After that, force generation.
+        NOTE: Decision functions CANNOT modify state - read-only!
         """
-        observation = state.get("observation", {})
+        observation = state.get("observation_result", {})
         replan_count = state.get("replan_count", 0)
         next_action = observation.get("next_action", "generate")
         
         # Enforce max replan limit
         if next_action == "replan" and replan_count < 2:
-            state["replan_count"] = replan_count + 1
-            logger.info(f"Observation decision: REPLAN (attempt {state['replan_count']}/2)")
+            # Don't modify state here - will be incremented in plan_node
+            logger.info(f"Observation decision: REPLAN (attempt {replan_count + 1}/2)")
             return "replan"
         
         if next_action == "replan" and replan_count >= 2:
@@ -254,22 +267,36 @@ class QueryAgent:
                 )
                 
                 try:
-                    # Use structured output with Pydantic validation
-                    structured_llm = self.llm.with_structured_output(MemoryUpdate)
-                    memory_update = await structured_llm.ainvoke([HumanMessage(content=prompt_mem)])
+                    # Use JSON text output instead of structured_output (buggy in LangChain)
+                    prompt_mem_json = prompt_mem + "\n\nRespond with JSON: {\"summary\": \"...\", \"facts\": [...], \"key_decisions\": [...]}"
+                    response = await self.llm.ainvoke([HumanMessage(content=prompt_mem_json)])
+                    response_text = response.content if hasattr(response, 'content') else str(response)
+                    
+                    # Parse JSON manually
+                    import json
+                    # Extract JSON from response (handle markdown code blocks)
+                    json_match = re.search(r'```json\s*(\{.*?\})\s*```', response_text, re.DOTALL)
+                    if json_match:
+                        json_str = json_match.group(1)
+                    else:
+                        # Try to find raw JSON
+                        json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+                        json_str = json_match.group(0) if json_match else '{}'
+                    
+                    memory_data = json.loads(json_str)
                     
                     # Update state with validated data (REDUCER: replaces with merged summary)
-                    if memory_update.summary:
-                        state["memory_summary"] = memory_update.summary
-                    if memory_update.facts:
-                        state["memory_facts"] = memory_update.facts[:8]  # Max 8 facts after semantic compression
+                    if memory_data.get("summary"):
+                        state["memory_summary"] = memory_data["summary"]
+                    if memory_data.get("facts"):
+                        state["memory_facts"] = memory_data["facts"][:8]  # Max 8 facts after semantic compression
                     
                     compression_ratio = len(prev_facts) + len(msgs) if prev_facts else len(msgs)
-                    final_facts = len(memory_update.facts)
+                    final_facts = len(memory_data.get("facts", []))
                     logger.info(
                         f"Memory updated (REDUCER): {final_facts} facts "
                         f"(compressed from {compression_ratio} items), "
-                        f"summary length: {len(memory_update.summary)} chars, "
+                        f"summary length: {len(memory_data.get('summary', ''))} chars, "
                         f"total messages: {total_msg_count}"
                     )
                 except Exception as e:
@@ -319,20 +346,30 @@ Provide:
 2. confidence (0.0-1.0, how sure you are)
 3. reasoning (why this domain, 10-500 characters)
 
-Respond in JSON format."""
+Respond with JSON: {{"domain": "...", "confidence": 0.0, "reasoning": "..."}}"""
         
-        # Use structured output with Pydantic validation
-        structured_llm = self.llm.with_structured_output(IntentOutput)
-        intent_output = await structured_llm.ainvoke([HumanMessage(content=prompt)])
+        # Use JSON text output instead of structured_output (buggy in LangChain)
+        response = await self.llm.ainvoke([HumanMessage(content=prompt)])
+        response_text = response.content if hasattr(response, 'content') else str(response)
         
-        domain = intent_output.domain.lower()
+        # Parse JSON manually
+        import json
+        json_match = re.search(r'```json\s*(\{.*?\})\s*```', response_text, re.DOTALL)
+        if json_match:
+            json_str = json_match.group(1)
+        else:
+            json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+            json_str = json_match.group(0) if json_match else '{}'
+        
+        intent_data = json.loads(json_str)
+        domain = intent_data.get("domain", "general").lower()
 
         # Validate domain
         try:
             DomainType(domain)
         except ValueError:
             domain = DomainType.GENERAL.value
-            logger.warning(f"Invalid domain '{intent_output.domain}' from LLM, defaulting to {domain}")
+            logger.warning(f"Invalid domain '{intent_data.get('domain', 'unknown')}' from LLM, defaulting to {domain}")
 
         state["domain"] = domain
         state["messages"] = self._dedup_messages([HumanMessage(content=state["query"])])
@@ -340,7 +377,9 @@ Respond in JSON format."""
         # Initialize replan counter
         state["replan_count"] = 0
         
-        logger.info(f"Detected domain: {domain} (confidence: {intent_output.confidence:.3f}, reasoning: {intent_output.reasoning[:50]}...)")
+        confidence = intent_data.get("confidence", 0.5)
+        reasoning = intent_data.get("reasoning", "No reasoning provided")
+        logger.info(f"Detected domain: {domain} (confidence: {confidence:.3f}, reasoning: {reasoning[:50]}...)")
 
         return state
 
@@ -356,6 +395,12 @@ Respond in JSON format."""
         Non-blocking: If planning fails, execution continues without plan.
         """
         logger.info("Plan node executing")
+        
+        # Increment replan counter if this is a replan (not initial plan)
+        replan_count = state.get("replan_count") or 0  # Handle None value
+        if replan_count > 0 or state.get("observation_result"):  # If we've been through observation, it's a replan
+            state["replan_count"] = replan_count + 1
+            logger.info(f"Replanning (attempt {state['replan_count']}/2)")
         
         try:
             query = state.get("query", "")
@@ -393,19 +438,34 @@ Create an execution plan with:
 - Cost estimate: 0-1 scale
 - Time estimate: milliseconds (100-120000ms)
 
-Return structured ExecutionPlan."""
+Respond with JSON: {{\"reasoning\": \"...\", \"steps\": [{{\"step_id\": 1, \"tool_name\": \"...\", \"description\": \"...\", \"arguments\": {{}}, \"depends_on\": [], \"required\": true}}], \"estimated_cost\": 0.0, \"estimated_time_ms\": 1000}}"""
             
-            # Use structured output with Pydantic validation
-            structured_llm = self.llm.with_structured_output(ExecutionPlan)
-            plan = await structured_llm.ainvoke([HumanMessage(content=prompt)])
+            # Use JSON text output instead of structured_output (buggy in LangChain)
+            response = await self.llm.ainvoke([HumanMessage(content=prompt)])
+            response_text = response.content if hasattr(response, 'content') else str(response)
             
-            # Convert ExecutionPlan to dict for state serialization
-            state["execution_plan"] = plan.model_dump()
+            # Parse JSON manually
+            import json
+            json_match = re.search(r'```json\s*(\{.*?\})\s*```', response_text, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(1)
+            else:
+                json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+                json_str = json_match.group(0) if json_match else '{}'
             
+            plan_data = json.loads(json_str)
+            
+            # Convert to state dict
+            state["execution_plan"] = plan_data
+            
+            steps_count = len(plan_data.get("steps", []))
+            est_time = plan_data.get("estimated_time_ms", 0)
+            est_cost = plan_data.get("estimated_cost", 0.0)
+            reasoning_preview = plan_data.get("reasoning", "")[:50]
             logger.info(
-                f"Plan generated: {len(plan.steps)} steps, "
-                f"estimated {plan.estimated_time_ms}ms, cost {plan.estimated_cost:.2f}, "
-                f"reasoning: {plan.reasoning[:50]}..."
+                f"Plan generated: {steps_count} steps, "
+                f"estimated {est_time}ms, cost {est_cost:.2f}, "
+                f"reasoning: {reasoning_preview}..."
             )
             
         except Exception as e:
@@ -477,19 +537,35 @@ Return structured ToolSelection with:
 - selected_tools: List of 1-3 tools with arguments and confidence
 - fallback_plan: What to do if tools unavailable (10-300 characters)
 - route: rag_only / tools_only / rag_and_tools
+
+Respond with JSON: {{\"reasoning\": \"...\", \"selected_tools\": [{{\"tool_name\": \"rag_search\", \"arguments\": {{}}, \"confidence\": 0.8, \"reasoning\": \"...\"}}], \"fallback_plan\": \"...\", \"route\": \"rag_only\"}}
 """
             
-            # Use structured output with Pydantic validation
-            structured_llm = self.llm.with_structured_output(ToolSelection)
-            tool_selection = await structured_llm.ainvoke([HumanMessage(content=prompt)])
+            # Use JSON text output instead of structured_output (buggy in LangChain)
+            response = await self.llm.ainvoke([HumanMessage(content=prompt)])
+            response_text = response.content if hasattr(response, 'content') else str(response)
             
-            # Convert ToolSelection to dict for state serialization
-            state["tool_selection"] = tool_selection.model_dump()
+            # Parse JSON manually
+            import json
+            json_match = re.search(r'```json\s*(\{.*?\})\s*```', response_text, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(1)
+            else:
+                json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+                json_str = json_match.group(0) if json_match else '{}'
             
+            tool_selection_data = json.loads(json_str)
+            
+            # Convert to state dict
+            state["tool_selection"] = tool_selection_data
+            
+            tool_count = len(tool_selection_data.get("selected_tools", []))
+            route = tool_selection_data.get("route", "rag_only")
+            reasoning_preview = tool_selection_data.get("reasoning", "")[:50]
             logger.info(
-                f"Tool selection: {len(tool_selection.selected_tools)} tools, "
-                f"route: {tool_selection.route}, "
-                f"reasoning: {tool_selection.reasoning[:50]}..."
+                f"Tool selection: {tool_count} tools, "
+                f"route: {route}, "
+                f"reasoning: {reasoning_preview}..."
             )
             
         except Exception as e:
@@ -677,28 +753,44 @@ Return:
 - next_action: "generate" or "replan"
 - gaps: list of missing information (if any)
 - reasoning: explanation for your decision (10-500 chars)
+
+Respond with JSON: {{\"sufficient\": true, \"next_action\": \"generate\", \"gaps\": [], \"reasoning\": \"...\"}}
 """
             
-            # Use structured output
-            structured_llm = self.llm.with_structured_output(ObservationOutput)
-            observation = await structured_llm.ainvoke([HumanMessage(content=prompt)])
+            # Use JSON text output instead of structured_output (buggy in LangChain)
+            response = await self.llm.ainvoke([HumanMessage(content=prompt)])
+            response_text = response.content if hasattr(response, 'content') else str(response)
             
-            # Add counts to observation
-            observation.tool_results_count = len(tool_results)
-            observation.retrieval_count = len(retrieved) if retrieved else 0
+            # Parse JSON manually
+            import json
+            json_match = re.search(r'```json\s*(\{.*?\})\s*```', response_text, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(1)
+            else:
+                json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+                json_str = json_match.group(0) if json_match else '{}'
             
-            state["observation"] = observation.model_dump()
+            observation_data = json.loads(json_str)
             
+            # Add counts
+            observation_data["tool_results_count"] = len(tool_results)
+            observation_data["retrieval_count"] = len(retrieved) if retrieved else 0
+            
+            state["observation_result"] = observation_data
+            
+            sufficient = observation_data.get("sufficient", True)
+            next_action = observation_data.get("next_action", "generate")
+            gaps_count = len(observation_data.get("gaps", []))
             logger.info(
-                f"Observation: sufficient={observation.sufficient}, "
-                f"next_action={observation.next_action}, "
-                f"gaps={len(observation.gaps)}"
+                f"Observation: sufficient={sufficient}, "
+                f"next_action={next_action}, "
+                f"gaps={gaps_count}"
             )
 
         except Exception as e:  # pragma: no cover - defensive
             logger.warning(f"Observation node failed (non-blocking): {str(e)}")
             # Fallback: assume sufficient and proceed
-            state["observation"] = {
+            state["observation_result"] = {
                 "sufficient": True,
                 "next_action": "generate",
                 "gaps": [],
@@ -918,11 +1010,22 @@ Respond with:
 """
             logger.warning("Prompt truncated to fit token limit")
 
-        # Use structured output with Pydantic validation
-        structured_llm = self.llm.with_structured_output(RAGGenerationOutput)
-        rag_output = await structured_llm.ainvoke([HumanMessage(content=prompt)])
+        # Use JSON text output instead of structured_output (buggy in LangChain)
+        prompt = prompt + "\n\nRespond with JSON: {{\"answer\": \"...\", \"language\": \"hu\", \"section_ids\": [...]}}"
+        response = await self.llm.ainvoke([HumanMessage(content=prompt)])
+        response_text = response.content if hasattr(response, 'content') else str(response)
         
-        answer = rag_output.answer
+        # Parse JSON manually
+        import json
+        json_match = re.search(r'```json\s*(\{.*?\})\s*```', response_text, re.DOTALL)
+        if json_match:
+            json_str = json_match.group(1)
+        else:
+            json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+            json_str = json_match.group(0) if json_match else '{}'
+        
+        rag_data = json.loads(json_str)
+        answer = rag_data.get("answer", "Sajnálom, nem tudok választ adni.")
 
         # Ensure IT answers surface section references even if the model forgets
         if is_it_domain:
@@ -937,11 +1040,16 @@ Respond with:
                     section_ids.append(section_id)
 
             # Merge LLM-provided section_ids with extracted ones
-            all_section_ids = list(set(section_ids + rag_output.section_ids))
+            all_section_ids = list(set(section_ids + rag_data.get("section_ids", [])))
             
             if all_section_ids and not any(sid in answer for sid in all_section_ids):
                 refs = ", ".join(f"[{sid}]" for sid in all_section_ids)
                 answer = f"{answer}\n\nForrás: {refs} – IT Üzemeltetési és Felhasználói Szabályzat"
+            
+            # ALWAYS append Jira ticket question for IT domain (if not already present)
+            jira_question = "📋 Szeretnéd, hogy létrehozzak egy Jira support ticketet ehhez a kérdéshez?"
+            if jira_question not in answer:
+                answer = f"{answer}\n\n{jira_question}"
         
         # Save telemetry data
         state["llm_prompt"] = prompt
@@ -1019,10 +1127,22 @@ Respond with:
 """
         
         try:
-            # Use structured output
-            structured_llm = self.llm.with_structured_output(RAGGenerationOutput)
-            rag_output = await structured_llm.ainvoke([HumanMessage(content=prompt)])
-            answer = rag_output.answer
+            # Use JSON text output instead of structured_output (buggy in LangChain)
+            prompt = prompt + "\n\nRespond with JSON: {{\"answer\": \"...\", \"language\": \"hu\", \"section_ids\": []}}"
+            response = await self.llm.ainvoke([HumanMessage(content=prompt)])
+            response_text = response.content if hasattr(response, 'content') else str(response)
+            
+            # Parse JSON manually
+            import json
+            json_match = re.search(r'```json\s*(\{.*?\})\s*```', response_text, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(1)
+            else:
+                json_match = re.search(r'\{.*\}', response_text, re.DOTALL)
+                json_str = json_match.group(0) if json_match else '{}'
+            
+            rag_data = json.loads(json_str)
+            answer = rag_data.get("answer", "Sajnálom, nem tudok választ adni.")
             
         except Exception as e:
             logger.error(f"Summary-only generation failed: {e}")
@@ -1120,14 +1240,15 @@ Respond with:
         """Decide whether to retry generation or continue to workflow.
         
         Returns: "retry" if validation failed and retries remain, "continue" otherwise
+        NOTE: Decision functions CANNOT modify state - read-only!
         """
         errors = state.get("validation_errors", [])
         retry_count = state.get("retry_count", 0)
         max_retries = 2
         
         if errors and retry_count < max_retries:
-            state["retry_count"] = retry_count + 1
-            logger.info(f"🔄 Retrying generation (attempt {state['retry_count']}/{max_retries})")
+            # Don't modify state here - will be done in guardrail node before re-routing
+            logger.info(f"🔄 Retrying generation (attempt {retry_count + 1}/{max_retries})")
             return "retry"
         elif errors:
             logger.warning(f"⚠️ Max retries reached ({max_retries}). Continuing despite validation errors.")
@@ -1352,7 +1473,12 @@ Respond with:
             "request_start_time": request_start,
         }
 
-        final_state = await self.workflow.ainvoke(initial_state)
+        # Invoke with higher recursion limit to allow replans + full workflow
+        # Default is 25, but with replans we can hit ~24 steps
+        final_state = await self.workflow.ainvoke(
+            initial_state,
+            config={"recursion_limit": 50}
+        )
 
         # Build response with telemetry
         response = QueryResponse(

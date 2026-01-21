@@ -1,12 +1,31 @@
 # KnowledgeRouter - Vállalati Tudásirányító & Workflow-Automata
 
+**Version:** 2.9.0 (Production Hardened)  
+**Status:** ✅ Stable (Critical bugfixes applied 2026-01-21)
+
 Multi-domain AI agent rendszer Python Django backenddel, LangGraph orchestrációval és modern Tailwind CSS frontenddel (ChatGPT-style UI).
+
+---
+
+## 🐛 KRITIKUS BUGFIXEK (v2.9.0)
+
+**Emergency Production Fixes:**
+- ✅ LangChain `with_structured_output()` bug → Manual JSON parsing (6 nodes affected)
+- ✅ LangGraph state management violations → Decision functions now read-only
+- ✅ Node name conflicts → "observation" → "observation_check"
+- ✅ None-safe replan counter → Handles None values
+- ✅ Recursion limit increased → 50 (supports replanning workflows)
+- ✅ IT domain Jira question → Auto-appended (guaranteed UX)
+
+**See**: [docs/házi feladatok/3.md](./docs/házi%20feladatok/3.md#kritikus-bugfixek-2026-01-21) for technical details.
+
+---
 
 ## 🎯 Projekt Áttekintése
 
 KnowledgeRouter egy vállalati belső tudásbázis rendszer, amely:
 
-✅ **LangGraph StateGraph orchestration** - 11 node-os workflow (intent → plan → select_tools → conditional → retrieval/tool_executor → observation → generation → guardrail → feedback_metrics → workflow → memory_update) **+ Replan Loop** ↺  
+✅ **LangGraph StateGraph orchestration** - 11 node-os workflow (intent → plan → select_tools → conditional → retrieval/tool_executor → observation_check → generation → guardrail → feedback_metrics → workflow → memory_update) **+ Replan Loop** ↺  
 ✅ **6 domain-re** szétválasztott tudásbázisokból keres (HR, IT, Finance, Legal, Marketing, General)  
 ✅ **Multi-domain Qdrant collection** domain-specifikus szűréssel (egyetlen collection, gyors filtering)  
 ✅ **Hibrid keresés support** szemantikus (dense vectors) + domain filtering (lexikális BM25 ready)  
@@ -35,11 +54,12 @@ KnowledgeRouter egy vállalati belső tudásbázis rendszer, amely:
 🆕 **Optional MCP Server (v0.1 alpha)** - Model Context Protocol wrapper exposing Jira/Qdrant/Postgres tools (stdio); run via `pip install -r backend/mcp_server/requirements.txt && python -m backend.mcp_server`
 🆕 **Tool Executor Loop (v2.8)** - Iterative tool execution with asyncio timeout (10s/tool), ToolResult validation, non-blocking error handling
 🆕 **Observation Node + Replan Loop (v2.8)** - LLM-based evaluation: sufficient info? → generate OR replan (max 2x), gap detection, automatic replanning
+🔧 **Production Hardened (v2.9)** - Manual JSON parsing, state management fixes, 50 recursion limit, IT domain UX guarantee
 
 ## 📋 Tech Stack
 
 - **Backend**: Python 3.11+ | Django | **LangGraph (StateGraph orchestration)**
-- **LLM**: OpenAI GPT-4o Mini (gpt-4o-mini)
+- **LLM**: OpenAI GPT-4o Mini (gpt-4o-mini) | **Manual JSON parsing** (LangChain structured_output bypassed)
 - **Embedding**: OpenAI text-embedding-3-small (1536 dim)
 - **Vector DB**: Qdrant (self-hosted)
 - **Cache**: Redis 7 (embedding + query result cache)

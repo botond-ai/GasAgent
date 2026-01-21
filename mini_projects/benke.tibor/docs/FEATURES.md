@@ -1,8 +1,35 @@
 # KnowledgeRouter - Feature List
 
-**Version:** 2.8.0  
-**Last Updated:** 2026-01-20  
-**Breaking Changes:** Removed Anthropic/Claude support - OpenAI only
+**Version:** 2.9.0 (Production Hardened)  
+**Last Updated:** 2026-01-21  
+**Breaking Changes:** 
+- Removed Anthropic/Claude support - OpenAI only
+- **LangChain with_structured_output() replaced with manual JSON parsing** (critical bugfix)
+
+---
+
+## 🐛 CRITICAL BUGFIXES (v2.9.0 - 2026-01-21)
+
+### LangChain Structured Output Bug
+- **Issue**: `with_structured_output()` returned empty dicts `{}` for all Pydantic models
+- **Impact**: 6 nodes broken (intent_detection, plan, tool_selection, observation, generation x2)
+- **Fix**: Manual JSON text parsing with regex extraction from LLM responses
+- **Pattern**: Prompt + JSON format instruction → Extract ```json...``` or raw {...} → json.loads()
+
+### LangGraph State Management Violations
+- **Issue #1**: Decision functions mutating state (FORBIDDEN) → GraphRecursionError
+- **Issue #2**: Node name "observation" conflicted with state field → Renamed to "observation_check"
+- **Issue #3**: `state.get("replan_count", 0)` returning None → Changed to `or 0` (None-safe)
+
+### Recursion Limit
+- **Issue**: Default limit (25) too low for replanning workflows
+- **Fix**: Increased to 50 in `ainvoke(config={"recursion_limit": 50})`
+
+### IT Domain UX
+- **Issue**: Jira ticket question not always appended (LLM-dependent)
+- **Fix**: Automatic append after answer generation (guaranteed)
+
+**See**: [házi feladatok/3.md](./házi%20feladatok/3.md#kritikus-bugfixek-2026-01-21) for full technical details.
 
 ---
 
