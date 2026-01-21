@@ -1,12 +1,31 @@
 # KnowledgeRouter - Vállalati Tudásirányító & Workflow-Automata
 
+**Version:** 2.11.0 (Monitoring Upgrade)  
+**Status:** ✅ Stable (Prometheus + Grafana added 2026-01-21)
+
 Multi-domain AI agent rendszer Python Django backenddel, LangGraph orchestrációval és modern Tailwind CSS frontenddel (ChatGPT-style UI).
+
+---
+
+## 🐛 KRITIKUS BUGFIXEK (v2.9.0)
+
+**Emergency Production Fixes:**
+- ✅ LangChain `with_structured_output()` bug → Manual JSON parsing (6 nodes affected)
+- ✅ LangGraph state management violations → Decision functions now read-only
+- ✅ Node name conflicts → "observation" → "observation_check"
+- ✅ None-safe replan counter → Handles None values
+- ✅ Recursion limit increased → 50 (supports replanning workflows)
+- ✅ IT domain Jira question → Auto-appended (guaranteed UX)
+
+**See**: [docs/házi feladatok/3.md](./docs/házi%20feladatok/3.md#kritikus-bugfixek-2026-01-21) for technical details.
+
+---
 
 ## 🎯 Projekt Áttekintése
 
 KnowledgeRouter egy vállalati belső tudásbázis rendszer, amely:
 
-✅ **LangGraph StateGraph orchestration** - 6 node-os workflow (intent → retrieval → generation → guardrail → feedback_metrics → workflow)  
+✅ **LangGraph StateGraph orchestration** - 11 node-os workflow (intent → plan → select_tools → conditional → retrieval/tool_executor → observation_check → generation → guardrail → feedback_metrics → workflow → memory_update) **+ Replan Loop** ↺  
 ✅ **6 domain-re** szétválasztott tudásbázisokból keres (HR, IT, Finance, Legal, Marketing, General)  
 ✅ **Multi-domain Qdrant collection** domain-specifikus szűréssel (egyetlen collection, gyors filtering)  
 ✅ **Hibrid keresés support** szemantikus (dense vectors) + domain filtering (lexikális BM25 ready)  
@@ -30,24 +49,37 @@ KnowledgeRouter egy vállalati belső tudásbázis rendszer, amely:
 🆕 **Guardrail Node** (v2.5) - IT domain citation validation with automatic retry logic (max 2x)
 🆕 **Feedback Metrics Node** (v2.5) - Telemetry collection: retrieval quality, latency, cache hits
 🆕 **Memory (v2.6)** - Rolling window, conversation summary, facts extraction (non-blocking)
+🆕 **Memory Reducer Pattern (v2.7)** - Cumulative memory summarization with semantic fact compression (previous + new → merged summary, max 8 relevant facts)
+🆕 **Request Idempotency (v2.7)** - X-Request-ID header support with Redis cache (5 min TTL) - duplicate requests return cached response instantly
 🆕 **Optional MCP Server (v0.1 alpha)** - Model Context Protocol wrapper exposing Jira/Qdrant/Postgres tools (stdio); run via `pip install -r backend/mcp_server/requirements.txt && python -m backend.mcp_server`
+🆕 **Tool Executor Loop (v2.8)** - Iterative tool execution with asyncio timeout (10s/tool), ToolResult validation, non-blocking error handling
+🆕 **Observation Node + Replan Loop (v2.8)** - LLM-based evaluation: sufficient info? → generate OR replan (max 2x), gap detection, automatic replanning
+🔧 **Production Hardened (v2.9)** - Manual JSON parsing, state management fixes, 50 recursion limit, IT domain UX guarantee
+🚀 **Dual Pipeline Modes (v2.10)** - USE_SIMPLE_PIPELINE feature flag: Simple (15 sec, RAG-only) vs Complex (30-50 sec, full LangGraph with replan/tools/workflows)
 
 ## 📋 Tech Stack
 
 - **Backend**: Python 3.11+ | Django | **LangGraph (StateGraph orchestration)**
-- **LLM**: OpenAI GPT-4o Mini (gpt-4o-mini)
+- **LLM**: OpenAI GPT-4o Mini (gpt-4o-mini) | **Manual JSON parsing** (LangChain structured_output bypassed)
 - **Embedding**: OpenAI text-embedding-3-small (1536 dim)
 - **Vector DB**: Qdrant (self-hosted)
 - **Cache**: Redis 7 (embedding + query result cache)
 - **Database**: PostgreSQL 15 (feedback & analytics)
+- **Monitoring**: Prometheus + Grafana (metrics & dashboards)
 - **Frontend**: Tailwind CSS + Vanilla JavaScript (ChatGPT-style UI)
-- **Deployment**: Docker Compose
-- **Testing**: pytest (180 tests, 53% coverage)
+- **Deployment**: Docker Compose (6 services)
+- **Testing**: pytest (200+ tests, 54% coverage)
   - **RAG Optimization**: 27 tests (deduplication, IT overlap boost, integration)
   - **Feedback Ranking**: 15 tests (boost calculation, batch ops)
   - **Error Handling**: 39 tests (retry, token limits)
+  - **Tool Executor Loop**: 6 tests (timeout, error, multi-tool)
+  - **Observation + Replan**: 6 tests (LLM evaluation, replan routing, max limit)
+  - **Integration E2E**: 7 tests (complete workflow, replan loop)
+  - **Monitoring**: 22 tests (metrics API, collection, edge cases)
   - **Coverage Highlights**:
     - `openai_clients.py`: **100%** ✅
+    - `tool_registry.py`: **100%** ✅
+    - `prometheus_metrics.py`: **86%** ✅
     - `qdrant_rag_client.py`: **70%** (up from 18%)
     - `atlassian_client.py`: **87%**
 
@@ -69,9 +101,18 @@ OPENAI_API_KEY=sk-proj-...
 OPENAI_MODEL=gpt-4o-mini
 EMBEDDING_MODEL=text-embedding-3-small
 
+# Pipeline Mode (opcionális):
+USE_SIMPLE_PIPELINE=False  # Default: Complex workflow (30-50 sec, full features)
+                            # True: Simple pipeline (15 sec, RAG-only)
+
 # Windows PowerShell példa:
-$env:OPENAI_API_KEY = "sk-proj-..."; $env:OPENAI_MODEL = "gpt-4o-mini"; $env:EMBEDDING_MODEL = "text-embedding-3-small"
+$env:OPENAI_API_KEY = "sk-proj-..."; $env:OPENAI_MODEL = "gpt-4o-mini"; $env:EMBEDDING_MODEL = "text-embedding-3-small"; $env:USE_SIMPLE_PIPELINE = "False"
 ```
+
+**Pipeline Modes:**
+- **Simple (True)**: Fast RAG-only pipeline (~15 sec), ideal for IT/Marketing simple queries
+- **Complex (False)**: Full LangGraph workflow (~30-50 sec) with replan loop, tool execution, workflow automation
+- **See**: [docs/PIPELINE_MODES.md](docs/PIPELINE_MODES.md) for detailed comparison
 
 ### 3. Docker Compose Indítása
 
@@ -203,7 +244,7 @@ benketibor/
 │   │   ├── schema.sql              # PostgreSQL schema (feedback table)
 │   │   └── __init__.py
 │   ├── services/                # Business logic
-│   │   ├── agent.py             # LangGraph agent (4-node workflow: intent → retrieval → generation → workflow)
+│   │   ├── agent.py             # LangGraph agent (StateGraph: intent → plan → select_tools → tool_executor/retrieval → generation → guardrail → feedback_metrics → workflow → memory_update)
 │   │   ├── chat_service.py      # Chat orchestration
 │   │   └── __init__.py
 │   ├── api/                     # API endpoints
@@ -1096,6 +1137,98 @@ A rendszer részletes HTTP státusz kódokat használ:
 | **400** | Bad Request | Üres query, validációs hiba |
 | **404** | Not Found | Session vagy file nem létezik |
 | **413** | Request Too Large | Query >10k tokens (~40k chars) |
+
+### **Request Idempotency (v2.7)** 🆕
+
+A rendszer támogatja az **idempotens request-eket** `X-Request-ID` header használatával. Azonos request ID-val küldött duplikált requestek azonos cached választ kapnak vissza LLM újrahívás nélkül.
+
+**Működés:**
+```
+Client: POST /api/query/ (X-Request-ID: abc-123)
+        ↓
+Server: Redis cache lookup (request_id:abc-123)
+        ↓ MISS
+Server: LLM processing → Save to cache (TTL: 5 min)
+        ↓
+Client: Response { "success": true, "data": {...} }
+
+Client: POST /api/query/ (X-Request-ID: abc-123) [DUPLICATE]
+        ↓
+Server: Redis cache HIT → Return cached response
+        ↓
+Client: Response (X-Cache-Hit: true) [< 10ms latency]
+```
+
+**Cache kulcs:** `request_id:{uuid}`  
+**TTL:** 5 perc (300s)  
+**Előnyök:** Költségcsökkentés (duplikált LLM hívások elkerülése), instant válasz, network retry protection
+
+**Példa használat:**
+```bash
+# Generate UUID v4 client-oldalon
+REQUEST_ID=$(uuidgen)
+
+# First request - processzálás
+curl -X POST http://localhost:8001/api/query/ \
+  -H "Content-Type: application/json" \
+  -H "X-Request-ID: $REQUEST_ID" \
+  -d '{"query": "Mi a szabadság policy?", "user_id": "demo"}'
+
+# Duplicate request - cached response
+curl -X POST http://localhost:8001/api/query/ \
+  -H "X-Request-ID: $REQUEST_ID" \
+  -d '{"query": "Mi a szabadság policy?", "user_id": "demo"}'
+# Response headers: X-Cache-Hit: true
+```
+
+**Kompatibilitás:** Nem ütközik a `/api/regenerate/` endpoint-tal (különböző cache kulcsok).
+
+### **Memory Reducer Pattern (v2.7)** 🆕
+
+A konverzációs memória **kumulatív összefoglaló** rendszert használ szemantikus tömörítéssel:
+
+**Stratégia:**
+```
+Previous Summary (8 msgs) + New Messages (8 msgs)
+                ↓ LLM Merge
+        Updated Summary (3-5 sentences)
+                ↓ Semantic Compression
+        8 MOST RELEVANT Facts
+```
+
+**Működés (példa):**
+```python
+# Turn 1 (8 messages)
+memory_summary: "User wants marketing HR meeting. Budget: 50k."
+memory_facts: ["Budget: 50,000 Ft", "Meeting date: 2026-01-20", "Team lead: Anna"]
+
+# Turn 2 (8 new messages) - User: "Actually 60k budget"
+# LLM merges previous + new
+memory_summary: "User plans marketing HR meeting. Budget updated to 60k. Needs approval."
+memory_facts: [
+  "Budget: 60,000 Ft",  # Recent overwrites old (50k → 60k)
+  "Meeting date: 2026-01-20",  # Still relevant
+  "Approval required from CFO"  # New fact
+  # "Team lead: Anna" dropped (not mentioned anymore)
+]
+```
+
+**Semantic Compression Rules:**
+- ✅ **Merge similar facts**: `"user wants X" + "user needs X"` → `"user requires X"`
+- ✅ **Prioritize recent**: Conflicts resolved by recency (newest wins)
+- ✅ **Keep constraints**: Dates, names, numbers preserved
+- ✅ **Drop irrelevant**: Facts no longer relevant to conversation direction
+
+**Konfiguráció:**
+- `MEMORY_MAX_MESSAGES=8` - Rolling window size (default: 8)
+- Max facts: 8 (compressed from prev_facts + new_messages)
+- Non-blocking: Memory update failures nem akadályozzák a választ
+
+**Log output:**
+```
+Memory updated (REDUCER): 6 facts (compressed from 13 items), 
+summary length: 342 chars, total messages: 24
+```
 | **500** | Internal Server Error | Backend exception |
 | **503** | Service Unavailable | OpenAI API down vagy timeout |
 

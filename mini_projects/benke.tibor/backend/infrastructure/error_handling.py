@@ -2,10 +2,11 @@
 Centralized error handling and retry logic for external API calls.
 Handles OpenAI rate limits, timeouts, and server errors with exponential backoff.
 """
+import asyncio
 import logging
 import time
 import functools
-from typing import Callable, Any, TypeVar, Optional
+from typing import Callable, Any, TypeVar, Coroutine
 from openai import (
     APIError,
     APIConnectionError,
@@ -223,6 +224,71 @@ def retry_with_exponential_backoff(
         
         return wrapper
     return decorator
+
+
+class TimeoutError(Exception):
+    """Custom timeout exception."""
+    pass
+
+
+async def with_timeout_and_retry(
+    coro: Coroutine,
+    timeout: float,
+    max_retries: int = 3,
+    operation_name: str = "operation",
+) -> Any:
+    """Async wrapper with timeout and exponential backoff retry.
+    
+    Args:
+        coro: Async coroutine to execute
+        timeout: Timeout in seconds
+        max_retries: Maximum retry attempts
+        operation_name: Name for logging
+        
+    Returns:
+        Result of the coroutine
+        
+    Raises:
+        TimeoutError: If operation times out after all retries
+        APICallError: If operation fails after all retries
+    """
+    initial_delay = 1.0
+    exponential_base = 2.0
+    
+    for attempt in range(max_retries):
+        try:
+            result = await asyncio.wait_for(coro, timeout=timeout)
+            
+            if attempt > 0:
+                logger.info(f"{operation_name} succeeded after {attempt + 1} attempts")
+            
+            return result
+            
+        except asyncio.TimeoutError as e:
+            if attempt == max_retries - 1:
+                logger.error(f"{operation_name} timed out after {max_retries} attempts ({timeout}s each)")
+                raise TimeoutError(f"{operation_name} timeout after {max_retries} retries") from e
+            
+            wait_time = initial_delay * (exponential_base ** attempt)
+            logger.warning(
+                f"{operation_name} timed out (attempt {attempt + 1}/{max_retries}). "
+                f"Retrying in {wait_time:.1f}s..."
+            )
+            await asyncio.sleep(wait_time)
+            
+        except (RateLimitError, APIConnectionError, APIError) as e:
+            if attempt == max_retries - 1:
+                logger.error(f"{operation_name} failed after {max_retries} attempts: {e}")
+                raise APICallError(f"{operation_name} failed: {e}") from e
+            
+            wait_time = initial_delay * (exponential_base ** attempt)
+            logger.warning(
+                f"{operation_name} error (attempt {attempt + 1}/{max_retries}): {type(e).__name__}. "
+                f"Retrying in {wait_time:.1f}s..."
+            )
+            await asyncio.sleep(wait_time)
+    
+    raise APICallError(f"{operation_name} failed after {max_retries} attempts")
 
 
 class TokenUsageTracker:

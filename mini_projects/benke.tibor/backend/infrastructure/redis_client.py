@@ -248,6 +248,60 @@ class RedisCache:
         except Exception as e:
             logger.error(f"Redis invalidate error: {e}")
     
+    # ========== REQUEST IDEMPOTENCY ==========
+    
+    def get_request_response(self, request_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Get cached response for idempotent request.
+        
+        Args:
+            request_id: Unique request identifier (X-Request-ID header)
+            
+        Returns:
+            Cached response dict or None if not found
+        """
+        if not self.is_available():
+            return None
+            
+        key = f"request_id:{request_id}"
+        try:
+            data = self.client.get(key)
+            if data:
+                logger.info(f"✅ Request idempotency HIT: {request_id}")
+                return json.loads(data)
+            return None
+        except Exception as e:
+            logger.error(f"Redis get_request_response error: {e}")
+            return None
+    
+    def set_request_response(
+        self, 
+        request_id: str, 
+        response: Dict[str, Any], 
+        ttl: int = 300  # 5 minutes
+    ):
+        """
+        Cache response for idempotent request.
+        
+        Args:
+            request_id: Unique request identifier
+            response: Response data to cache
+            ttl: Time to live in seconds (default: 5 minutes)
+        """
+        if not self.is_available():
+            return
+            
+        key = f"request_id:{request_id}"
+        try:
+            self.client.setex(
+                key,
+                ttl,
+                json.dumps(response)
+            )
+            logger.info(f"💾 Request response cached: {request_id} (TTL: {ttl}s)")
+        except Exception as e:
+            logger.error(f"Redis set_request_response error: {e}")
+    
     # ========== STATISTICS ==========
     
     def get_cache_stats(self) -> Dict[str, Any]:

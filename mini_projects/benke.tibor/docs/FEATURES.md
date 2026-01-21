@@ -1,8 +1,35 @@
 # KnowledgeRouter - Feature List
 
-**Version:** 2.6.1  
-**Last Updated:** 2026-01-10  
-**Breaking Changes:** Removed Anthropic/Claude support - OpenAI only
+**Version:** 2.11.0 (Monitoring Upgrade)  
+**Last Updated:** 2026-01-21  
+**Breaking Changes:** 
+- Removed Anthropic/Claude support - OpenAI only
+- **LangChain with_structured_output() replaced with manual JSON parsing** (critical bugfix)
+
+---
+
+## 🐛 CRITICAL BUGFIXES (v2.9.0 - 2026-01-21)
+
+### LangChain Structured Output Bug
+- **Issue**: `with_structured_output()` returned empty dicts `{}` for all Pydantic models
+- **Impact**: 6 nodes broken (intent_detection, plan, tool_selection, observation, generation x2)
+- **Fix**: Manual JSON text parsing with regex extraction from LLM responses
+- **Pattern**: Prompt + JSON format instruction → Extract ```json...``` or raw {...} → json.loads()
+
+### LangGraph State Management Violations
+- **Issue #1**: Decision functions mutating state (FORBIDDEN) → GraphRecursionError
+- **Issue #2**: Node name "observation" conflicted with state field → Renamed to "observation_check"
+- **Issue #3**: `state.get("replan_count", 0)` returning None → Changed to `or 0` (None-safe)
+
+### Recursion Limit
+- **Issue**: Default limit (25) too low for replanning workflows
+- **Fix**: Increased to 50 in `ainvoke(config={"recursion_limit": 50})`
+
+### IT Domain UX
+- **Issue**: Jira ticket question not always appended (LLM-dependent)
+- **Fix**: Automatic append after answer generation (guaranteed)
+
+**See**: [házi feladatok/3.md](./házi%20feladatok/3.md#kritikus-bugfixek-2026-01-21) for full technical details.
 
 ---
 
@@ -61,6 +88,84 @@
 
 ---
 
+### 📊 Prometheus + Grafana Monitoring (NEW in v2.11)
+
+#### Real-Time Metrics Collection
+- **11 Metric Types**:
+  - `knowledgerouter_requests_total` - Counter (by domain, status, pipeline_mode)
+  - `knowledgerouter_latency_seconds` - Histogram (p50/p95/p99 latency)
+  - `knowledgerouter_llm_calls_total` - Counter (by model, status, purpose)
+  - `knowledgerouter_llm_latency_seconds` - Histogram (LLM call latency)
+  - `knowledgerouter_cache_hits_total` - Counter (by cache_type)
+  - `knowledgerouter_cache_misses_total` - Counter (by cache_type)
+  - `knowledgerouter_errors_total` - Counter (by error_type, component)
+  - `knowledgerouter_tool_executions_total` - Counter (by tool_name, status)
+  - `knowledgerouter_rag_latency_seconds` - Histogram (RAG retrieval time)
+  - `knowledgerouter_active_requests` - Gauge (concurrent requests)
+  - `knowledgerouter_replan_loops_total` - Counter (by reason, domain)
+
+#### API Endpoint
+- **GET /api/metrics/** - Prometheus text format endpoint
+- **Auto-scraped**: Prometheus scrapes every 15 seconds
+- **Format**: Standard Prometheus exposition format
+
+#### Grafana Dashboards
+- **KnowledgeRouter Monitoring** - Main dashboard
+  - Request Rate (by domain)
+  - Latency percentiles (p50/p95/p99)
+  - LLM Call Rate (by model)
+  - Cache Hit Rate
+  - Active Requests (real-time)
+  - Error Rate (by type)
+- **Access**: http://localhost:3001 (admin/admin)
+- **Auto-provisioned**: Datasource + dashboard on startup
+
+#### Debug Panel Integration
+- **📊 Monitoring Stats** section in debug panel
+- **Auto-refresh**: Every 10 seconds
+- **Metrics displayed**:
+  - Total Requests
+  - Cache Hit Rate (%)
+  - Avg Latency (ms)
+  - LLM Calls
+  - Active Requests (real-time)
+  - Error Count
+- **Manual refresh**: 🔄 Refresh Stats button
+
+#### Tests
+- **backend/tests/test_monitoring.py**: 22 tests (86% coverage)
+  - MetricsAPIView endpoint tests
+  - Metrics collection tests (all 11 types)
+  - Concurrent updates
+  - Edge cases (zero latency, unicode labels)
+  - Integration tests
+
+#### Implementation
+- **prometheus-client**: Python client library (v0.19.0)
+- **MetricsCollector**: Helper class for all metrics
+- **Custom registry**: Isolated from default Prometheus registry
+- **Non-blocking**: Metrics collection never blocks requests
+- **Thread-safe**: Concurrent metric updates supported
+
+#### Configuration
+- **prometheus.yml**: Scrape config (15s interval)
+- **grafana/provisioning/**:
+  - `datasources/prometheus.yml` - Auto-configured datasource
+  - `dashboards/dashboard.yml` - Dashboard provider
+  - `dashboards/knowledgerouter.json` - Dashboard definition
+
+#### Docs
+- **docs/MONITORING.md**: Complete monitoring guide
+  - Quick Start
+  - Metric definitions
+  - Dashboard panels
+  - Key queries
+  - Testing
+  - Production recommendations
+  - Troubleshooting
+
+---
+
 ### 🧩 Optional MCP Server (v0.1 alpha)
 
 - **Purpose**: Expose existing infra clients (Jira, Qdrant, Postgres) as Model Context Protocol tools
@@ -83,6 +188,112 @@
 
 - **RAG Retrieval Try/Catch**: Continues gracefully with empty citations on retrieval errors
 - **Guardrail Conditional Routing**: Retry path to generation or continue to feedback_metrics
+
+---
+
+### 🚀 Dual Pipeline Modes (NEW in v2.10)
+
+#### Feature Flag: USE_SIMPLE_PIPELINE
+
+**Simple Pipeline (True):**
+- **Flow**: Intent (keyword) → RAG → Generation → Guardrail
+- **Latency**: ~15 seconds average
+- **LLM Calls**: 1-2 (generation + guardrail)
+- **Cost**: Low ($0.002 per query)
+- **Use Case**: IT/Marketing simple queries, fast response critical
+- **Limitations**: No tool execution, no replan, no workflow automation
+
+**Complex Pipeline (False - Default):**
+- **Flow**: Intent (LLM) → Plan → Tool Selection → Tool Executor → Observation → Replan Loop (max 2×) → Generation → Guardrail → Workflow → Memory
+- **Latency**: ~30-50 seconds average (optimized from 60-90s)
+- **LLM Calls**: 4-6 (intent, plan, observation, generation, memory, guardrail)
+- **Cost**: Medium ($0.008 per query)
+- **Use Case**: Multi-step tasks, workflow automation, tool combinations
+- **Features**: Full LangGraph workflow, replan mechanism, memory management
+
+#### Complex Workflow Iteration Details
+
+**Why Complex Pipeline is Slower:**
+
+1. **LLM-based Intent Detection** (2-3 sec):
+   - Analyzes query semantics with GPT-4o-mini
+   - Detects domain + query complexity
+   - Fallback: keyword matching
+
+2. **Plan Node** (5-6 sec):
+   - LLM generates execution plan
+   - Estimates steps and tool requirements
+   - Increments `replan_count` state
+
+3. **Tool Selection** (3-4 sec):
+   - LLM decides: rag_only / tools_only / rag_and_tools
+   - Routes to appropriate executor
+
+4. **Tool Executor** (5-10 sec):
+   - Async execution with 10s timeout per tool
+   - Parallel: RAG search + Jira lookup (future)
+   - Sequential currently: RAG → tool → tool
+
+5. **Observation Node** (3 sec):
+   - LLM evaluates: sufficient information?
+   - Detects gaps in retrieval
+   - **Optimization**: Auto-skip for IT/Marketing with ≥3 citations
+
+6. **Replan Loop** (10-20 sec if triggered):
+   - Max 2 iterations
+   - Regenerates plan with adjusted strategy
+   - Loops back to Tool Selection
+   - **Optimization**: Force generate after 1st replan for simple domains
+
+7. **Generation** (10-15 sec):
+   - GPT-4o-mini generates final answer
+   - IT domain: Auto-appends Jira ticket question
+
+8. **Guardrail** (0.5 sec):
+   - IT domain: Citation validation
+   - Retry generation if citations missing (max 2×)
+
+9. **Workflow Node** (2-5 sec):
+   - IT domain: Prepare Jira ticket draft
+   - Update state with workflow metadata
+
+10. **Memory Update** (1 sec):
+    - Conversation summary + facts extraction
+    - SHA256 deduplication
+    - Rolling window (last 8 messages)
+
+**Total Load Breakdown:**
+- **LLM Round Trips**: 4-6 (vs 1-2 in simple)
+- **State Mutations**: 10+ nodes (vs 3 in simple)
+- **Iteration Potential**: 2× replan = 3× workflow execution
+- **Tool Overhead**: Async timeouts, validation, error handling
+
+#### Configuration
+
+```bash
+# .env file
+USE_SIMPLE_PIPELINE=False  # Default: complex workflow
+
+# docker-compose.yml
+environment:
+  - USE_SIMPLE_PIPELINE=True  # Override to simple
+```
+
+#### Performance Metrics
+
+| Metric | Simple | Complex | Complex Optimized |
+|--------|--------|---------|-------------------|
+| Avg Latency | 15-20s | 60-90s | 30-50s |
+| LLM Calls | 1-2 | 8-10 | 4-6 |
+| Replan Support | ❌ | ✅ (max 2) | ✅ (limited 1) |
+| Tool Execution | RAG only | All tools | All tools |
+| Workflow Automation | ❌ | ✅ | ✅ |
+
+#### Tests
+- **backend/tests/test_chat_service.py**: Pipeline mode branching logic
+- **backend/tests/test_agent.py**: `run_simple()` vs `run()` method validation
+
+**See**: [docs/PIPELINE_MODES.md](PIPELINE_MODES.md) for detailed usage guide
 
 ### 🎫 IT Domain - Qdrant Semantic Search & Jira Integration (NEW in v2.3)
 
@@ -118,18 +329,25 @@
 
 #### LangGraph Orchestration (Production)
 - **StateGraph Workflow**: Complete agent workflow using LangGraph StateGraph
-- **7 Orchestrated Nodes** (v2.6):
+- **11 Orchestrated Nodes** (v2.8):
   - `intent_detection` - Domain classification (keyword + LLM fallback)
+  - `plan_node` - Execution plan generation (steps, estimates)
+  - `select_tools` - Tool selection and routing decision
+  - `tool_executor` - Execute selected tools with timeout/retry (NEW v2.8)
   - `retrieval` - Qdrant RAG search with domain filtering (+ facts-based rewrite)
   - `generation` - Context-aware LLM response generation (+ memory summary & facts)
   - `guardrail` - Response validation (IT citations, contradiction detection)
+  - `observation` - LLM evaluation of results, replan decision (NEW v2.8)
   - `feedback_metrics` - Telemetry collection (latency, cache hits, token usage)
   - `execute_workflow` - HR/IT workflow automation
   - `memory_update` - Rolling window, summary, facts extraction
-- **State Management**: AgentState with messages, domain, citations, validation_errors, retry_count, metrics
-- **Linear Execution**: intent → retrieval → generation → guardrail → feedback_metrics → workflow → END
-- **Conditional Routing**: Guardrail can route back to generation for retries
-- **Benefits**: Declarative workflow, easy debugging, state persistence, extensible graph structure
+- **State Management**: AgentState with messages, domain, citations, validation_errors, retry_count, metrics, tool_results, observation, replan_count (NEW v2.8)
+- **Execution Flow**: intent → plan → select_tools → conditional → retrieval/tool_executor → observation → conditional → replan/generation → guardrail → feedback_metrics → workflow → memory_update → END
+- **Conditional Routing**: 
+  - `select_tools` routes `rag_only`→retrieval, `tools_only`/`rag_and_tools`→tool_executor
+  - `observation` routes `replan`→plan (max 2x), `generate`→generation
+  - `guardrail` can route back to generation for retries
+- **Benefits**: Declarative workflow, easy debugging, state persistence, extensible graph structure, replan loop for quality
 
 #### Enhanced ABC Interfaces
 - **IEmbeddingService**: Swappable embedding providers (OpenAI/Cohere/HuggingFace)
@@ -461,11 +679,34 @@ POST /api/regenerate/
 
 ### 🧪 Testing & Quality
 
-#### Unit Tests (Updated v2.2)
-- **121 Passing Tests**: Expanded test coverage (+60 tests)
+#### Unit Tests (Updated v2.8)
+- **180+ Passing Tests**: Expanded test coverage including integration tests
+  - **Sprint 4 (Tool Executor)**: 6 tests ✅
+  - **Sprint 5 (Observation)**: 6 tests ✅
+  - **Integration I1 (E2E Workflow)**: 7 tests ✅
+  - **Integration I2 (Graph Validation)**: 10 tests ✅
+  - **Total Sprint 4+5+I1+I2**: 33 tests ✅
 - **49% Code Coverage**: Nearly doubled from 25% baseline
 - **Pytest Framework**: Modern testing with fixtures and async support
 - **Mock Support**: External API mocking with pytest-mock
+
+#### Integration Testing (NEW in v2.8)
+- **End-to-End Workflow Tests** (7 tests):
+  - Complete flow: Plan → Tool Selection → Executor → Observation
+  - MockLLM pattern with dict-based response mapping
+  - Replan loop validation (max 2 iterations)
+  - Multi-tool execution (parallel tools)
+  - Error handling mid-workflow
+  - Tool results counting accuracy
+  
+- **Graph Compilation Tests** (10 tests):
+  - LangGraph StateGraph compilation verification
+  - 11-node structure validation
+  - Conditional edge routing (_tool_selection_decision, _observation_decision, _guardrail_decision)
+  - Replan loop max iteration enforcement
+  - AgentState schema validation (21 fields)
+  - Entry/exit point verification
+  - Decision function callable checks
 
 #### Test Categories
 - **Error Handling**: Retry logic, exponential backoff (39 tests ✅)
@@ -476,6 +717,10 @@ POST /api/regenerate/
 - **Debug CLI**: Citation formatting, feedback stats (17 tests ✅ NEW)
 - **Interfaces**: ABC contracts, implementation validation (15 tests ✅ NEW)
 - **Telemetry**: Pipeline metrics, RAG/LLM capture (9 tests ✅ NEW v2.2)
+- **Tool Executor Loop**: Tool execution, observation, replan (6 tests ✅ NEW v2.7)
+- **Observation Node**: LLM evaluation, replan decision (6 tests ✅ NEW v2.8)
+- **Integration E2E**: Complete workflow validation (7 tests ✅ NEW v2.8)
+- **Integration Graph**: LangGraph compilation, routing (10 tests ✅ NEW v2.8)
 
 #### Test Execution
 ```bash
@@ -534,13 +779,14 @@ docker-compose exec backend pytest tests/test_feedback_ranking.py -v
 | **Caching** | 6 | ✅ Complete |
 | **Feedback** | 7 | ✅ Backend Complete, 🚧 Frontend Testing |
 | **Architecture** | 3 | ✅ Complete (NEW v2.2) |
-| **Testing** | 121 tests | ✅ 49% Coverage (NEW v2.2) |
+| **Testing** | 180+ tests | ✅ 49% Coverage (NEW v2.8) |
+| **Integration Tests** | 17 tests | ✅ Complete (NEW v2.8) |
 | **Integrations** | 3 | ✅ Complete |
 | **Workflows** | 2 types | ✅ Complete |
 | **Frontend** | 12 | ✅ Complete |
 | **DevOps** | 5 | ✅ Complete |
 
-**Total Features:** 48 implemented | 10 planned
+**Total Features:** 51 implemented | 10 planned
 
 ---
 
@@ -619,8 +865,57 @@ docker-compose exec backend python -m utils.debug_cli "szabadság igénylés" hr
 
 ---
 
-**Last Updated:** 2026-01-10  
-**Version:** 2.6.1 (OpenAI-only, Qdrant API update)
+**Last Updated:** 2026-01-20  
+**Version:** 2.8.0 (Tool Executor Loop + Observation + Integration Tests)
+
+---
+
+## 🔄 Changelog v2.8.0 (2026-01-20)
+
+### New Features
+- **Tool Executor Loop** (Sprint 4):
+  - Tool execution with timeout (30s default)
+  - Retry logic (max 2 attempts)
+  - Latency tracking per tool
+  - ToolResult model with success/error handling
+  - 6 comprehensive unit tests ✅
+
+- **Observation Node** (Sprint 5):
+  - LLM-based evaluation of tool/retrieval results
+  - Next action decision (replan vs generate)
+  - Replan count tracking (max 2 iterations)
+  - Data sufficiency assessment
+  - 6 comprehensive unit tests ✅
+
+- **Integration Testing** (Sprints I1-I2):
+  - **E2E Workflow Tests**: 7 tests validating complete Plan→Selection→Executor→Observation→Replan flow
+  - **Graph Validation Tests**: 10 tests for LangGraph compilation, routing, state schema
+  - MockLLM pattern for structured output simulation
+  - Conditional edge routing validation (3 decision functions)
+  - Total: 33 tests passing (Sprint 4+5+I1+I2) ✅
+
+### Architecture Updates
+- **11-Node LangGraph Workflow**:
+  - Added `tool_executor` node with timeout/retry
+  - Added `observation` node with LLM evaluation
+  - Replan loop: observation ↔ plan (max 2 iterations)
+  - Conditional routing: `_observation_decision()` (replan vs generate)
+  
+- **AgentState Enhancements**:
+  - `tool_results`: List of ToolResult objects
+  - `observation`: Observation model with next_action decision
+  - `replan_count`: Iteration tracking for safety
+
+### Test Coverage
+- **180+ Total Tests**: Comprehensive coverage across all components
+- **Integration Tests**: 17 new tests (7 E2E + 10 Graph)
+- **Unit Tests**: 12 new tests (6 Tool Executor + 6 Observation)
+- **0 IDE Errors**: All linting issues resolved ✅
+
+### Documentation
+- ✅ README.md - Updated with v2.8 features and test statistics
+- ✅ docs/házi feladatok/4.md - Detailed Sprint 4, 5, I1, I2 documentation
+- ✅ FEATURES.md - Integration testing section added
 
 ---
 

@@ -26,26 +26,26 @@ class TestIntentOutput:
     def test_confidence_validation(self):
         """Test confidence must be between 0 and 1."""
         # Valid
-        IntentOutput(domain=DomainType.HR, confidence=0.0)
-        IntentOutput(domain=DomainType.HR, confidence=1.0)
+        IntentOutput(domain=DomainType.HR, confidence=0.0, reasoning="Test reasoning")
+        IntentOutput(domain=DomainType.HR, confidence=1.0, reasoning="Test reasoning")
         
         # Invalid
         with pytest.raises(ValidationError):
-            IntentOutput(domain=DomainType.HR, confidence=1.5)
+            IntentOutput(domain=DomainType.HR, confidence=1.5, reasoning="Test")
         
         with pytest.raises(ValidationError):
-            IntentOutput(domain=DomainType.HR, confidence=-0.1)
+            IntentOutput(domain=DomainType.HR, confidence=-0.1, reasoning="Test")
     
     def test_domain_enum_validation(self):
         """Test domain must be valid DomainType."""
         # Valid
         for domain in DomainType:
-            output = IntentOutput(domain=domain, confidence=0.8)
+            output = IntentOutput(domain=domain, confidence=0.8, reasoning="Test reasoning")
             assert output.domain == domain
         
         # Invalid - raw string not allowed
         with pytest.raises(ValidationError):
-            IntentOutput(domain="invalid_domain", confidence=0.8)
+            IntentOutput(domain="invalid_domain", confidence=0.8, reasoning="Test")
 
 
 class TestMemoryUpdate:
@@ -150,17 +150,17 @@ class TestRAGGenerationOutput:
     def test_language_validation(self):
         """Test language must be 'hu' or 'en'."""
         # Valid
-        RAGGenerationOutput(answer="Test", section_ids=[], language="hu")
-        RAGGenerationOutput(answer="Test", section_ids=[], language="en")
+        RAGGenerationOutput(answer="Test answer with sufficient length", section_ids=[], language="hu")
+        RAGGenerationOutput(answer="Test answer with sufficient length", section_ids=[], language="en")
         
         # Invalid
         with pytest.raises(ValidationError):
-            RAGGenerationOutput(answer="Test", section_ids=[], language="de")
+            RAGGenerationOutput(answer="Test answer long enough", section_ids=[], language="de")
     
     def test_confidence_default_value(self):
         """Test confidence has default value of 0.8."""
         output = RAGGenerationOutput(
-            answer="Test",
+            answer="Test answer with sufficient length",
             section_ids=[],
             language="en"
         )
@@ -169,21 +169,21 @@ class TestRAGGenerationOutput:
     def test_confidence_range_validation(self):
         """Test confidence must be between 0 and 1."""
         # Valid
-        RAGGenerationOutput(answer="Test", section_ids=[], language="en", confidence=0.0)
-        RAGGenerationOutput(answer="Test", section_ids=[], language="en", confidence=1.0)
+        RAGGenerationOutput(answer="Test answer with length", section_ids=[], language="en", confidence=0.0)
+        RAGGenerationOutput(answer="Test answer with length", section_ids=[], language="en", confidence=1.0)
         
         # Invalid
         with pytest.raises(ValidationError):
-            RAGGenerationOutput(answer="Test", section_ids=[], language="en", confidence=1.5)
+            RAGGenerationOutput(answer="Test answer enough", section_ids=[], language="en", confidence=1.5)
         
         with pytest.raises(ValidationError):
-            RAGGenerationOutput(answer="Test", section_ids=[], language="en", confidence=-0.1)
+            RAGGenerationOutput(answer="Test answer enough", section_ids=[], language="en", confidence=-0.1)
     
     def test_section_id_case_sensitive(self):
         """Test section IDs are case-sensitive (uppercase required)."""
         # Valid uppercase
         output = RAGGenerationOutput(
-            answer="Test",
+            answer="Test answer with sufficient length",
             section_ids=["IT-KB-123"],
             language="en"
         )
@@ -191,7 +191,7 @@ class TestRAGGenerationOutput:
         
         # Invalid lowercase (should be skipped)
         output = RAGGenerationOutput(
-            answer="Test",
+            answer="Test answer with sufficient length",
             section_ids=["it-kb-123"],
             language="en"
         )

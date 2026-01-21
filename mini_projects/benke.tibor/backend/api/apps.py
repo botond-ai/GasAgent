@@ -44,10 +44,26 @@ class ApiConfig(AppConfig):
             from services.agent import QueryAgent
             from services.chat_service import ChatService
 
-            # PostgreSQL pool initialization - DEFER to first async request
-            # Cannot use asyncio.run() here because it creates/closes a separate event loop
-            # The pool must be initialized in the SAME event loop as the request handlers
-            logger.info("⏳ PostgreSQL pool will be initialized on first request (lazy init)")
+            # PostgreSQL pool initialization - EAGER INIT to avoid first-request latency
+            # Use thread to avoid blocking Django startup
+            import asyncio
+            import threading
+            
+            def init_postgres_pool():
+                """Initialize PostgreSQL pool in background thread."""
+                try:
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(postgres_client.ensure_initialized())
+                    loop.close()
+                    logger.info("✅ PostgreSQL pool initialized successfully (eager init)")
+                except Exception as e:
+                    logger.warning(f"⚠️ PostgreSQL eager init failed (will retry on first request): {e}")
+            
+            # Start init in background thread (non-blocking)
+            init_thread = threading.Thread(target=init_postgres_pool, daemon=True)
+            init_thread.start()
+            logger.info("⏳ PostgreSQL pool initialization started in background...")
 
             # Initialize repositories
             user_repo = FileUserRepository(data_dir=settings.USERS_DIR)

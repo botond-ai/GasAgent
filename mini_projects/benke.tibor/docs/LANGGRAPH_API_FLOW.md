@@ -1,8 +1,30 @@
 # API Hívások és LangGraph Workflow Elemzés
 
+**Version:** 2.9.0 (Production Hardened)  
+**Last Updated:** 2026-01-21  
+**Breaking Changes:** Manual JSON parsing (LangChain structured_output bug), 50 recursion limit
+
+---
+
+## ⚠️ CRITICAL NOTES (v2.9.0)
+
+**LangChain Structured Output Bug**: All `with_structured_output()` calls replaced with manual JSON parsing:
+- **Affected Nodes**: intent_detection, plan, tool_selection, observation_check, generation (2x)
+- **Pattern**: Prompt + JSON format → Regex extract ```json...``` or {...} → json.loads()
+- **Impact**: Stable, but verbose. Monitor LangChain updates for fix.
+
+**LangGraph State Management**:
+- **Decision Functions**: Read-only (no state mutations)
+- **State Mutations**: In nodes only (e.g., plan_node increments replan_count)
+- **Recursion Limit**: 50 (config in ainvoke, NOT compile)
+
+**See**: [házi feladatok/3.md](./házi%20feladatok/3.md#kritikus-bugfixek-2026-01-21) for full technical details.
+
+---
+
 ## ✅ IGEN - Az API hívások már LangGraph alapúak!
 
-### 🔄 LangGraph Workflow Architektúra
+### � Pipeline Mode Routing (v2.10)
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -13,6 +35,34 @@
                             ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │           chat_service.process_query()                           │
+│                                                                  │
+│   if settings.USE_SIMPLE_PIPELINE:                               │
+│       ├─► agent.run_simple() ────► Simple RAG Pipeline          │
+│       │   (15 sec, 1-2 LLM calls)                                │
+│   else:                                                          │
+│       └─► agent.run() ───────────► Complex LangGraph Workflow   │
+│           (30-50 sec, 4-6 LLM calls, replan loop)                │
+└───────────────────────────┬─────────────────────────────────────┘
+```
+
+**USE_SIMPLE_PIPELINE=True (Fast Path):**
+```
+Intent (keyword) → RAG → Generation → Guardrail → Response
+~15 seconds total
+```
+
+**USE_SIMPLE_PIPELINE=False (Full Workflow - Default):**
+```
+Intent (LLM) → Plan → Tools → Observation → [Replan Loop] → 
+Generation → Guardrail → Workflow → Memory → Response
+~30-50 seconds total
+```
+
+### 🔄 LangGraph Workflow Architektúra (Complex Mode)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│           chat_service.process_query()                           │
 │              ↓                                                   │
 │        agent.process_query()                                     │
 │              ↓                                                   │
@@ -21,7 +71,7 @@
                             │
                             ▼
         ╔═══════════════════════════════════════╗
-        ║   LangGraph StateGraph (7 nodes)      ║
+        ║ LangGraph StateGraph (11 nodes + Replan Loop) ║
         ╚═══════════════════════════════════════╝
                             │
         ┌───────────────────┴───────────────────┐
@@ -29,52 +79,79 @@
         ▼                                       │
    🔍 Node 1: intent_detection                 │
         │ (detect domain: IT/HR/Finance/...)   │
+        │ (JSON parsing: manual regex extract) │
         ▼                                       │
-   📚 Node 2: retrieval                         │
-        │ (Qdrant RAG search)                  │
+   📝 Node 2: plan                              │
+        │ (execution plan, replan_count++)     │
+        │ (JSON parsing: manual regex extract) │
         ▼                                       │
-   🤖 Node 3: generation                        │
-        │ (OpenAI GPT-4o-mini LLM)             │
+   🛠️ Node 3: select_tools                     │
+        │ (choose route: rag_only/tools_only/rag_and_tools) │
+        │ (JSON parsing: manual regex extract) │
         ▼                                       │
-   ✅ Node 4: guardrail ────────────────────┐  │
-        │                                   │  │
-        │ (validation passed?)              │  │
-        ├─ NO (retry count < 2) ───────────┘  │
-        │                                      │
-        ▼ YES                                  │
-   📊 Node 5: collect_metrics                  │
-        │ (telemetry: latency, tokens)        │
-        ▼                                      │
-   ⚙️  Node 6: execute_workflow  ◄─────────────┘
-        │                        
-        │ ┌─ IF domain == IT ─────────────────────┐
-        │ │                                        │
-        │ │  Prepare Jira ticket draft:            │
-        │ │   - summary                            │
-        │ │   - description                        │
-        │ │   - citations                          │
-        │ │   - user_id                            │
-        │ │                                        │
-        │ │  state["workflow"] = {                 │
-        │ │    "action": "it_support_ready",       │
-        │ │    "jira_available": True,             │
-        │ │    "ticket_draft": {...}               │
-        │ │  }                                     │
-        │ └────────────────────────────────────────┘
-        │
-        ▼
-   💾 Node 7: memory_update
-        │ (conversation summary + facts)
-        ▼
-      END
-        │
-        ▼
-   Return QueryResponse to frontend
-        │
-        └─► Frontend displays:
-            - Answer
-            - Citations
-            - **Jira ticket button** (if IT domain)
+   ┌────┴─── Conditional Routing ─────┐        │
+   │                                  │        │
+   ▼                                  ▼        │
+📚 Node 4a: retrieval          🔧 Node 4b: tool_executor │
+   │ (Qdrant RAG search)             │ (async timeout 10s/tool) │
+   │                                  ▼        │
+   └────────────────► Node 5: observation_check│ ◄─┐
+        │ (LLM evaluate: sufficient?)           │   │
+        │ (JSON parsing: manual regex extract)  │   │
+        ▼                                        │   │
+   ┌────┴─── Decision: replan or generate? ────┤   │
+   │                                            │   │
+   │ IF insufficient (gaps detected):           │   │
+   │   replan_count < 2 → REPLAN ───────────────┘   │
+   │   replan_count >= 2 → FORCE GENERATE       │   │
+   │                                            │   │
+   ▼ GENERATE                                   │   │
+   🤖 Node 6: generation                        │   │
+        │ (OpenAI GPT-4o-mini LLM)             │   │
+        │ (JSON parsing: manual regex extract) │   │
+        │ (IT domain: auto-append Jira question) │  │
+        ▼                                       │   │
+   ✅ Node 7: guardrail ────────────────────┐  │   │
+        │                                   │  │   │
+        │ (validation passed?)              │  │   │
+        ├─ NO (retry count < 2) ───────────┘  │   │
+        │                                      │   │
+        ▼ YES                                  │   │
+   📊 Node 8: collect_metrics                  │   │
+        │ (telemetry: latency, tokens)        │   │
+        ▼                                      │   │
+   ⚙️  Node 9: execute_workflow  ◄─────────────┘   │
+        │                                           │
+        │ ┌─ IF domain == IT ─────────────────────┐│
+        │ │                                        ││
+        │ │  Prepare Jira ticket draft:            ││
+        │ │   - summary                            ││
+        │ │   - description                        ││
+        │ │   - citations                          ││
+        │ │   - user_id                            ││
+        │ │                                        ││
+        │ │  state["workflow"] = {                 ││
+        │ │    "action": "it_support_ready",       ││
+        │ │    "jira_available": True,             ││
+        │ │    "ticket_draft": {...}               ││
+        │ │  }                                     ││
+        │ └────────────────────────────────────────┘│
+        │                                           │
+        ▼                                           │
+   💾 Node 10: memory_update                        │
+        │ (conversation summary + facts)           │
+        │ (JSON parsing: manual regex extract)     │
+        ▼                                           │
+      END                                           │
+        │                                           │
+        ▼                                           │
+   Return QueryResponse to frontend                │
+        │                                           │
+        └─► Frontend displays:                      │
+            - Answer                                │
+            - Citations                             │
+            - **Jira ticket button** (if IT domain) │
+            - Debug panel (latency, RAG context)    │
 ```
 
 ---

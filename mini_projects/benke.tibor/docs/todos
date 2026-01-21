@@ -47,18 +47,281 @@
 - [ ] **Multi-language support**: Automatikus nyelvdetekció és fordítás
 - [ ] **Feedback analytics dashboard**: Admin UI feedback trends-hez
 
-Újabbak, kategóriázandók:
-- chat summarizing tömörítés szemantika vagy fizikai foglalás miatt trimmel (hosszabb chatek összefoglalója) - overwrite vagy összefűzés (reducderk)
-- profil adatok mentése
-- gyakori bemeneti kérések válaszainak cachelése ne kelljen RAG-elni (adott már?)
-- idempotencia
-- degradáció: ha a RAG nem érhető el, csak summary-only üzemmódban történjen a válasz
-- pydantic model micsoda (típusosság, validáció, pontosság), ToolNode LangGraph képesség használatban van-e, mire jó - Pydantic használat md alapján
-- http kódok (200, 201, 202, 203 204) - Langgraph állapot alapján, pl. LLM válaszolt, workflow továbment stb. - fail safe response működés kialakítása a prompt-ban (ha eltéved az llm/langgraph)
-- LangGraph vagy LLM ismerje fel, milyen domainre érkezett kérdés és a háttérben a megfelelő RAG-et végezze el a megfelelő dokumentumon (fontos, hogy domainenként meg legyenek jelölve a dokumentumok és ha megvan a domain, csak abban keressen tovább)
+## 🎯 Hf (4) - Multi-Tool Agent Fejlesztés
 
-- timeout kezelés + fallback + retry: ha nem ér el egy API-t, x-szer próbálkozzon, y másodperc után jelezzen a usernek, hogy nem éri el a szolgáltatást, mi legyen...Az x és y ne legyen beégetve, legyen környezeti paraméter
-- összetett ágens tervezési elvek: reasoning layer, operational layer, tool exceutoron layer. Executre: plan node, triage, executor loop, observation, router tool (state-k kezelése), action/update, next step, final answer. Át kell nézni a kódban ezeket az elveket mennyire alkalmazzuk (LangGraph) ami az összetett ágensfejlesztésnek az alapjai. 
-- Routing döntési mintákból melyik lenne alkalmas a projektünkre? input-based routing, state-based routing, tool-availability routing, confidence-based routing
-- LangGraph ismétlődő feladatokon milyen technikát érdemes alkalmazni? pl. paginated API, itemlist stb. Kontrollált rekurzóra gondolok
-- első prompt alapján döntse el automatikusan a rendszer, melyik domain kérdését kell feldolgozni, ezután RAG-eljen a megfelelő domainű dokumentációra és menjen tovább a folyamat
+### Rétegek szerint csoportosítva (Architecture Analysis alapján)
+
+#### **Fázis 1: Reasoning Layer Bővítés (1-2 hét)**
+
+##### 1.1 Plan Node
+- [ ] ExecutionPlan Pydantic model (steps, tools, data_sources)
+- [ ] Plan node implementáció (_plan_node)
+- [ ] LLM prompt: "Think step-by-step to answer this query"
+- [ ] Graph edge: intent_detection → plan_node → retrieval
+
+##### 1.2 Chain-of-Thought Explicit Prompting
+- [ ] Update intent_detection prompt CoT-tal
+- [ ] Update generation prompt CoT-tal
+- [ ] Update plan_node prompt reasoning guidance-dal
+- [ ] Test: Verify step-by-step reasoning in LLM responses
+
+##### 1.3 Tool Selection Node (Router Tool)
+- [ ] ToolSelection Pydantic model
+- [ ] Tool selector node (_tool_selection_node)
+- [ ] LLM dönt: RAG? Jira? Email? Calculation?
+- [ ] Conditional routing: Tool Selection → [RAG | Jira | Custom]
+
+**Deliverable:** AGENT_ARCHITECTURE_ANALYSIS.md alapján
+- Dokumentáció: docs/házi feladatok/IMPLEMENTATION_PHASE_1.md
+- Kód: Plan + Tool Selection nodes
+- Tesztek: test_plan_node.py, test_tool_selection.py
+
+---
+
+#### **Fázis 2: Tool Execution Layer (2-3 hét)**
+
+##### 2.1 Tool Registry & Registry Pattern
+- [ ] ToolRegistry klasz (register, get_descriptions, execute)
+- [ ] Tool schema extraction (type hints → JSON schema)
+- [ ] Registry initialization (RAG, Jira, Email, Calculator tools)
+- [ ] infrastructure/tool_registry.py
+
+##### 2.2 Tool Executor Loop
+- [ ] ToolExecutor node (_tool_executor_loop_node)
+- [ ] Iteratív tool execution (plan steps iterate)
+- [ ] Error handling per tool (timeout, retry, fallback)
+- [ ] Tool results collection & logging
+
+##### 2.3 Observation Node
+- [ ] ObservationOutput Pydantic model
+- [ ] Observation node (_observation_node)
+- [ ] LLM értékeli: "Do I have enough info?"
+- [ ] Conditional routing: Observation → [Generate | Replan]
+
+##### 2.4 Planner Fallback (Error Recovery)
+- [ ] Retry node planner fallback-kel
+- [ ] Tool fail → LLM replan trigger
+- [ ] Max replans limit (prevent infinite loops)
+- [ ] Degradation: Tool unavailable → summary-only
+
+**Deliverable:**
+- Dokumentáció: docs/házi feladatok/IMPLEMENTATION_PHASE_2.md
+- Kód: Tool Registry, Executor, Observation nodes
+- Tesztek: test_tool_executor.py, test_observation.py
+- Integration test: test_executor_loop.py
+
+---
+
+#### **Fázis 3: Error Handling & Resilience (1-2 hét)**
+
+##### 3.1 Retry Node (időszakos API hibák)
+- [ ] RetryNode implementáció (max_retries, exponential backoff)
+- [ ] Tool retry wrapper (already have with_timeout_and_retry)
+- [ ] Separate retry node for orchestration-level retries
+- [ ] Error classification (transient vs permanent)
+
+##### 3.2 Fallback Model (olcsó-drága modell)
+- [ ] Fallback model selection logic
+- [ ] gpt-4o-mini (default) → gpt-3.5-turbo (fallback)
+- [ ] Cost optimization: Preferr cheaper model wenn möglijk
+- [ ] State tracking: which model was used
+
+##### 3.3 Guardian Node (AI Act Compliance)
+- [ ] GuardianNode: Validates outputs gegen policies
+- [ ] Sensitive data detection (PII, secrets)
+- [ ] Content policy check
+- [ ] Audit logging for compliance
+
+##### 3.4 Fail-Safe Response Mechanism
+- [ ] FailSafeResponse Pydantic model
+- [ ] Ultimate fallback responses (Hungarian + English)
+- [ ] Graceful degradation: Tool fail → summary-only
+- [ ] User notification: Clear error messages
+
+**Deliverable:**
+- Dokumentáció: docs/házi feladatok/IMPLEMENTATION_PHASE_3.md
+- Kód: Retry, Guardian, FailSafe nodes
+- Tesztek: test_retry_node.py, test_guardian.py, test_fail_safe.py
+
+---
+
+#### **Fázis 4: Memory & Context Handling (1-2 hét)**
+
+##### 4.1 Long-Term Memory (Persistent User Profiles)
+- [ ] UserProfile DB schema (Postgres)
+- [ ] UserMemoryStore class (CRUD operations)
+- [ ] Profile loading in intent_detection
+- [ ] Facts accumulation across sessions
+
+##### 4.2 Multi-Level Summarization
+- [ ] Short tier (8 messages)
+- [ ] Medium tier (50 messages)
+- [ ] Long tier (200+ messages)
+- [ ] Automatic tier selection based on message count
+
+##### 4.3 Retrieval-Before-Tools Enforcement
+- [ ] Verify RAG runs before Tool Executor
+- [ ] RAG context augmentation in tool prompts
+- [ ] Tool observation feeds back to memory
+
+**Deliverable:**
+- Dokumentáció: docs/házi feladatok/IMPLEMENTATION_PHASE_4.md
+- Kód: UserMemoryStore, Multi-level summarization
+- DB Migration: user_profiles table
+- Tesztek: test_user_memory.py, test_multi_level_summary.py
+
+---
+
+#### **Fázis 5: Monitoring & Observability (1-2 hét)**
+
+##### 5.1 Prometheus Metrics Integration
+- [ ] prometheus_client setup
+- [ ] LLM call metrics (count, latency, tokens)
+- [ ] Tool execution metrics (success rate, latency per tool)
+- [ ] RAG metrics (retrieval latency, hit rate)
+- [ ] Workflow metrics (decision paths, retry counts)
+- [ ] Cache metrics (hit rate, invalidation count)
+- [ ] Error rates & breakdown by type
+- [ ] Cost tracking (per model, per user, cumulative)
+
+##### 5.2 Grafana Dashboard
+- [ ] Node Performance Dashboard (latencies by node)
+- [ ] RAG Performance Dashboard (top queries, hit rates)
+- [ ] LLM Cost Dashboard (cost per model, burn rate)
+- [ ] Error Dashboard (error types, frequencies, trends)
+- [ ] System Health Dashboard (active agents, memory usage)
+
+##### 5.3 Loki Logging Integration
+- [ ] Structured logging (JSON format)
+- [ ] Log labels (node, domain, user_id, session_id)
+- [ ] Log queries for debugging
+- [ ] Alert rules (high latency, errors, cost anomalies)
+
+##### 5.4 OpenTelemetry Tracing
+- [ ] Trace initialization (tracer provider)
+- [ ] Span per node execution
+- [ ] Span attributes (input, output, latency, status)
+- [ ] Distributed tracing (frontend ↔ backend)
+
+##### 5.5 Alerting & Anomaly Detection
+- [ ] Prometheus AlertManager rules
+- [ ] Timeout alerts (> 30s latency)
+- [ ] Cost anomaly alerts (daily burn rate exceeded)
+- [ ] Error rate alerts (> 5% error rate)
+- [ ] Infinite loop detection (max replans exceeded)
+
+**Deliverable:**
+- Dokumentáció: docs/házi feladatok/IMPLEMENTATION_PHASE_5.md
+- Kód: Prometheus metrics, Grafana configs, Loki setup
+- Docker: prometheus, grafana, loki services (docker-compose)
+- Alerts: AlertManager rules, runbooks
+
+---
+
+### 🔄 Routing Decision Patterns (Projektünkhöz alkalmas)
+
+Elemzés: Melyik routing pattern alkalmazható?
+
+- [ ] **State-based Routing** ✅ Ajánlott
+  - Current domain, tool availability, user profile alapján
+  - Implementálva: guardrail conditional edge
+  - Kiterjesztés: Tool selection → [RAG | Jira | Email | Calculator]
+
+- [ ] **Confidence-based Routing** ✅ Ajánlott
+  - Intent detection confidence → If < 0.5 use fallback model
+  - Tool executor observation → If not sufficient, replan
+  - Implementálva: Intent detection confidence field
+  - Kiterjesztés: Tool selection observation
+
+- [ ] **Input-based Routing** ⚠️ Korlátozottan
+  - Query keywords → domain triage
+  - Implementálva: Marketing keywords detection
+  - Kiterjesztés: Tool selection keywords ("jira", "email", "calculate")
+
+- [ ] **Tool-Availability Routing** ✅ Ajánlott
+  - Which tools are available/enabled?
+  - Fallback ha tool unavailable
+  - Implementálva: Tool registry pattern
+  - Kiterjesztés: Check tool health before routing
+
+---
+
+### 📊 Performance Optimization Javaslatok
+
+- [ ] **Prompt Optimization**
+  - DELTA prompting (delta between current & previous)
+  - Tokens csökkentés (avg 15-20%)
+  - Few-shot examples vs Chain-of-Thought tradeoff
+
+- [ ] **Caching Strategy**
+  - Plan caching (same query ≈ same plan?)
+  - Tool result caching (24h TTL)
+  - Embedding cache (current 7d TTL OK)
+
+- [ ] **Parallelization**
+  - Parallel tool execution (non-dependent tools)
+  - Parallel RAG + Tool execution (after plan)
+  - Async/await optimization
+
+- [ ] **Model Selection**
+  - Fast track: Use gpt-3.5-turbo for simple queries
+  - Smart fallback: Retry with gpt-4o if 3.5 fails
+  - Cost vs accuracy optimization
+
+**Referencia:** https://github.com/adrgul/ai_agent_tutorial/blob/main/docs/DELTA_PROMPT.md
+
+---
+
+### 📈 Implementation Roadmap
+
+```
+Week 1-2:  Fázis 1 (Plan + CoT + Tool Selection)
+Week 3-4:  Fázis 2 (Tool Registry + Executor Loop + Observation)
+Week 5-6:  Fázis 3 (Retry + Guardian + FailSafe)
+Week 7-8:  Fázis 4 (Long-term Memory + Multi-level Summary)
+Week 9-10: Fázis 5 (Monitoring + Prometheus + Grafana)
+```
+
+**Parallel:** Testing & Documentation (minden fázissal)
+
+---
+
+### 📚 Dokumentáció & Referenciák
+
+- Saját: docs/házi feladatok/AGENT_ARCHITECTURE_ANALYSIS.md ✅
+- Saját: docs/házi feladatok/IMPLEMENTATION_PHASE_*.md (todo)
+- Külső: https://github.com/adrgul/ai_agent_tutorial/blob/main/docs/AI_AGENT_4_RETEG_ARCHITEKTURA.md
+- Külső: https://github.com/adrgul/ai_agent_tutorial/blob/main/docs/09_MONITORING_PROMPT.md
+
+---
+
+### 🚀 Quick Wins (MVPs)
+
+Ha gyorsan akarnánk progressziót:
+
+1. **2-3 nap:** Plan Node alapok (1.1)
+2. **3-4 nap:** Tool Selection Node (1.3)
+3. **1 hét:** Tool Executor Loop (2.2)
+4. **3 nap:** Observation Node (2.3)
+
+**Teljes Fázis 1-2:** ~4-5 hét = Core complex agent capabilities
+
+---
+
+### ⚙️ Módosítandó Fájlok (Prioritás)
+
+**Backend**
+- services/agent.py (új nodes)
+- domain/llm_outputs.py (ExecutionPlan, ToolSelection, ObservationOutput)
+- domain/models.py (kiterjesztés)
+- infrastructure/tool_registry.py (NEW)
+- infrastructure/user_memory.py (NEW - Fázis 4)
+- tests/test_plan_node.py (NEW)
+- tests/test_tool_executor.py (NEW)
+
+**Frontend** (Fázis 5)
+- Debug panel kiterjesztés (monitoring info)
+
+**DevOps** (Fázis 5)
+- docker-compose.yml (prometheus, grafana, loki)
+- docs/MONITORING.md (NEW)

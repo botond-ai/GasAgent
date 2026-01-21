@@ -1,0 +1,47 @@
+# version: '3.8'
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ai-agent-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - PCLOUD_USERNAME=${PCLOUD_USERNAME}
+      - PCLOUD_PASSWORD=${PCLOUD_PASSWORD}
+      - PCLOUD_ACCESS_TOKEN=${PCLOUD_ACCESS_TOKEN}
+      - PCLOUD_ENDPOINT=${PCLOUD_ENDPOINT}
+      - PCLOUD_PHOTO_MEMORIES_FOLDER_ID=${PCLOUD_PHOTO_MEMORIES_FOLDER_ID}
+    volumes:
+      - ./backend/data:/app/data
+      - ./pal_utcai_fiuk.pdf:/app/pal_utcai_fiuk.pdf:ro
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: ai-agent-frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  backend_data:

@@ -13,6 +13,9 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-test-key-change-in-product
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
+# Feature flags
+USE_SIMPLE_PIPELINE = os.getenv('USE_SIMPLE_PIPELINE', 'False') == 'True'  # True = old fast pipeline, False = new LangGraph workflow
+
 INSTALLED_APPS = [
     'django.contrib.contenttypes',
     'django.contrib.auth',
@@ -82,6 +85,11 @@ REST_FRAMEWORK = {
 # LLM Configuration
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 OPENAI_MODEL = os.getenv('OPENAI_MODEL', 'gpt-4o-mini')
+
+# Timeout and Retry Configuration
+OPENAI_TIMEOUT = int(os.getenv('OPENAI_TIMEOUT', 30))  # seconds
+OPENAI_MAX_RETRIES = int(os.getenv('OPENAI_MAX_RETRIES', 3))
+RAG_TIMEOUT = int(os.getenv('RAG_TIMEOUT', 10))  # seconds
 
 # Vector DB Configuration
 QDRANT_HOST = os.getenv('QDRANT_HOST', 'localhost')

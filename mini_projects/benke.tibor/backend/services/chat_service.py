@@ -27,6 +27,7 @@ class ChatService:
 
     async def process_query(self, request: QueryRequest) -> QueryResponse:
         """Process user query through agent workflow."""
+        from django.conf import settings
         
         # Generate session ID if not provided
         session_id = request.session_id or str(uuid4())
@@ -53,12 +54,21 @@ class ChatService:
         user_message = Message(role="user", content=request.query)
         await self.conversation_repo.save_message(session_id, user_message)
 
-        # Run agent
-        response = await self.agent.run(
-            query=request.query,
-            user_id=request.user_id,
-            session_id=session_id,
-        )
+        # Run agent - simple or complex workflow based on feature flag
+        if settings.USE_SIMPLE_PIPELINE:
+            logger.info(f"⚡ Using SIMPLE pipeline (fast RAG-only workflow)")
+            response = await self.agent.run_simple(
+                query=request.query,
+                user_id=request.user_id,
+                session_id=session_id,
+            )
+        else:
+            logger.info(f"🔄 Using COMPLEX pipeline (full LangGraph workflow)")
+            response = await self.agent.run(
+                query=request.query,
+                user_id=request.user_id,
+                session_id=session_id,
+            )
 
         # Save assistant message with domain and citations for caching
         assistant_message = Message(

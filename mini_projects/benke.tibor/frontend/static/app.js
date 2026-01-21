@@ -335,14 +335,34 @@ queryForm.addEventListener('submit', async (e) => {
 
     if (!query) return;
 
-    // Check if user is responding "igen" to Jira ticket offer
+    // Check if user is responding to Jira ticket offer (yes/no)
     const normalizedQuery = query.toLowerCase().trim();
+    const isJiraDecline = lastITContext && (
+        normalizedQuery === 'nem' ||
+        normalizedQuery === 'no' ||
+        normalizedQuery.includes('mégsem') ||
+        normalizedQuery.includes('nem kell') ||
+        normalizedQuery.includes('nem kérem') ||
+        (normalizedQuery.includes('nem') && query.split(' ').length <= 3)
+    );
     const isJiraConfirmation = lastITContext && 
         (normalizedQuery === 'igen' || 
          normalizedQuery === 'yes' ||
          normalizedQuery === 'ok' ||
          normalizedQuery === 'i' ||
          (normalizedQuery.includes('igen') && query.split(' ').length <= 3));
+    
+    if (isJiraDecline) {
+        addMessage(query, 'user');
+        if (lastITContext) {
+            addMessage('Köszönöm a visszajelzést, nem hozok létre Jira ticketet. Szólj, ha mégis szeretnéd, vagy írd le, miben segíthetek még.', 'bot');
+        } else {
+            addMessage('Rendben, nem hozok létre ticketet. Miben segíthetek helyette?', 'bot');
+        }
+        queryInput.value = '';
+        lastITContext = null;
+        return;
+    }
     
     if (isJiraConfirmation) {
         console.log('🎫 Jira confirmation detected, creating ticket...');
@@ -363,6 +383,10 @@ queryForm.addEventListener('submit', async (e) => {
     showTyping();
 
     try {
+        // Set 120 second timeout for complex workflow queries
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 120000);
+
         const response = await fetch('http://localhost:8001/api/query/', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -371,8 +395,11 @@ queryForm.addEventListener('submit', async (e) => {
                 session_id: sessionId,
                 query: query,
                 organisation: 'Demo Org'
-            })
+            }),
+            signal: controller.signal
         });
+
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
             const error = await response.json();
@@ -463,20 +490,21 @@ queryForm.addEventListener('submit', async (e) => {
             sessionId  // Pass session ID
         );
         
-        // Store IT context for potential Jira ticket creation
-        if (payload.domain === 'it' && payload.answer) {
-            // Store context if response mentions Jira or contains typical IT offer keywords
-            const hasJiraOffer = payload.answer.toLowerCase().includes('jira') || 
-                                 payload.answer.toLowerCase().includes('ticket') ||
+        // Store context for potential Jira ticket creation (independent of domain)
+        if (payload.answer) {
+            const lowerAns = payload.answer.toLowerCase();
+            const hasJiraOffer = lowerAns.includes('jira') ||
+                                 lowerAns.includes('ticket') ||
                                  payload.answer.includes('📋') ||
-                                 payload.answer.toLowerCase().includes('szeretnéd');
-            
+                                 lowerAns.includes('szeretnéd') ||
+                                 lowerAns.includes('támogatási jegy') ||
+                                 lowerAns.includes('support ticket') ||
+                                 lowerAns.includes('hozzak létre') ||
+                                 lowerAns.includes('létrehozzak');
+
             if (hasJiraOffer) {
-                lastITContext = {
-                    query: query,
-                    answer: payload.answer
-                };
-                console.log('✅ IT context stored for Jira ticket:', lastITContext);
+                lastITContext = { query, answer: payload.answer };
+                console.log('✅ Jira context stored for ticket flow:', lastITContext);
             } else {
                 lastITContext = null;
             }
@@ -487,7 +515,12 @@ queryForm.addEventListener('submit', async (e) => {
     } catch (error) {
         console.error('Fetch error:', error);
         hideTyping();
-        addMessage(`❌ Hálózati hiba: ${error.message}`, 'error');
+        
+        if (error.name === 'AbortError') {
+            addMessage('⏱️ A kérés túllépte a 120 másodperces időkorlátot. Próbáld meg újra vagy kapcsold be a gyors módot (USE_SIMPLE_PIPELINE=True).', 'error');
+        } else {
+            addMessage(`❌ Hálózati hiba: ${error.message}`, 'error');
+        }
     } finally {
         sendBtn.disabled = false;
         queryInput.focus();
@@ -719,3 +752,103 @@ async function createJiraTicket(query, answer) {
         addMessage('❌ Hiba történt a ticket létrehozásakor.', 'error');
     }
 }
+
+/**
+ * Fetch and display monitoring statistics from Prometheus metrics.
+ * Parses Prometheus text format and extracts key metrics.
+ */
+async function fetchMonitoringStats() {
+    try {
+        const response = await fetch('http://localhost:8001/api/metrics/');
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const metricsText = await response.text();
+        
+        // Parse Prometheus metrics (simple text parsing)
+        const lines = metricsText.split('\n');
+        const metrics = {};
+        
+        lines.forEach(line => {
+            if (line.startsWith('#') || !line.trim()) return;
+            
+            // Extract metric name and value - improved regex for labels
+            const match = line.match(/^([a-z_]+)(?:\{[^}]+\})?\s+([0-9.eE+-]+)/);
+            if (match) {
+                const metricName = match[1];
+                const value = parseFloat(match[2]);
+                
+                if (!metrics[metricName]) {
+                    metrics[metricName] = [];
+                }
+                metrics[metricName].push(value);
+            }
+        });
+        
+        // Calculate stats
+        const totalRequests = metrics['knowledgerouter_requests_total'] 
+            ? metrics['knowledgerouter_requests_total'].reduce((a, b) => a + b, 0) 
+            : 0;
+        
+        const cacheHits = metrics['knowledgerouter_cache_hits_total']
+            ? metrics['knowledgerouter_cache_hits_total'].reduce((a, b) => a + b, 0)
+            : 0;
+        
+        const cacheMisses = metrics['knowledgerouter_cache_misses_total']
+            ? metrics['knowledgerouter_cache_misses_total'].reduce((a, b) => a + b, 0)
+            : 0;
+        
+        const cacheHitRate = (cacheHits + cacheMisses) > 0
+            ? ((cacheHits / (cacheHits + cacheMisses)) * 100).toFixed(1)
+            : '0.0';
+        
+        const llmCalls = metrics['knowledgerouter_llm_calls_total']
+            ? metrics['knowledgerouter_llm_calls_total'].reduce((a, b) => a + b, 0)
+            : 0;
+        
+        const activeRequests = metrics['knowledgerouter_active_requests']
+            ? Math.max(...metrics['knowledgerouter_active_requests'])
+            : 0;
+        
+        const errors = metrics['knowledgerouter_errors_total']
+            ? metrics['knowledgerouter_errors_total'].reduce((a, b) => a + b, 0)
+            : 0;
+        
+        // Latency calculation from histogram _count and _sum metrics
+        const latencyCount = metrics['knowledgerouter_latency_seconds_count']
+            ? metrics['knowledgerouter_latency_seconds_count'].reduce((a, b) => a + b, 0)
+            : 0;
+        
+        const latencySum = metrics['knowledgerouter_latency_seconds_sum']
+            ? metrics['knowledgerouter_latency_seconds_sum'].reduce((a, b) => a + b, 0)
+            : 0;
+        
+        const avgLatency = latencyCount > 0
+            ? ((latencySum / latencyCount) * 1000).toFixed(0) + 'ms'
+            : '-';
+        
+        // Update UI
+        document.getElementById('monitorTotalRequests').textContent = totalRequests;
+        document.getElementById('monitorCacheHitRate').textContent = cacheHitRate + '%';
+        document.getElementById('monitorAvgLatency').textContent = avgLatency;
+        document.getElementById('monitorLlmCalls').textContent = llmCalls;
+        document.getElementById('monitorActiveRequests').textContent = activeRequests;
+        document.getElementById('monitorErrors').textContent = errors;
+        
+    } catch (error) {
+        console.error('Failed to fetch monitoring stats:', error);
+        document.getElementById('monitorTotalRequests').textContent = 'Error';
+        document.getElementById('monitorCacheHitRate').textContent = 'Error';
+        document.getElementById('monitorAvgLatency').textContent = 'Error';
+        document.getElementById('monitorLlmCalls').textContent = 'Error';
+        document.getElementById('monitorActiveRequests').textContent = 'Error';
+        document.getElementById('monitorErrors').textContent = 'Error';
+    }
+}
+
+// Auto-fetch monitoring stats every 10 seconds
+setInterval(fetchMonitoringStats, 10000);
+// Initial fetch on page load
+setTimeout(fetchMonitoringStats, 1000);
+

@@ -234,6 +234,9 @@ class QdrantRAGClient(IRAGClient):
             )
             
             # Layer 3: Qdrant search with cached embedding
+            # ⏱️ METRIC: Qdrant search latency
+            import time
+            qdrant_start = time.time()
             search_results = self.qdrant_client.query_points(
                 collection_name=self.collection_name,
                 query=query_embedding,
@@ -241,6 +244,8 @@ class QdrantRAGClient(IRAGClient):
                 limit=top_k,
                 with_payload=True
             ).points
+            qdrant_latency_ms = (time.time() - qdrant_start) * 1000
+            logger.info(f"🔍 Qdrant search latency: {qdrant_latency_ms:.0f}ms (domain={domain}, results={len(search_results)})")
             
             # Convert to Citations
             citations = []
@@ -323,7 +328,12 @@ class QdrantRAGClient(IRAGClient):
 
             # Domain-specific heuristic: favor VPN troubleshooting section for VPN queries
             if domain == DomainType.IT.value:
+                # ⏱️ METRIC: IT overlap boost latency
+                import time
+                overlap_start = time.time()
                 citations = _apply_it_overlap_boost(citations, query)
+                overlap_latency_ms = (time.time() - overlap_start) * 1000
+                logger.info(f"🎯 IT overlap boost latency: {overlap_latency_ms:.0f}ms (citations={len(citations)})")
             
             # Layer 4: Cache query results
             if citations:
