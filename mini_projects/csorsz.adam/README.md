@@ -22,72 +22,38 @@
    `pip install faiss-cpu sentence-transformers openai python-dotenv requests`
 
 
-## Manuális Tesztelési Jegyzet (Minőségbiztosítás)
-Mivel az automata unit tesztek még fejlesztés alatt állnak, a rendszert integrációs teszttel ellenőriztem.
+## 8. órai házi feladat: Multi-tool Agent (Plan-and-Execute)
 
-**Teszt eset:** Időjárás lekérése meeting jegyzet alapján.
-- **Input:** "A következő csapatépítőt Budapesten tartjuk... nézd meg az aktuális időjárást!"
-- **Folyamat:** RAG (retrieval) -> LLM Planner (decision) -> Weather API (external tool) -> JSON parsing.
-- **Eredmény:** Az ágens sikeresen generált tool-hívást, lekérte a -2.05 fokos adatot és a teljes JSON struktúrát.
+### Implementáció leírása
+A rendszert átalakítottam egy összetett ágenssé, amely a 8. órai anyagban bemutatott **Plan-and-Execute** mintát követi:
+- **Planner Node**: Az LLM (Llama 3.1) elemzi a jegyzetet, és egy listát (`tools`) állít össze a szükséges teendőkről.
+- **Executor Node**: Az ágens végigmegy a listán, és egymás után (vagy párhuzamosan) futtatja a kiválasztott eszközöket.
+- **Routing**: A modell döntése alapján az ágens képes dinamikusan választani a `get_weather` és az `analyze_sentiment` toolok között, akár mindkettőt aktiválva.
 
-## Futtatás
-`python run_agent.py notes.txt`
-python run_agent.py notes.txt
+### Sikeres Multi-tool Teszt kimenet
+Az alábbi JSON bizonyítja, hogy az ágens képes egyetlen futás alatt több eszközt is összehangolni:
+
+ python run_agent.py notes.txt
 {
-  "plan": {
-    "tool": "get_weather",
-    "reason": "The user asked about the weather in Budapest to plan for an outdoor event."
-  },
-  "retrieved_context": "A következő csapatépítőt Budapesten tartjuk a szabadban, a Margit-szigeten.\nKérlek, nézd meg az aktuális időjárást Budapesten, hogy tudjunk tervezni a kerti partival!",
-  "weather_output": {
-    "source": "OpenWeatherMap API",
+  "agent_plan": {
+    "tools": [
+      "get_weather",
+      "analyze_sentiment"
+    ],
     "city": "Budapest",
-    "temp": -2.05,
-    "description": "erős felhőzet",
-    "full_json_response": {
-      "coord": {
-        "lon": 19.0399,
-        "lat": 47.498
-      },
-      "weather": [
-        {
-          "id": 803,
-          "main": "Clouds",
-          "description": "erős felhőzet",
-          "icon": "04d"
-        }
-      ],
-      "base": "stations",
-      "main": {
-        "temp": -2.05,
-        "feels_like": -6.05,
-        "temp_min": -2.71,
-        "temp_max": -0.64,
-        "pressure": 1015,
-        "humidity": 78,
-        "sea_level": 1015,
-        "grnd_level": 992
-      },
-      "visibility": 9000,
-      "wind": {
-        "speed": 3.09,
-        "deg": 110
-      },
-      "clouds": {
-        "all": 79
-      },
-      "dt": 1769003120,
-      "sys": {
-        "type": 2,
-        "id": 2009313,
-        "country": "HU",
-        "sunrise": 1768976547,
-        "sunset": 1769009240
-      },
-      "timezone": 3600,
-      "id": 3054643,
-      "name": "Budapest",
-      "cod": 200
+    "reason": "Location (Margit-sziget) and mood/tension mentioned"
+  },
+  "tool_outputs": {
+    "weather": {
+      "source": "OpenWeatherMap API",
+      "city": "Budapest",
+      "temp": -2.19,
+      "description": "erős felhőzet"
+    },
+    "sentiment": {
+      "sentiment": "frustrated",
+      "explanation": "The text mentions that the team members are 'dühösek' (angry) and there is 'nagyon nagy a feszültség' (very high tension), indicating a negative sentiment.",
+      "status": "success"
     }
   }
 }
