@@ -3,6 +3,7 @@ Service layer - LangGraph agent tools implementation.
 Following SOLID: Single Responsibility - each tool wrapper has one clear purpose.
 """
 from typing import Dict, Any, Optional
+from pydantic import BaseModel, Field, ValidationError
 from pathlib import Path
 import json
 from datetime import datetime
@@ -14,6 +15,12 @@ from domain.interfaces import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class RegulationToolArgs(BaseModel):
+    action: str = Field(default="query", description="'query' or 'info'")
+    question: Optional[str] = Field(default=None, description="Question to ask about the regulation")
+    top_k: int = Field(default=5, ge=1, le=20, description="Number of relevant passages to retrieve")
 
 
 class RegulationTool:
@@ -37,12 +44,7 @@ Useful when user asks about:
 - Specific paragraphs or chapters
 - Quotes or passages from the regulation
 Actions: 'query' (ask a question), 'info' (get regulation information)"""
-    async def execute(
-        self,
-        action: str = "query",
-        question: Optional[str] = None,
-        top_k: int = 5
-    ) -> Dict[str, Any]:
+    async def execute(self, **kwargs) -> Dict[str, Any]:
         """
         Execute regulation-related actions.
         
@@ -54,64 +56,60 @@ Actions: 'query' (ask a question), 'info' (get regulation information)"""
         Returns:
             Dict with answer, sources, and metadata
         """
-        logger.info(f"Regulation tool called: action={action}, question={question[:50] if question else 'None'}...")
-        
         try:
-            if action == "query":
-                if not question:
+            args = RegulationToolArgs(**kwargs)
+        except ValidationError as e:
+            logger.error(f"RegulationTool argument validation failed: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "system_message": "RegulationTool argument validation failed"
+            }
+        logger.info(f"Regulation tool called: action={args.action}, question={args.question[:50] if args.question else 'None'}...")
+        try:
+            if args.action == "query":
+                if not args.question:
                     return {
                         "success": False,
                         "error": "Question is required for query action",
                         "system_message": "Regulation query failed: no question provided"
                     }
-                
-                result = await self.client.query(question, top_k)
-                
+                result = await self.client.query(args.question, args.top_k)
                 if "error" in result:
                     return {
                         "success": False,
                         "error": result["error"],
                         "system_message": f"Regulation query failed: {result['error']}"
                     }
-                
-                # Format the response
                 answer = result.get("answer", "No answer found")
                 sources = result.get("sources", [])
                 regulation_title = result.get("regulation_title", "Unknown")
-                
-                # Build source references
                 source_refs = []
                 for i, src in enumerate(sources[:3], 1):
                     page = src.get("page", "?")
                     preview = src.get("content_preview", "")[:100]
                     source_refs.append(f"[Page {page}]: {preview}...")
-                
                 summary = f"📚 **Answer from '{regulation_title}':**\n\n{answer}"
                 if source_refs:
                     summary += f"\n\n**Sources:**\n" + "\n".join(source_refs)
-                
                 return {
                     "success": True,
                     "message": summary,
                     "data": result,
                     "system_message": f"Found answer from regulation '{regulation_title}' using {len(sources)} source passages"
                 }
-            
-            elif action == "info":
+            elif args.action == "info":
                 result = await self.client.get_regulation_info()
-                
                 if "error" in result:
                     return {
                         "success": False,
                         "error": result["error"],
                         "system_message": f"Failed to get regulation info: {result['error']}"
                     }
-                
                 title = result.get("title", "Unknown")
                 chunks = result.get("chunks_count", 0)
                 pages = result.get("pages_count", "N/A")
                 status = result.get("status", "unknown")
-                
                 summary = f"📖 **Regulation Information:**\n"
                 summary += f"- **Title:** {title}\n"
                 summary += f"- **Pages:** {pages}\n"
@@ -123,14 +121,12 @@ Actions: 'query' (ask a question), 'info' (get regulation information)"""
                     "data": result,
                     "system_message": f"Regulation '{title}' is loaded with {chunks} indexed chunks"
                 }
-            
             else:
                 return {
                     "success": False,
-                    "error": f"Unknown action: {action}",
-                    "system_message": f"Unknown regulation action: {action}. Use: query, info"
+                    "error": f"Unknown action: {args.action}",
+                    "system_message": f"Unknown regulation action: {args.action}. Use: query, info"
                 }
-        
         except Exception as e:
             logger.error(f"Regulation tool exception: {e}", exc_info=True)
             return {
@@ -138,6 +134,12 @@ Actions: 'query' (ask a question), 'info' (get regulation information)"""
                 "error": str(e),
                 "system_message": f"Regulation tool failed: {e}"
             }
+
+
+class GasExportToolArgs(BaseModel):
+    pointLabel: str = Field(..., description="Export point label (e.g. 'VIP Bereg')")
+    from_: str = Field(..., description="Start date (YYYY-MM-DD)")
+    to: str = Field(..., description="End date (YYYY-MM-DD)")
 
 
 class GasExportTool:
@@ -154,30 +156,21 @@ class GasExportTool:
             "Lists daily values and total for the period."
         )
 
-    async def execute(
-        self,
-        pointLabel: str = None,
-        from_: str = None,
-        to: str = None,
-        periodFrom: str = None,
-        periodTo: str = None,
-        **kwargs
-    ) -> dict:
+    async def execute(self, **kwargs) -> dict:
         """
         Execute gas export query. Accepts both 'from'/'to' and 'periodFrom'/'periodTo' for compatibility.
         """
-        # Parameter normalization
-        point_label = pointLabel or kwargs.get("point_label")
-        date_from = from_ or periodFrom or kwargs.get("from") or kwargs.get("periodFrom")
-        date_to = to or periodTo or kwargs.get("to") or kwargs.get("periodTo")
-        if not point_label or not date_from or not date_to:
+        try:
+            args = GasExportToolArgs(**kwargs)
+        except ValidationError as e:
+            logger.error(f"GasExportTool argument validation failed: {e}")
             return {
                 "success": False,
-                "error": "Missing required parameters: pointLabel, from, to",
-                "system_message": "Gas export query failed: missing parameters"
+                "error": str(e),
+                "system_message": "GasExportTool argument validation failed"
             }
         try:
-            result = await self.client.get_exported_quantity(point_label, date_from, date_to)
+            result = await self.client.get_exported_quantity(args.pointLabel, args.from_, args.to)
             if not result.get("success"):
                 return {
                     "success": False,

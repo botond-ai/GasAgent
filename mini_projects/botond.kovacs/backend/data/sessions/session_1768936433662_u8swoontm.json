@@ -1,0 +1,14 @@
+{
+  "session_id": "session_1768936433662_u8swoontm",
+  "messages": [
+    {
+      "role": "system",
+      "content": "Context reset by user user_1768730453215_lybu3w9cy",
+      "timestamp": "2026-01-20T19:18:26.625228",
+      "metadata": null
+    }
+  ],
+  "summary": null,
+  "created_at": "2026-01-20T19:18:26.606881",
+  "updated_at": "2026-01-20T19:18:26.629955"
+}

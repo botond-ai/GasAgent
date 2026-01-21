@@ -40,4 +40,12 @@ export const api = {
     });
     return response.data;
   },
+
+  async callMcpTool(toolName: string, argumentsObj: Record<string, any>) {
+    const response = await apiClient.post('/mcp/tool_call', {
+      tool_name: toolName,
+      arguments: argumentsObj,
+    });
+    return response.data;
+  },
 };
