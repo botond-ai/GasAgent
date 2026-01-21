@@ -14,26 +14,31 @@ docker-compose up --build
 
 ## Fő funkciók
 
-- **Multi-tenant Chat** - Tenant és user szintű elkülönítés → [részletek](docs/features/chat-workflow.md)
-- **Dokumentum feldolgozás** - Upload, chunking, RAG indexing → [részletek](docs/features/document-processing.md)
-- **Hibrid keresés** - Vector + keyword search kombinációja → [részletek](docs/features/hybrid-search.md)
-- **Hosszútávú memória** - User context + memory consolidation → [részletek](docs/features/memory-management.md)
-- **Excel integráció** - MCP server Excel műveletek → [részletek](docs/features/excel-tools.md)
-- **Külső API-k** - Időjárás, deviza, GitHub → [részletek](docs/features/external-apis.md)
-- **Query optimalizáció** - Automatic query rewriting → [részletek](docs/features/query-optimization.md)
-- **Workflow tracking** - Node-level execution monitoring → [részletek](docs/features/workflow-tracking.md)
+- **Multi-tenant Chat** - Tenant és user szintű elkülönítés → [részletek](docs/features/CHAT_WORKFLOW.md)
+- **Dokumentum feldolgozás** - Upload, chunking, RAG indexing → [részletek](docs/features/DOCUMENT_PROCESSING.md)
+- **RAG keresés** - Semantic search + citations → [részletek](docs/features/RAG_SEARCH.md)
+- **Hosszútávú memória** - User context + memory consolidation → [részletek](docs/features/LONG_TERM_MEMORY.md)
+- **Multi-tenancy** - Tenant isolation + security → [részletek](docs/features/MULTI_TENANCY.md)
+- **Query optimalizáció** - Automatic query rewriting → [részletek](docs/features/QUERY_PROCESSING.md)
+- **Workflow tracking** - Node-level execution monitoring → [részletek](docs/features/WORKFLOW_TRACKING.md)
+- **Error handling** - Graceful degradation + retry → [részletek](docs/features/ERROR_HANDLING.md)
 
 ## Architektúra
 
 **4-rétegű LangGraph design:** Reasoning → Tool Execution → Operational → Memory
-[Teljes architektúra →](docs/architecture/SYSTEM_OVERVIEW.md)
+
+- [Teljes rendszer áttekintés](docs/architecture/SYSTEM_OVERVIEW.md)
+- [Database schema](docs/architecture/DATABASE_SCHEMA.md)
+- [Workflow diagram](docs/architecture/WORKFLOW_DIAGRAM.md)
+- [Node referencia](docs/architecture/NODE_REFERENCE.md)
 
 ## API
 
 - **Chat endpoint:** `POST /api/chat/`
 - **Document upload:** `POST /api/workflows/document-processing`
 - **Session management:** `/api/sessions/{id}/messages`
-- **[Teljes API referencia →](docs/api/API_REFERENCE.md)**
+- **[Teljes API referencia](docs/api/API_REFERENCE.md)**
+- **[API endpoints részletesen](docs/features/API_ENDPOINTS.md)**
 
 ## Konfiguráció
 
@@ -46,4 +51,18 @@ docker-compose up --build
 | `QDRANT_URL` | Vector database URL |
 | `POSTGRES_DB` | PostgreSQL database név |
 
-[Teljes konfigurációs útmutató →](docs/operations/DEPLOYMENT.md)
+[Részletes konfiguráció →](docs/features/CONFIGURATION.md)
+
+## Dokumentáció
+
+- **[Teljes dokumentációs index](docs/index.md)** - Minden dokumentum egy helyen
+- **[Deployment útmutató](docs/operations/DEPLOYMENT.md)** - Production telepítés
+- **[Testing stratégia](docs/operations/TESTING.md)** - Unit és integrációs tesztek
+- **[Troubleshooting](docs/operations/TROUBLESHOOTING.md)** - Hibakeresési útmutató
+
+## Observability
+
+- **[Prometheus](docs/observability/PROMETHEUS.md)** - Metrics collection
+- **[Grafana](docs/observability/GRAFANA.md)** - Dashboard visualization
+- **[Loki](docs/observability/LOKI.md)** - Structured logging
+- **[Tempo](docs/observability/TEMPO.md)** - Distributed tracing
