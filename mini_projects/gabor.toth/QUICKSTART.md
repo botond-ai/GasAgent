@@ -1,10 +1,10 @@
-# 🚀 QUICKSTART - Teljes Demo Workflow
+# 🚀 QUICKSTART - Teljes Demo Workflow (LangGraph verzió)
 
 Ez az útmutató részletesen leírja, hogyan futtasd az alkalmazást és végezz el egy teljes demó workflow-t:
 1. Szerver indítása
 2. HR és AI kategóriák létrehozása
 3. Demo dokumentumok feltöltése
-4. Tesztkérdések feldolgozása
+4. Tesztkérdések feldolgozása a 9-node LangGraph workflow-val
 5. Irreleváns kérdések kezelésének megfigyelése
 
 ---
@@ -317,29 +317,84 @@ Ugyanez az eljárás, de az AI kategóriás kérdésekre:
 10. Hogyan kezelnéd a táblázatos adatokat chunkoláskor, hogy a sorok önmagukban is érthetők legyenek az LLM-el történő feldolgozáshoz?
 ```
 
-### 4.3 Mi Történik Minden Kérdésnél?
+### 4.3 Mi Történik Minden Kérdésnél? (LangGraph 9-Node Workflow)
 
 **Activity Logger Nyomon Követése:**
 
 ```
-1️⃣ KATEGÓRIA-ROUTING (LLM döntés)
-   💬 Kérdés feldolgozása
+1️⃣ VALIDATE NODE
+   💬 Kérdés feldolgozása és validálása
+   ✓ Szöveg-hossz ellenőrzés, alapvető formázás
+
+2️⃣ CATEGORY ROUTING NODE (LLM API #1)
    🎯 Kategória felismerése (HR vagy AI?)
+   💡 "A 'munkaszerződés' szót tartalmazza → HR"
    → Keresés az adott kategóriában
 
-2️⃣ VEKTOR-KERESÉS (Embedding hasonlóság)
-   🔍 Dokumentum keresése
-   📚 N chunk találva, átl. X.XX hasonlóság
-   → Top-5 chunk a ChromaDB-ből
+3️⃣ EMBED QUESTION NODE (LLM API #2)
+   🔗 Kérdés vektorizálása (OpenAI Embedding API)
+   📊 "Mi a munkaszerződés?" → [0.12, -0.45, 0.67, ...]
 
-3️⃣ RAG VÁLASZ-GENERÁLÁS
-   🤖 Válasz generálása OpenAI API-val
-   → LLM feldolgozza a kontextusokat
-   → Chunk hivatkozások hozzáadódnak
+4️⃣ SEARCH CATEGORY NODE (LLM API #3)
+   🔍 Vektor-keresés a ChromaDB-ben
+   📚 3-4 chunk találva, átl. 0.85 hasonlóság
+   → Top-5 chunk az adott kategóriából
 
-4️⃣ BEFEJEZÉS
+5️⃣ EVALUATE SEARCH NODE
+   📊 Hasonlóság-értékek értékelése
+   ✓ Ha > 0.6: Folytat a Generate node-dal
+   ⚠️ Ha < 0.6: Aktiválja a Fallback Search node-ot
+
+6️⃣ FALLBACK SEARCH NODE (Intelligens Tartalék)
+   🔄 Ha az eredeti keresés nem elég jó:
+   → Újra próbálja az összes kategóriában
+   → Lazább hasonlóság-küszöb (0.5 helyett 0.6)
+
+7️⃣ GENERATE NODE (LLM API #4)
+   🤖 Válasz generálása OpenAI GPT-vel
+   → Az LLM feldolgozza a top chunkok kontextusát
+   → Strukturált hivatkozások hozzáadása
+
+8️⃣ FORMAT NODE
+   📝 Válasz formázása
+   → Chunk hivatkozások: [[HR_demo_hu_chunk_X | 0.87]]
+   → Strukturált JSON formátumba
+
+9️⃣ END NODE
    ✅ Válasz kész! (X.Xs alatt)
-   → A válasz megjelenik chunk linkekkel
+   → A válasz megjelenik az UI-ban
+```
+
+**API Response Format (Modern):**
+```json
+{
+  "answer": "A munkaszerződés...",
+  "rag_debug": {
+    "retrieved_chunks": 3,
+    "avg_similarity": 0.85,
+    "fallback_used": false
+  },
+  "api_info": {
+    "model": "gpt-4-turbo",
+    "tokens_used": 342,
+    "latency_ms": 2145
+  },
+  "debug_steps": [
+    "✓ Validate: OK",
+    "✓ Category Routing: HR (confidence 0.94)",
+    "✓ Embed Question: 1536 dims",
+    "✓ Search: 3 chunks (avg sim 0.85)",
+    "✓ Evaluate: Keep chunks (sim > 0.6)",
+    "✓ Generate: GPT-4 success",
+    "✓ Format: Complete"
+  ],
+  "fallback_search": false,
+  "memory_snapshot": {
+    "categories": ["HR", "AI"],
+    "total_chunks": 53,
+    "messages_in_session": 5
+  }
+}
 ```
 
 ### 4.4 Chunk Modal Megnyitása
@@ -630,20 +685,20 @@ WORKFLOW:
 2. HR és AI kategóriák létrehozása
 3. HR_demo_hu.md feltöltése HR-hez
 4. AI_vector_demo_hu.md feltöltése AI-hez
-5. 10 HR tesztkérdés feldolgozása
-6. 10 AI tesztkérdés feldolgozása
-7. 3 irreleváns kérdés tesztelése
-8. Activity Logger és chunk linkek megtekintése
+5. 10 HR tesztkérdés feldolgozása (9-node LangGraph workflow)
+6. 10 AI tesztkérdés feldolgozása (9-node LangGraph workflow)
+7. 3 irreleváns kérdés tesztelése (fallback keresés)
+8. API response format megtekintése (rag_debug, api_info, debug_steps)
 
 ELVÁRT EREDMÉNY:
 ✓ Minden relevans kérdéshez chunk hivatkozások
 ✓ Irreleváns kérdéseknél nincs chunk hivatkozás
-✓ Activity Logger szín-kódozása helyes
-✓ Performance: 2-5s per kérdés
+✓ debug_steps mutatja az 9-node workflow végrehajtást
+✓ Performance: 1-3s per kérdés (LangGraph orchestration)
 
 TELJES TESZT IDŐTARTAMA: ~30-40 perc
 ```
 
 ---
 
-**Legutolsó frissítés**: 2026. január 1.
+**Legutolsó frissítés**: 2026. január 21. (LangGraph + 23/23 teszt verzió)

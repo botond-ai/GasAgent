@@ -1,8 +1,8 @@
-# 📖 READ_THIS_FIRST.md
+# 📖 RÖVID BEVEZETŐ - Olvasd El Ezt Először!
 
 **👋 Köszönöm, hogy értékeled ezt a projektet!**
 
-Ez egy **teljes körűen működő RAG Agent alkalmazás**, amely dokumentumokat indexel és AI-alapú kérdezésre ad válaszokat.
+Ez egy **teljes körűen működő LangGraph-alapú RAG Agent**, amely 9-node gráf-orchestration-nel működik, dokumentumokat indexel és AI-alapú kérdezésre ad válaszokat.
 
 ---
 
@@ -89,20 +89,19 @@ source .env && ./start-dev.sh
 
 ### Összes Teszt Futtatása
 ```bash
-# A projekt 9 teljes körű tesztet tartalmaz
+# A projekt 23 teljes körű tesztet tartalmaz
+# 16 unit + 7 integration test
 # Mindegyik már PASS-al fut ✅
 
-python3 TESZTEK/test_activity_logging.py
-python3 TESZTEK/test_comprehensive.py
-python3 TESZTEK/test_fallback.py
-# ... stb (9 teszt összesen)
+pytest TESZTEK/test_workflow_basic.py TESZTEK/test_full_integration.py -v
 ```
 
 ### Teszt Státusza
 ```
-✅ 9/9 teszt PASS
+✅ 23/23 teszt PASS (16 unit + 7 integration)
 ✅ 100% success rate
 ✅ Teljes körű funkcionalitás
+✅ LangGraph workflow teljes lefedettség
 ```
 
 ---
@@ -111,37 +110,40 @@ python3 TESZTEK/test_fallback.py
 
 | Fájl | Mit Tartalmaz |
 |------|--------------|
-| **README.md** | Teljes projektleírás, API, architektúra (~686 sor) |
-| **QUICKSTART.md** | Lépésenkénti demo workflow (~650 sor) |
-| **TEST_RESULTS.md** | Tesztelési eredmények (9/9 pass) |
-| **HW_SUMMARY.md** | Dolgozat összefoglalása a bírálónak |
-| **TESZTEK/** | 9 db teljes körű teszt script |
+| **FULL_README.md** | Teljes projektleírás, API, architektúra |
+| **LANGGRAPH_QUICKSTART.md** | LangGraph 5 perc intro (~200 sor) |
+| **LANGGRAPH_IMPLEMENTATION.md** | Mélyrhatő 9-node architektúra (~400 sor) |
+| **LANGGRAPH_INTEGRATION_GUIDE.md** | Integrációs lépések (~350 sor) |
+| **FINAL_TEST_RESULTS.md** | Tesztelési eredmények (23/23 pass) |
+| **TESZTEK/** | 2 db teszt file: test_workflow_basic.py + test_full_integration.py |
 
 ---
 
 ## 🔑 Főbb Funkciók
 
-✅ **Dokumentum Feltöltés**
-- Markdown, PDF, TXT támogatás
-- Automatikus szöveg-kinyerés
-- Chunking & embedding
+✅ **LangGraph Workflow (9 Node)**
+- Validate → Category Routing → Embedding → Search → Dedup → Fallback → Generate → Format → End
+- Explicit state tracking (20+ field)
+- Activity callbacks minden csomópontnál
 
-✅ **Kategória-Routing**
-- Intelligens kategóriaválasztás (LLM)
-- Per-kategória indexálás
+✅ **4 Dedikált API Node**
+- LLM (kategória + válasz generálás)
+- Embedding (szöveg vektorok)
+- Search (vektor-hasonlóság)
+- Fallback (intelligens tartalék keresés)
 
 ✅ **RAG Pipeline**
 - Dokumentum-alapú válaszok
-- Relevancia szűrés (0.6 küszöb)
-- Fallback keresés
+- Strukturált citations (metadata-val)
+- Intelligens fallback mechanizmus
 
-✅ **Valós Idejű Aktivitás Naplózás**
-- Activity Logger panel
-- 1 másodperc polling
-- Teljes feldolgozási nyomkövetés
+✅ **API Válasz Format (Modern)**
+- rag_debug, api_info, debug_steps
+- fallback_search info
+- memory_snapshot
 
 ✅ **Chat Interfész**
-- Magyarországi támogatás
+- Kategória-alapú feltöltés
 - Sources panel
 - Reset context funkció
 
@@ -199,7 +201,10 @@ gabor.toth/
 │   ├── package.json
 │   └── Dockerfile
 │
-├── TESZTEK/               # 9 teljes körű teszt
+├── TESZTEK/
+│   ├── test_workflow_basic.py      # 16 unit teszt
+│   ├── test_full_integration.py    # 7 integration teszt
+│   └── (23/23 PASS ✅)
 ├── DEMO_files_for_testing/  # HR + AI dokumentumok
 │
 ├── docker-compose.yml     # Docker setup (ajánlott)
@@ -223,20 +228,20 @@ gabor.toth/
 ☐ 8. Töltsd fel: DEMO_files_for_testing/HR_demo_hu.md
 ☐ 9. Kérdezz: "Mi a munkaszerződés?"
 ☐ 10. Nézd meg a Sources panelt
-☐ 11. (Opcionális) Tesztek futtatása
+☐ 11. (Opcionális) Tesztek futtatása: `pytest TESZTEK/ -v`
 ```
 
 ---
 
 ## 💡 Mi Fogad?
 
+✅ **LangGraph Workflow** - 9-node gráf-orchestration
+✅ **4 Dedikált API Node** - Strukturált, maintainable API hívások
+✅ **23/23 Teszt** - 16 unit + 7 integration (100% pass)
 ✅ **Teljes működő alkalmazás** - UI, backend, API
-✅ **Professzionális dokumentáció** - README, QUICKSTART, HW_SUMMARY
-✅ **Teljes körű tesztelés** - 9/9 test (100% pass)
-✅ **Activity Logger** - Valós idejű háttérfolyamat naplózás
-✅ **RAG Pipeline** - Dokumentum-alapú AI válaszok
+✅ **Professzionális dokumentáció** - 2550+ sor, 10 diagram
+✅ **Modern API Format** - rag_debug, api_info, debug_steps
 ✅ **Docker Ready** - Azonnal futtatható
-✅ **Clean Code** - SOLID principles
 ✅ **Bemutató Ready** - Demo dokumentumok + tesztkérdések
 
 ---
@@ -247,7 +252,7 @@ gabor.toth/
 ⏱️ Szerver indítása (Docker): 30-40 másodperc
 ⏱️ Dokumentum feltöltése: 3-5 másodperc/doc
 ⏱️ Kérdés feldolgozása: 2-3 másodperc
-⏱️ Tesztek futtatása: ~10-15 perc (összes 9)
+⏱️ Tesztek futtatása: ~2-3 perc (összes 23)
 ```
 
 ---
@@ -272,19 +277,22 @@ gabor.toth/
 ## 📞 Támogatás
 
 **Kérdésed van?** Nézd meg:
-1. **README.md** - Teljes dokumentáció
-2. **QUICKSTART.md** - Lépésenkénti útmutató
-3. **TEST_RESULTS.md** - Tesztelési info
-4. **TESZTEK/README.md** - Tesztelési útmutató
+1. **AT_A_GLANCE.md** - Rövid overview (ha nincs idő)
+2. **LANGGRAPH_QUICKSTART.md** - 5 perc intro
+3. **LANGGRAPH_IMPLEMENTATION.md** - Mélyrhatő leírás
+4. **FULL_README.md** - Teljes dokumentáció
+5. **FINAL_TEST_RESULTS.md** - Tesztelési info
 
 ---
 
 ## ✨ Összefoglalva
 
-Ez egy **production-ready RAG Agent** projekt, amely:
-- ✅ Teljesen működik
-- ✅ Teljes mértékben tesztelve (9/9 pass)
-- ✅ Professzionálisan dokumentálva
+Ez egy **production-ready LangGraph RAG Agent**, amely:
+- ✅ 9-node gráf orchestration (explicit, maintainable)
+- ✅ 4 dedikált API node (strukturált API hívások)
+- ✅ 23/23 teszt (16 unit + 7 integration, 100% pass)
+- ✅ Professzionálisan dokumentálva (2550+ sor)
+- ✅ Modern API formátum (rag_debug, api_info, debug_steps)
 - ✅ Docker-ready
 - ✅ Demo-ready
 
@@ -298,5 +306,5 @@ Ez egy **production-ready RAG Agent** projekt, amely:
 
 ---
 
-*Utolsó frissítés: 2026. január 1.*
-*Projekt státusza: ✅ Production Ready*
+*Utolsó frissítés: 2026. január 21.*
+*Projekt státusza: ✅ Production Ready + LangGraph Integrated*

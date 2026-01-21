@@ -1,5 +1,6 @@
 """Chat service orchestrating message flow."""
 
+import time
 from datetime import datetime
 from typing import Dict, Any, List, Optional
 
@@ -7,7 +8,7 @@ from domain.models import Message, MessageRole, UserProfile
 from domain.interfaces import (
     UserProfileRepository, SessionRepository, ActivityCallback
 )
-from services.rag_agent import RAGAgent
+from services.langgraph_workflow import AdvancedRAGAgent
 
 
 class ChatService:
@@ -15,7 +16,7 @@ class ChatService:
 
     def __init__(
         self,
-        rag_agent: RAGAgent,
+        rag_agent: AdvancedRAGAgent,
         profile_repo: UserProfileRepository,
         session_repo: SessionRepository,
         upload_repo=None,  # Optional file upload repo to get global categories
@@ -42,6 +43,9 @@ class ChatService:
         - Append assistant response
         - Return response
         """
+        # Track API call timing
+        api_start_time = time.time()
+        
         # Check for reset context command (case-insensitive)
         # Handle both "reset context" and the confirmation variant
         message_lower = user_message.strip().lower()
@@ -128,11 +132,14 @@ class ChatService:
             activity_callback=self.activity_callback
         )
 
-        # Extract answer and metadata
-        final_answer = rag_response["final_answer"]
-        routed_category = rag_response["memory_snapshot"].get("routed_category")
-        context_chunks = rag_response["context_chunks"]
-        fallback_search = rag_response.get("fallback_search", False)
+        # Extract answer and metadata (WorkflowOutput object)
+        final_answer = rag_response.final_answer
+        routed_category = rag_response.routed_category
+        # Get context_chunks from citation_sources or use empty list
+        context_chunks = getattr(rag_response, 'context_chunks', [])
+        if not context_chunks and hasattr(rag_response, 'citation_sources'):
+            context_chunks = rag_response.citation_sources
+        fallback_search = getattr(rag_response, 'fallback_triggered', False)
 
         # Log: Response ready
         if self.activity_callback:
@@ -147,7 +154,16 @@ class ChatService:
             )
 
         # Append assistant response
-        chunk_ids = [c.chunk_id for c in context_chunks]
+        # Extract chunk IDs - try to get chunk_id or use index as fallback
+        chunk_ids = []
+        for c in context_chunks:
+            if hasattr(c, 'chunk_id'):
+                chunk_ids.append(c.chunk_id)
+            elif hasattr(c, 'index'):
+                chunk_ids.append(str(c.index))
+            else:
+                chunk_ids.append(str(len(chunk_ids)))
+        
         await self.session_repo.append_message(
             session_id,
             Message(
@@ -166,20 +182,30 @@ class ChatService:
             "final_answer": final_answer,
             "tools_used": [],
             "fallback_search": fallback_search,
-            "memory_snapshot": rag_response["memory_snapshot"],
+            "memory_snapshot": {
+                "routed_category": routed_category,
+                "available_categories": available_categories,
+            },
             "rag_debug": {
                 "retrieved": [
                     {
-                        "chunk_id": c.chunk_id,
-                        "distance": c.distance,
-                        "snippet": c.snippet,
-                        "metadata": c.metadata,
-                        "content": c.content,  # Full content for modal display
-                        "source_file": c.metadata.get("source_file", "Unknown"),
-                        "section_title": c.metadata.get("section_title", ""),
+                        "chunk_id": getattr(c, "chunk_id", getattr(c, "index", "")),
+                        "distance": getattr(c, "distance", 0),
+                        "snippet": getattr(c, "preview", "")[:100] if hasattr(c, "preview") else "",
+                        "metadata": getattr(c, "metadata", {}),
+                        "content": getattr(c, "content", ""),
+                        "source_file": getattr(c, "metadata", {}).get("source_file", "Unknown") if hasattr(c, "metadata") else "Unknown",
+                        "section_title": getattr(c, "metadata", {}).get("section_title", "") if hasattr(c, "metadata") else "",
                     }
-                    for c in context_chunks
+                    for c in (context_chunks if context_chunks else [])
                 ]
+            },
+            "debug_steps": getattr(rag_response, "workflow_logs", []),
+            "api_info": {
+                "endpoint": "/api/chat",
+                "method": "POST",
+                "status_code": 200,
+                "response_time_ms": round((time.time() - api_start_time) * 1000, 2),
             }
         }
 
