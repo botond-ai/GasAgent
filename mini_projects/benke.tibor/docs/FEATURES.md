@@ -111,6 +111,112 @@
 - **RAG Retrieval Try/Catch**: Continues gracefully with empty citations on retrieval errors
 - **Guardrail Conditional Routing**: Retry path to generation or continue to feedback_metrics
 
+---
+
+### 🚀 Dual Pipeline Modes (NEW in v2.10)
+
+#### Feature Flag: USE_SIMPLE_PIPELINE
+
+**Simple Pipeline (True):**
+- **Flow**: Intent (keyword) → RAG → Generation → Guardrail
+- **Latency**: ~15 seconds average
+- **LLM Calls**: 1-2 (generation + guardrail)
+- **Cost**: Low ($0.002 per query)
+- **Use Case**: IT/Marketing simple queries, fast response critical
+- **Limitations**: No tool execution, no replan, no workflow automation
+
+**Complex Pipeline (False - Default):**
+- **Flow**: Intent (LLM) → Plan → Tool Selection → Tool Executor → Observation → Replan Loop (max 2×) → Generation → Guardrail → Workflow → Memory
+- **Latency**: ~30-50 seconds average (optimized from 60-90s)
+- **LLM Calls**: 4-6 (intent, plan, observation, generation, memory, guardrail)
+- **Cost**: Medium ($0.008 per query)
+- **Use Case**: Multi-step tasks, workflow automation, tool combinations
+- **Features**: Full LangGraph workflow, replan mechanism, memory management
+
+#### Complex Workflow Iteration Details
+
+**Why Complex Pipeline is Slower:**
+
+1. **LLM-based Intent Detection** (2-3 sec):
+   - Analyzes query semantics with GPT-4o-mini
+   - Detects domain + query complexity
+   - Fallback: keyword matching
+
+2. **Plan Node** (5-6 sec):
+   - LLM generates execution plan
+   - Estimates steps and tool requirements
+   - Increments `replan_count` state
+
+3. **Tool Selection** (3-4 sec):
+   - LLM decides: rag_only / tools_only / rag_and_tools
+   - Routes to appropriate executor
+
+4. **Tool Executor** (5-10 sec):
+   - Async execution with 10s timeout per tool
+   - Parallel: RAG search + Jira lookup (future)
+   - Sequential currently: RAG → tool → tool
+
+5. **Observation Node** (3 sec):
+   - LLM evaluates: sufficient information?
+   - Detects gaps in retrieval
+   - **Optimization**: Auto-skip for IT/Marketing with ≥3 citations
+
+6. **Replan Loop** (10-20 sec if triggered):
+   - Max 2 iterations
+   - Regenerates plan with adjusted strategy
+   - Loops back to Tool Selection
+   - **Optimization**: Force generate after 1st replan for simple domains
+
+7. **Generation** (10-15 sec):
+   - GPT-4o-mini generates final answer
+   - IT domain: Auto-appends Jira ticket question
+
+8. **Guardrail** (0.5 sec):
+   - IT domain: Citation validation
+   - Retry generation if citations missing (max 2×)
+
+9. **Workflow Node** (2-5 sec):
+   - IT domain: Prepare Jira ticket draft
+   - Update state with workflow metadata
+
+10. **Memory Update** (1 sec):
+    - Conversation summary + facts extraction
+    - SHA256 deduplication
+    - Rolling window (last 8 messages)
+
+**Total Load Breakdown:**
+- **LLM Round Trips**: 4-6 (vs 1-2 in simple)
+- **State Mutations**: 10+ nodes (vs 3 in simple)
+- **Iteration Potential**: 2× replan = 3× workflow execution
+- **Tool Overhead**: Async timeouts, validation, error handling
+
+#### Configuration
+
+```bash
+# .env file
+USE_SIMPLE_PIPELINE=False  # Default: complex workflow
+
+# docker-compose.yml
+environment:
+  - USE_SIMPLE_PIPELINE=True  # Override to simple
+```
+
+#### Performance Metrics
+
+| Metric | Simple | Complex | Complex Optimized |
+|--------|--------|---------|-------------------|
+| Avg Latency | 15-20s | 60-90s | 30-50s |
+| LLM Calls | 1-2 | 8-10 | 4-6 |
+| Replan Support | ❌ | ✅ (max 2) | ✅ (limited 1) |
+| Tool Execution | RAG only | All tools | All tools |
+| Workflow Automation | ❌ | ✅ | ✅ |
+
+#### Tests
+- **backend/tests/test_chat_service.py**: Pipeline mode branching logic
+- **backend/tests/test_agent.py**: `run_simple()` vs `run()` method validation
+
+**See**: [docs/PIPELINE_MODES.md](PIPELINE_MODES.md) for detailed usage guide
+
 ### 🎫 IT Domain - Qdrant Semantic Search & Jira Integration (NEW in v2.3)
 
 #### Confluence IT Policy Indexing

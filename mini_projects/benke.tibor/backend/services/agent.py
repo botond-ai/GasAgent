@@ -699,6 +699,8 @@ Respond with JSON: {{\"reasoning\": \"...\", \"selected_tools\": [{{\"tool_name\
         - Identifies information gaps
         - Decides: generate answer OR replan (if insufficient)
         - Max 2 replans allowed (replan_count tracking)
+        
+        OPTIMIZATION: Auto-generate for IT/Marketing domains with RAG results (skip LLM evaluation)
         """
         logger.info("Observation node executing")
 
@@ -707,6 +709,20 @@ Respond with JSON: {{\"reasoning\": \"...\", \"selected_tools\": [{{\"tool_name\
             retrieved = state.get("retrieved_docs", [])
             query = state.get("query", "")
             execution_plan = state.get("execution_plan", {})
+            domain = state.get("domain", "")
+            
+            # ⚡ OPTIMIZATION: Auto-generate for IT/Marketing with RAG results (skip LLM call)
+            if domain in ["it", "marketing"] and len(retrieved) >= 3:
+                logger.info(f"⚡ FAST PATH: Auto-generating for {domain} domain (skip observation LLM call)")
+                state["observation_result"] = {
+                    "sufficient": True,
+                    "next_action": "generate",
+                    "gaps": [],
+                    "reasoning": f"Auto-generate: {len(retrieved)} documents retrieved for {domain} domain",
+                    "tool_results_count": len(tool_results),
+                    "retrieval_count": len(retrieved),
+                }
+                return state
             
             # Build context for LLM evaluation
             tool_results_summary = []
@@ -1012,7 +1028,14 @@ Respond with:
 
         # Use JSON text output instead of structured_output (buggy in LangChain)
         prompt = prompt + "\n\nRespond with JSON: {{\"answer\": \"...\", \"language\": \"hu\", \"section_ids\": [...]}}"
+        
+        # ⏱️ METRIC: LLM generation latency
+        import time
+        llm_start = time.time()
         response = await self.llm.ainvoke([HumanMessage(content=prompt)])
+        llm_latency_ms = (time.time() - llm_start) * 1000
+        logger.info(f"🤖 LLM generation latency: {llm_latency_ms:.0f}ms (domain={state.get('domain')})")
+        
         response_text = response.content if hasattr(response, 'content') else str(response)
         
         # Parse JSON manually
@@ -1376,9 +1399,11 @@ Respond with:
             # Store as dict for JSON serialization (Pydantic validators already ran)
             state["feedback_metrics"] = turn_metrics.model_dump()
             
+            # Format latency properly
+            latency_str = f"{total_latency_ms:.1f}ms" if total_latency_ms else "N/A"
             logger.info(f"Metrics collected: {retrieval_count} citations, "
                        f"tokens={llm_tokens_used or 'N/A'}, "
-                       f"latency={total_latency_ms:.1f if total_latency_ms else 'N/A'}ms")
+                       f"latency={latency_str}")
             
             return state
             
@@ -1493,6 +1518,110 @@ Respond with:
 
         logger.info("Agent run completed")
         return response
+    
+    async def run_simple(self, query: str, user_id: str, session_id: str) -> QueryResponse:
+        """Simple fast RAG-only pipeline (no LangGraph workflow).
+        
+        Flow: Intent Detection → RAG Retrieval → Generation → Guardrail
+        
+        Use this for fast responses on IT/Marketing queries where the complex
+        workflow (plan → observe → replan) adds unnecessary latency.
+        
+        Performance: ~15-20 sec vs 60-90 sec for complex workflow
+        """
+        import time
+        start_time = time.time()
+        logger.info(f"⚡ SIMPLE PIPELINE: user={user_id}, query={query[:50]}...")
+        
+        # Step 1: Intent Detection (keyword-based, fast)
+        domain = await self._detect_intent_simple(query)
+        logger.info(f"Domain detected: {domain}")
+        
+        # Step 2: RAG Retrieval
+        citations = await self.rag_client.retrieve_for_domain(
+            query=query,
+            top_k=10,
+            domain=domain
+        )
+        logger.info(f"Retrieved {len(citations)} documents")
+        
+        # Step 3: Generation
+        state = {
+            "query": query,
+            "domain": domain,
+            "citations": [c.model_dump() for c in citations],
+            "retrieved_docs": citations,
+            "messages": [],
+            "validation_errors": [],
+            "retry_count": 0,
+        }
+        state = await self._generation_node(state)
+        
+        # Step 4: Guardrail (IT domain only)
+        if domain == "it":
+            state = await self._guardrail_node(state)
+            
+            # Retry if validation failed
+            if state.get("validation_errors") and state.get("retry_count", 0) < 2:
+                logger.warning(f"Guardrail retry {state['retry_count']}/2")
+                state = await self._generation_node(state)
+                state = await self._guardrail_node(state)
+        
+        # Build response
+        total_latency = (time.time() - start_time) * 1000
+        logger.info(f"⚡ SIMPLE PIPELINE completed in {total_latency:.0f}ms")
+        
+        from domain.models import ProcessingStatus
+        processing_status = ProcessingStatus.SUCCESS
+        if state.get("validation_errors"):
+            processing_status = ProcessingStatus.VALIDATION_FAILED
+        
+        response = QueryResponse(
+            domain=state["domain"],
+            answer=state["output"]["answer"],
+            citations=[Citation(**c) for c in state["citations"]],
+            workflow={"mode": "simple_pipeline", "latency_ms": total_latency},
+            processing_status=processing_status,
+            validation_errors=state.get("validation_errors", []),
+            retry_count=state.get("retry_count", 0),
+            rag_context=state.get("rag_context"),
+            llm_prompt=state.get("llm_prompt"),
+            llm_response=state.get("llm_response"),
+        )
+        
+        return response
+    
+    async def _detect_intent_simple(self, query: str) -> str:
+        """Fast keyword-based intent detection (no LLM call)."""
+        query_lower = query.lower()
+        
+        # Marketing keywords
+        marketing_keywords = [
+            "brand", "logo", "visual", "design", "arculat", "guideline",
+            "marketing", "kampány", "hirdetés", "tartalommarketing"
+        ]
+        if any(kw in query_lower for kw in marketing_keywords):
+            return "marketing"
+        
+        # IT keywords
+        it_keywords = [
+            "vpn", "jelszó", "password", "wifi", "hálózat", "network",
+            "laptop", "számítógép", "computer", "szoftver", "software",
+            "helpdesk", "support", "ticket"
+        ]
+        if any(kw in query_lower for kw in it_keywords):
+            return "it"
+        
+        # HR keywords
+        hr_keywords = [
+            "szabadság", "leave", "vacation", "béremelés", "salary",
+            "teljesítményértékelés", "performance", "felmondás", "resignation"
+        ]
+        if any(kw in query_lower for kw in hr_keywords):
+            return "hr"
+        
+        # Default: general
+        return "general"
     async def create_jira_ticket_from_draft(self, ticket_draft: Dict[str, Any]) -> Dict[str, Any]:
         """
         Create a Jira ticket from a draft prepared by the IT workflow node.

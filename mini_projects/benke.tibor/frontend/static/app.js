@@ -383,6 +383,10 @@ queryForm.addEventListener('submit', async (e) => {
     showTyping();
 
     try {
+        // Set 120 second timeout for complex workflow queries
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 120000);
+
         const response = await fetch('http://localhost:8001/api/query/', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -391,8 +395,11 @@ queryForm.addEventListener('submit', async (e) => {
                 session_id: sessionId,
                 query: query,
                 organisation: 'Demo Org'
-            })
+            }),
+            signal: controller.signal
         });
+
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
             const error = await response.json();
@@ -508,7 +515,12 @@ queryForm.addEventListener('submit', async (e) => {
     } catch (error) {
         console.error('Fetch error:', error);
         hideTyping();
-        addMessage(`❌ Hálózati hiba: ${error.message}`, 'error');
+        
+        if (error.name === 'AbortError') {
+            addMessage('⏱️ A kérés túllépte a 120 másodperces időkorlátot. Próbáld meg újra vagy kapcsold be a gyors módot (USE_SIMPLE_PIPELINE=True).', 'error');
+        } else {
+            addMessage(`❌ Hálózati hiba: ${error.message}`, 'error');
+        }
     } finally {
         sendBtn.disabled = false;
         queryInput.focus();

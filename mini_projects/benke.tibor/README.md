@@ -55,6 +55,7 @@ KnowledgeRouter egy vállalati belső tudásbázis rendszer, amely:
 🆕 **Tool Executor Loop (v2.8)** - Iterative tool execution with asyncio timeout (10s/tool), ToolResult validation, non-blocking error handling
 🆕 **Observation Node + Replan Loop (v2.8)** - LLM-based evaluation: sufficient info? → generate OR replan (max 2x), gap detection, automatic replanning
 🔧 **Production Hardened (v2.9)** - Manual JSON parsing, state management fixes, 50 recursion limit, IT domain UX guarantee
+🚀 **Dual Pipeline Modes (v2.10)** - USE_SIMPLE_PIPELINE feature flag: Simple (15 sec, RAG-only) vs Complex (30-50 sec, full LangGraph with replan/tools/workflows)
 
 ## 📋 Tech Stack
 
@@ -97,9 +98,18 @@ OPENAI_API_KEY=sk-proj-...
 OPENAI_MODEL=gpt-4o-mini
 EMBEDDING_MODEL=text-embedding-3-small
 
+# Pipeline Mode (opcionális):
+USE_SIMPLE_PIPELINE=False  # Default: Complex workflow (30-50 sec, full features)
+                            # True: Simple pipeline (15 sec, RAG-only)
+
 # Windows PowerShell példa:
-$env:OPENAI_API_KEY = "sk-proj-..."; $env:OPENAI_MODEL = "gpt-4o-mini"; $env:EMBEDDING_MODEL = "text-embedding-3-small"
+$env:OPENAI_API_KEY = "sk-proj-..."; $env:OPENAI_MODEL = "gpt-4o-mini"; $env:EMBEDDING_MODEL = "text-embedding-3-small"; $env:USE_SIMPLE_PIPELINE = "False"
 ```
+
+**Pipeline Modes:**
+- **Simple (True)**: Fast RAG-only pipeline (~15 sec), ideal for IT/Marketing simple queries
+- **Complex (False)**: Full LangGraph workflow (~30-50 sec) with replan loop, tool execution, workflow automation
+- **See**: [docs/PIPELINE_MODES.md](docs/PIPELINE_MODES.md) for detailed comparison
 
 ### 3. Docker Compose Indítása
 

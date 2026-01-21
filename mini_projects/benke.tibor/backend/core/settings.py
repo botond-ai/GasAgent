@@ -13,6 +13,9 @@ SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-test-key-change-in-product
 DEBUG = os.getenv('DEBUG', 'True') == 'True'
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
 
+# Feature flags
+USE_SIMPLE_PIPELINE = os.getenv('USE_SIMPLE_PIPELINE', 'False') == 'True'  # True = old fast pipeline, False = new LangGraph workflow
+
 INSTALLED_APPS = [
     'django.contrib.contenttypes',
     'django.contrib.auth',
