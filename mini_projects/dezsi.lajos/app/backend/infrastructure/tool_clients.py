@@ -2,9 +2,10 @@ import os
 import time
 from typing import List, Dict, Any, Type, Optional
 from datetime import datetime
-from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings, HarmBlockThreshold, HarmCategory
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import PydanticOutputParser
+from langchain_core.exceptions import OutputParserException
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue, Range
@@ -13,6 +14,10 @@ import uuid
 from domain.interfaces import ILLMClient, IVectorDBClient, ITicketClient
 from domain.models import TicketCreate
 import aiohttp
+
+def debug_log(message: str):
+    if os.getenv("DEBUG_MODE", "false").lower() == "true":
+        print(f"DEBUG: {message}")
 
 class RestTicketClient(ITicketClient):
     def __init__(self, base_url: str, api_key: str = None, headers: Dict[str, str] = None):
@@ -25,7 +30,7 @@ class RestTicketClient(ITicketClient):
     async def create_ticket(self, ticket: TicketCreate) -> Dict[str, Any]:
         url = f"{self.base_url}/tickets"
         try:
-            print(f"DEBUG: Creating ticket at {url} with data: {ticket.model_dump()}")
+            debug_log(f"Creating ticket at {url} with data: {ticket.model_dump()}")
             async with aiohttp.ClientSession() as session:
                 async with session.post(url, headers=self.headers, json=ticket.model_dump()) as response:
                     # For demo purposes, we handle success and some mock behavior if the server isn't really there
@@ -42,7 +47,7 @@ class RestTicketClient(ITicketClient):
              # Given this is likely a dev environment without a real ticket server,
              # I will return a mock success if the URL is localhost or dummy.
              if "localhost" in self.base_url or "example.com" in self.base_url:
-                 print("DEBUG: Returning MOCK ticket response due to connection error (Simulation Mode)")
+                 debug_log("Returning MOCK ticket response due to connection error (Simulation Mode)")
                  return {
                      "id": f"MOCK-{int(time.time())}", 
                      "status": "Created", 
@@ -57,29 +62,78 @@ class GeminiClient(ILLMClient):
         if not api_key:
             print("ERROR: GOOGLE_API_KEY not found in environment")
         else:
-            print(f"DEBUG: Initializing GeminiClient with key length {len(api_key)}")
+            debug_log(f"Initializing GeminiClient with key length {len(api_key)}")
         
         # Override model if set in env
         env_model = os.getenv("LLM_MODEL")
         if env_model:
             model_name = env_model
-            print(f"DEBUG: Using model: {model_name}")
+            debug_log(f"Using model: {model_name}")
         else:
-            print(f"DEBUG: Using default model: {model_name}")
+            debug_log(f"Using default model: {model_name}")
 
-        self._base_llm = ChatGoogleGenerativeAI(model=model_name, temperature=temperature, google_api_key=api_key)
+        safety_settings = {
+            HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+            HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+        }
+        self._base_llm = ChatGoogleGenerativeAI(
+            model=model_name, 
+            temperature=temperature, 
+            google_api_key=api_key,
+            safety_settings=safety_settings
+        )
         self.llm = self._base_llm
 
     async def generate(self, prompt: str) -> str:
         # Always use base LLM for standard generation to avoid bound tools interference
-        response = await self._base_llm.ainvoke(prompt)
-        return response.content
+        debug_log(f"Generating with prompt (len={len(prompt)}): {prompt[:100]}...")
+        result = await self._base_llm.ainvoke(prompt)
+        
+        # Deep inspection of the response
+        debug_log(f"Full LLM Result Type: {type(result)}")
+        debug_log(f"Full LLM Result: {result}")
+        if hasattr(result, 'response_metadata'):
+            debug_log(f"Response Metadata: {result.response_metadata}")
+            
+        content = result.content
+        
+        # Handle complex content (list of blocks)
+        if isinstance(content, list):
+            debug_log("Content is a list, extracting text...")
+            text_parts = []
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    text_parts.append(block.get("text", ""))
+                elif isinstance(block, str):
+                    text_parts.append(block)
+            content = "".join(text_parts)
+            
+        if not content:
+            print("WARNING: LLM returned empty content!")
+            
+        return content
 
     async def generate_structured(self, prompt: str, response_model: Type[Any]) -> Any:
+        parser = PydanticOutputParser(pydantic_object=response_model)
+        format_instructions = parser.get_format_instructions()
+        
+        # Augment the prompt with format instructions
+        final_prompt = f"{prompt}\n\nIMPORTANT: {format_instructions}\n\nEnsure the response is valid JSON matching the schema."
+        
         try:
-            # Always use base LLM for structured output
-            structured_llm = self._base_llm.with_structured_output(response_model)
-            return await structured_llm.ainvoke(prompt)
+            # Generate raw text first -> Easier to debug
+            debug_log("Generating raw text for structured output...")
+            response_content = await self.generate(final_prompt)
+            debug_log(f"Raw LLM Response: {response_content[:200]}...") # Log first 200 chars
+            
+            # Parse manually
+            return parser.parse(response_content)
+            
+        except OutputParserException as e:
+            print(f"ERROR: OutputParserException. Raw output was: {e.llm_output}")
+            raise e
         except Exception as e:
             print(f"ERROR in Gemini generate_structured: {e}")
             raise e
@@ -95,10 +149,10 @@ class QdrantVectorDB(IVectorDBClient):
         qdrant_url = os.getenv("QDRANT_URL")
         # Production ready: Support both local and URL-based instance
         if qdrant_url:
-            print(f"DEBUG: Connecting to Qdrant at {qdrant_url}")
+            debug_log(f"Connecting to Qdrant at {qdrant_url}")
             self.client = QdrantClient(url=qdrant_url)
         else:
-            print(f"DEBUG: Using local Qdrant at {path}")
+            debug_log(f"Using local Qdrant at {path}")
             self.client = QdrantClient(path=path)
         
         self.collection_name = collection_name
@@ -118,7 +172,7 @@ class QdrantVectorDB(IVectorDBClient):
         # Ensure collection exists
         collections = self.client.get_collections().collections
         if not any(c.name == self.collection_name for c in collections):
-            print(f"DEBUG: Creating collection {self.collection_name}")
+            debug_log(f"Creating collection {self.collection_name}")
             self.client.create_collection(
                 collection_name=self.collection_name,
                 vectors_config=VectorParams(size=768, distance=Distance.COSINE),
@@ -126,7 +180,7 @@ class QdrantVectorDB(IVectorDBClient):
 
     async def search(self, query: str, limit: int = 3, tenant_id: str = None) -> List[Dict[str, Any]]:
         try:
-            print(f"DEBUG: Embedding query: {query}")
+            debug_log(f"Embedding query: {query}")
             query_vector = self.embeddings.embed_query(query)
             
             # Build filters
@@ -152,7 +206,7 @@ class QdrantVectorDB(IVectorDBClient):
             
             query_filter = Filter(must=must_filters) if must_filters else None
 
-            print(f"DEBUG: Performing search with filter: {query_filter}")
+            debug_log(f"Performing search with filter: {query_filter}")
             results = self.client.query_points(
                 collection_name=self.collection_name,
                 query=query_vector,
@@ -200,7 +254,7 @@ class QdrantVectorDB(IVectorDBClient):
         """
         Ingests a document (PDF or Text), chunks it, and indexes it.
         """
-        print(f"DEBUG: Ingesting file: {file_path}")
+        debug_log(f"Ingesting file: {file_path}")
         text_content = ""
         
         if file_path.lower().endswith(".pdf"):
@@ -226,7 +280,7 @@ class QdrantVectorDB(IVectorDBClient):
 
         # Chunking
         chunks = self.text_splitter.split_text(text_content)
-        print(f"DEBUG: Created {len(chunks)} chunks from {file_path}")
+        debug_log(f"Created {len(chunks)} chunks from {file_path}")
         
         current_time = time.time()
         valid_until = current_time + (valid_days * 24 * 3600)
