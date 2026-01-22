@@ -65,7 +65,7 @@ KnowledgeRouter egy vállalati belső tudásbázis rendszer, amely:
 - **Vector DB**: Qdrant (self-hosted)
 - **Cache**: Redis 7 (embedding + query result cache)
 - **Database**: PostgreSQL 15 (feedback & analytics)
-- **Monitoring**: Prometheus + Grafana (metrics & dashboards)
+- **Monitoring**: Prometheus + Grafana (metrics, dashboards, cost tracking)
 - **Frontend**: Tailwind CSS + Vanilla JavaScript (ChatGPT-style UI)
 - **Deployment**: Docker Compose (6 services)
 - **Testing**: pytest (200+ tests, 54% coverage)
