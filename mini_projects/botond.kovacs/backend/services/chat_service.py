@@ -15,6 +15,7 @@ from domain.models import (
 from domain.interfaces import IUserRepository, IConversationRepository
 from services.agent import AIAgent
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+from services import HybridChatWorkflowService
 
 logger = logging.getLogger(__name__)
 
@@ -33,11 +34,14 @@ class ChatService:
         self,
         user_repository: IUserRepository,
         conversation_repository: IConversationRepository,
-        agent: AIAgent
+        agent: AIAgent,
+        vector_store: Any = None
     ):
         self.user_repo = user_repository
         self.conversation_repo = conversation_repository
         self.agent = agent
+        self.vector_store = vector_store
+        self.hybrid_workflow = HybridChatWorkflowService(vector_store) if vector_store else None
     
     async def process_message(self, request: ChatRequest) -> ChatResponse:
         """
@@ -68,72 +72,83 @@ class ChatService:
         # Load conversation history (creates if doesn't exist)
         history = await self.conversation_repo.get_history(session_id)
         
-        # Build memory context
-        memory = self._build_memory(profile, history)
-        
-        # Add user message to history
-        user_msg = Message(role="user", content=message, timestamp=datetime.now())
-        await self.conversation_repo.add_message(session_id, user_msg)
-        
-        # Run agent
-        agent_result = await self.agent.run(
-            user_message=message,
-            memory=memory,
-            user_id=user_id
-        )
-        
-        # Extract results
-        final_answer = agent_result["final_answer"]
-        tools_called = agent_result["tools_called"]
-        agent_messages = agent_result["messages"]
-        
-        # Persist all messages from agent (system messages, tool messages, assistant message)
-        for msg in agent_messages:
-            if isinstance(msg, SystemMessage):
-                await self.conversation_repo.add_message(
-                    session_id,
-                    Message(role="system", content=msg.content, timestamp=datetime.now())
-                )
-            elif isinstance(msg, AIMessage):
-                await self.conversation_repo.add_message(
-                    session_id,
-                    Message(role="assistant", content=msg.content, timestamp=datetime.now())
-                )
-        
-        # Check if profile needs updating based on conversation
-        await self._check_profile_updates(user_id, message, profile)
-        
-        # Reload profile to get any updates
-        updated_profile = await self.user_repo.get_profile(user_id)
-        
-        # Build response
-        tools_used = [
-            {
-                "name": tc.tool_name,
-                "arguments": tc.arguments,
-                "success": tc.error is None
+        if request.memory_mode == "hybrid" and self.hybrid_workflow:
+            # --- Hybrid memory workflow ---
+            prev_checkpoint = history.summary.get('hybrid_checkpoint') if history.summary and 'hybrid_checkpoint' in history.summary else None
+            result = self.hybrid_workflow.run(message, prev_state=prev_checkpoint)
+            # Save checkpoint in conversation summary for restore
+            if not history.summary:
+                history.summary = {}
+            history.summary['hybrid_checkpoint'] = result['checkpoint']
+            await self.conversation_repo.update_summary(session_id, history.summary)
+            # Add user message to history (for audit)
+            user_msg = Message(role="user", content=message, timestamp=datetime.now())
+            await self.conversation_repo.add_message(session_id, user_msg)
+            logger.info(f"[Hybrid] Message processed for user {user_id}")
+            return ChatResponse(
+                final_answer=result['final_answer'],
+                tools_used=[],
+                memory_snapshot=result['memory_snapshot'],
+                logs=[f"Hybrid trace steps: {len(result['trace'])}"]
+            )
+        else:
+            # --- Default workflow ---
+            # Build memory context
+            memory = self._build_memory(profile, history)
+            # Add user message to history
+            user_msg = Message(role="user", content=message, timestamp=datetime.now())
+            await self.conversation_repo.add_message(session_id, user_msg)
+            # Run agent
+            agent_result = await self.agent.run(
+                user_message=message,
+                memory=memory,
+                user_id=user_id
+            )
+            # Extract results
+            final_answer = agent_result["final_answer"]
+            tools_called = agent_result["tools_called"]
+            agent_messages = agent_result["messages"]
+            # Persist all messages from agent (system messages, tool messages, assistant message)
+            for msg in agent_messages:
+                if isinstance(msg, SystemMessage):
+                    await self.conversation_repo.add_message(
+                        session_id,
+                        Message(role="system", content=msg.content, timestamp=datetime.now())
+                    )
+                elif isinstance(msg, AIMessage):
+                    await self.conversation_repo.add_message(
+                        session_id,
+                        Message(role="assistant", content=msg.content, timestamp=datetime.now())
+                    )
+            # Check if profile needs updating based on conversation
+            await self._check_profile_updates(user_id, message, profile)
+            # Reload profile to get any updates
+            updated_profile = await self.user_repo.get_profile(user_id)
+            # Build response
+            tools_used = [
+                {
+                    "name": tc.tool_name,
+                    "arguments": tc.arguments,
+                    "success": tc.error is None
+                }
+                for tc in tools_called
+            ]
+            memory_snapshot = {
+                "preferences": {
+                    "language": updated_profile.language,
+                    "default_city": updated_profile.default_city,
+                    **updated_profile.preferences
+                },
+                "workflow_state": memory.workflow_state.model_dump(),
+                "message_count": len(history.messages) + len(agent_messages)
             }
-            for tc in tools_called
-        ]
-        
-        memory_snapshot = {
-            "preferences": {
-                "language": updated_profile.language,
-                "default_city": updated_profile.default_city,
-                **updated_profile.preferences
-            },
-            "workflow_state": memory.workflow_state.model_dump(),
-            "message_count": len(history.messages) + len(agent_messages)
-        }
-        
-        logger.info(f"Message processed successfully for user {user_id}")
-        
-        return ChatResponse(
-            final_answer=final_answer,
-            tools_used=tools_used,
-            memory_snapshot=memory_snapshot,
-            logs=[f"Tools called: {len(tools_called)}"]
-        )
+            logger.info(f"Message processed successfully for user {user_id}")
+            return ChatResponse(
+                final_answer=final_answer,
+                tools_used=tools_used,
+                memory_snapshot=memory_snapshot,
+                logs=[f"Tools called: {len(tools_called)}"]
+            )
     
     async def _handle_reset_context(self, user_id: str, session_id: str) -> ChatResponse:
         """

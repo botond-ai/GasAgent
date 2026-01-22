@@ -71,6 +71,8 @@ class ChatRequest(BaseModel):
     user_id: str
     message: str
     session_id: Optional[str] = None
+    memory_mode: Optional[str] = None  # e.g. "hybrid"
+    pii_mode: Optional[str] = None  # e.g. "placeholder"
 
 
 class ChatResponse(BaseModel):

@@ -13,6 +13,8 @@ export interface ChatRequest {
   user_id: string;
   message: string;
   session_id?: string;
+  memory_mode?: string; // 'hybrid' or undefined
+  pii_mode?: string; // 'placeholder' or 'pseudonymize'
 }
 
 export interface ToolUsed {

@@ -1,3 +1,4 @@
+
 # AI Agent Demo - LangGraph + FastAPI + React + MCP
 
 A complete working example demonstrating an AI Agent workflow with a Python backend (FastAPI + LangGraph), React frontend, and MCP (Model Context Protocol) server integration.
@@ -749,7 +750,7 @@ Send JSON-RPC requests via stdin:
    npm run dev
    ```
 
-4. **Access**: http://localhost:5173 (Vite default port)
+4. **Access**: http://localhost:3000
 
 ## 📚 API Endpoints
 
@@ -1046,7 +1047,68 @@ Create a `.env` file in the project root:
 OPENAI_API_KEY=sk-your-openai-api-key-here
 EIA_API_KEY=your-eia-api-key-here
 ```
+## 🧠 Hybrid Memory System (NEW)
+
+### Overview
+The Hybrid Memory system is a production-oriented, multi-layer memory architecture for conversational AI, optimized for:
+- Long-running conversations
+- Mixed information types (dialogue, preferences, documents)
+- High context retention and reproducibility
+
+#### Memory Layers
+Hybrid memory consists of four coordinated layers:
+- **Summary**: Continuously updated, versioned conversation summary (global context)
+- **Facts**: Structured key–value facts (preferences, profile data, stable truths)
+- **Recent Messages**: Bounded rolling window (last ~3 turns)
+- **Retrieved Context (RAG)**: On-demand external knowledge, only when relevant
+
+#### State Channels
+All memory is explicit and observable via state channels:
+- `messages` – trimmed recent turns
+- `summary` – versioned summary
+- `facts` – structured fact store
+- `retrieved_context` – RAG results (optional)
+- `trace` – execution trace for observability
+
+#### Deterministic State Reduction
+All channels use deterministic reducers:
+- `messages_reducer()`   – deduplicate, sort, trim to N turns
+- `summary_reducer()`    – replace summary, increment version
+- `facts_reducer()`      – last-write-wins by timestamp
+- `trace_reducer()`      – append-only, capped size
+
+#### Hybrid Execution Flow
+Entry → metrics_logger → summarizer → facts_extractor → [rag_recall?] → pii_filter → answer → END
+
+**Conditional RAG**: Retrieval is triggered only if the user message contains recall intent (e.g., "remember", "recall", "earlier", "you said").
+
+#### API Usage
+To use hybrid memory, set `memory_mode: "hybrid"` in your chat request:
+
+```json
+POST /api/chat
+{
+  "session_id": "session_id",
+  "user_id": "user_id",
+  "message": "Remember what we discussed about pricing?",
+  "memory_mode": "hybrid",
+  "pii_mode": "placeholder"
+}
+```
+
+The response includes:
+- Generated answer
+- Hybrid memory snapshot: summary version, facts count, recent message count, retrieved context flag, trace length
+
+#### Checkpointing & Restore
+Hybrid memory supports full state checkpointing and deterministic restore for rollback, debugging, and replay.
+
+#### PII Handling
+PII filtering is applied before persistence across all Hybrid layers. Supported modes: `placeholder` (default), `pseudonymize`.
+
+#### When to Use Hybrid Memory
+Use when conversations are long, user preferences must persist, or answers depend on both dialogue and documents. Avoid if minimal latency is required or conversations are short-lived.
 
 ---
 
-**Built with ❤️ for energy regulatory compliance and data analysis**
+**Built with ❤️ for regulatory compliance team**

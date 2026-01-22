@@ -32,6 +32,7 @@ from infrastructure.tool_clients import (
 from services.tools import RegulationTool, GasExportTool
 from services.agent import AIAgent
 from services.chat_service import ChatService
+from services.hybrid_memory.vectorstore import DummyVectorStore
 
 # Configure logging
 logging.basicConfig(
@@ -91,11 +92,13 @@ async def lifespan(app: FastAPI):
         gas_export_tool=gas_export_tool
     )
 
-    # Initialize chat service
+    # Initialize chat service with DummyVectorStore for hybrid memory
+    vector_store = DummyVectorStore()
     chat_service = ChatService(
         user_repository=user_repo,
         conversation_repository=conversation_repo,
-        agent=agent
+        agent=agent,
+        vector_store=vector_store
     )
     
     # Initialize MCP client

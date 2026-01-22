@@ -408,7 +408,17 @@ class MCPClient:
     def __init__(self, command: Optional[List[str]] = None, env: Optional[Dict[str, str]] = None):
         self.command = command or ["python", "-m", "eia_mcp.server"]
         env = dict(env or os.environ)
-        env["EIA_API_KEY"] = "ORzi5vbExmo03Cn7M3SM3dQVwaRP7FsTxoauSh4V"  # Teszt kulcs
+        # EIA_API_KEY betöltése .env-ből, ha nincs, None marad
+        try:
+            from dotenv import load_dotenv
+            # Gyökér .env betöltése
+            root_env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '.env'))
+            load_dotenv(dotenv_path=root_env_path)
+        except ImportError:
+            pass  # Ha nincs telepítve a python-dotenv, csak az os.environ-t használjuk
+        eia_key = os.environ.get("EIA_API_KEY")
+        if eia_key:
+            env["EIA_API_KEY"] = eia_key
         self.env = env
         self.proc = None
         self.connected = False
