@@ -216,3 +216,26 @@ class WorkflowState(BaseModel):
         """Pydantic configuration."""
 
         arbitrary_types_allowed = True
+
+
+# Jira Integration Models
+
+
+class JiraTicket(BaseModel):
+    """Jira ticket data from API response."""
+
+    key: str = Field(..., description="Jira ticket key (e.g., SUPPORT-123)")
+    summary: str = Field(..., description="Ticket summary/title")
+    description: Optional[str] = Field(None, description="Ticket description")
+    created: datetime = Field(..., description="Creation timestamp")
+    reporter_email: Optional[str] = Field(None, description="Reporter's email")
+    reporter_name: Optional[str] = Field(None, description="Reporter's display name")
+    priority: Optional[str] = Field(None, description="Jira priority name")
+    status: str = Field(..., description="Current ticket status")
+
+
+class JiraPollingState(BaseModel):
+    """State for tracking Jira polling progress."""
+
+    last_poll_time: datetime = Field(..., description="Timestamp of last successful poll")
+    last_ticket_key: Optional[str] = Field(None, description="Last processed ticket key")
