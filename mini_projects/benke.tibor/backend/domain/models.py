@@ -116,6 +116,9 @@ class QueryResponse(BaseModel):
     rag_context: Optional[str] = None
     llm_prompt: Optional[str] = None
     llm_response: Optional[str] = None
+    llm_input_tokens: Optional[int] = 0
+    llm_output_tokens: Optional[int] = 0
+    llm_total_cost: Optional[float] = 0.0
 
     class Config:
         json_schema_extra = {

@@ -11,6 +11,7 @@ const debugCitations = document.getElementById('debugCitations');
 const debugChunkCount = document.getElementById('debugChunkCount');
 const debugMaxScore = document.getElementById('debugMaxScore');
 const debugLatency = document.getElementById('debugLatency');
+const debugRequestCost = document.getElementById('debugRequestCost');
 const debugWorkflow = document.getElementById('debugWorkflow');
 const debugNextStep = document.getElementById('debugNextStep');
 const debugRequestJson = document.getElementById('debugRequestJson');
@@ -251,12 +252,22 @@ async function refreshQuery(question, useCache = true) {
         if (payload.telemetry) {
             debugMaxScore.textContent = payload.telemetry.max_similarity_score || '-';
             debugLatency.textContent = payload.telemetry.total_latency_ms ? `${payload.telemetry.total_latency_ms}ms` : '-';
+            
+            // Update Request Cost from LLM telemetry
+            if (payload.telemetry.llm && payload.telemetry.llm.total_cost_usd !== undefined) {
+                const cost = payload.telemetry.llm.total_cost_usd;
+                debugRequestCost.textContent = `$${cost.toFixed(6)}`;
+            } else {
+                debugRequestCost.textContent = '-';
+            }
         } else if (uniqueCitationObjects.length > 0) {
             const maxScore = Math.max(...uniqueCitationObjects.map(c => c.score || 0));
             debugMaxScore.textContent = maxScore.toFixed(3);
+            debugRequestCost.textContent = '-';
         } else {
             debugMaxScore.textContent = '-';
             debugLatency.textContent = '-';
+            debugRequestCost.textContent = '-';
         }
         
         if (payload.workflow) {
@@ -434,12 +445,22 @@ queryForm.addEventListener('submit', async (e) => {
         if (payload.telemetry) {
             debugMaxScore.textContent = payload.telemetry.max_similarity_score || '-';
             debugLatency.textContent = payload.telemetry.total_latency_ms ? `${payload.telemetry.total_latency_ms}ms` : '-';
+            
+            // Update Request Cost from LLM telemetry
+            if (payload.telemetry.llm && payload.telemetry.llm.total_cost_usd !== undefined) {
+                const cost = payload.telemetry.llm.total_cost_usd;
+                debugRequestCost.textContent = `$${cost.toFixed(6)}`;
+            } else {
+                debugRequestCost.textContent = '-';
+            }
         } else if (uniqueCitationObjects.length > 0) {
             const maxScore = Math.max(...uniqueCitationObjects.map(c => c.score || 0));
             debugMaxScore.textContent = maxScore.toFixed(3);
+            debugRequestCost.textContent = '-';
         } else {
             debugMaxScore.textContent = '-';
             debugLatency.textContent = '-';
+            debugRequestCost.textContent = '-';
         }
         
         if (payload.workflow) {
@@ -653,6 +674,7 @@ if (resetBtn) {
         if (debugChunkCount) debugChunkCount.textContent = '0';
         if (debugMaxScore) debugMaxScore.textContent = '-';
         if (debugLatency) debugLatency.textContent = '-';
+        if (debugRequestCost) debugRequestCost.textContent = '-';
         if (debugWorkflow) debugWorkflow.textContent = 'none';
         if (debugNextStep) debugNextStep.textContent = '-';
         if (debugRequestJson) debugRequestJson.textContent = '-';
@@ -828,6 +850,15 @@ async function fetchMonitoringStats() {
             ? ((latencySum / latencyCount) * 1000).toFixed(0) + 'ms'
             : '-';
         
+        // Cost calculation
+        const totalCost = metrics['knowledgerouter_llm_cost_total']
+            ? metrics['knowledgerouter_llm_cost_total'].reduce((a, b) => a + b, 0)
+            : 0;
+        
+        const avgCost = totalRequests > 0
+            ? (totalCost / totalRequests).toFixed(4)
+            : '0.0000';
+        
         // Update UI
         document.getElementById('monitorTotalRequests').textContent = totalRequests;
         document.getElementById('monitorCacheHitRate').textContent = cacheHitRate + '%';
@@ -835,6 +866,8 @@ async function fetchMonitoringStats() {
         document.getElementById('monitorLlmCalls').textContent = llmCalls;
         document.getElementById('monitorActiveRequests').textContent = activeRequests;
         document.getElementById('monitorErrors').textContent = errors;
+        document.getElementById('monitorTotalCost').textContent = '$' + totalCost.toFixed(4);
+        document.getElementById('monitorAvgCost').textContent = '$' + avgCost;
         
     } catch (error) {
         console.error('Failed to fetch monitoring stats:', error);
@@ -844,6 +877,8 @@ async function fetchMonitoringStats() {
         document.getElementById('monitorLlmCalls').textContent = 'Error';
         document.getElementById('monitorActiveRequests').textContent = 'Error';
         document.getElementById('monitorErrors').textContent = 'Error';
+        document.getElementById('monitorTotalCost').textContent = 'Error';
+        document.getElementById('monitorAvgCost').textContent = 'Error';
     }
 }
 

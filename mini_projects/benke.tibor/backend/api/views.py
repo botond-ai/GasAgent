@@ -152,7 +152,10 @@ class QueryAPIView(APIView):
                             "prompt": response.llm_prompt,
                             "response": response.llm_response,
                             "prompt_length": len(response.llm_prompt) if response.llm_prompt else 0,
-                            "response_length": len(response.llm_response) if response.llm_response else 0
+                            "response_length": len(response.llm_response) if response.llm_response else 0,
+                            "input_tokens": response.llm_input_tokens,
+                            "output_tokens": response.llm_output_tokens,
+                            "total_cost_usd": response.llm_total_cost
                         }
                     }
                 }

@@ -69,11 +69,11 @@
         <p><span class="debug-label">Chunk Count:</span> <span id="debugChunkCount">0</span></p>
         <p><span class="debug-label">Max Score:</span> <span id="debugMaxScore">-</span></p>
         <p><span class="debug-label">Pipeline Latency:</span> <span id="debugLatency">-</span></p>
+        <p><span class="debug-label">Request Cost:</span> <span id="debugRequestCost">-</span></p>
         <p><span class="debug-label">Workflow:</span> <span id="debugWorkflow">-</span></p>
         <p><span class="debug-label">Next:</span> <span id="debugNextStep">-</span></p>
         
-        <details style="margin-top: 10px;">
-            <summary style="cursor: pointer; font-weight: bold; color: #ef4444;">📊 Monitoring Stats</summary>
+        <details style="margin-top: 10px;">\n            <summary style="cursor: pointer; font-weight: bold; color: #ef4444;">📊 Monitoring Stats</summary>
             <div style="background: #1a1a1a; padding: 8px; border-radius: 4px; font-size: 11px; margin-top: 5px;">
                 <p style="margin: 3px 0;"><span class="debug-label">Total Requests:</span> <span id="monitorTotalRequests">-</span></p>
                 <p style="margin: 3px 0;"><span class="debug-label">Cache Hit Rate:</span> <span id="monitorCacheHitRate">-</span></p>
@@ -81,6 +81,8 @@
                 <p style="margin: 3px 0;"><span class="debug-label">LLM Calls:</span> <span id="monitorLlmCalls">-</span></p>
                 <p style="margin: 3px 0;"><span class="debug-label">Active Requests:</span> <span id="monitorActiveRequests">-</span></p>
                 <p style="margin: 3px 0;"><span class="debug-label">Error Count:</span> <span id="monitorErrors">-</span></p>
+                <p style="margin: 3px 0; border-top: 1px solid #333; padding-top: 5px; margin-top: 5px;"><span class="debug-label">💰 Total Cost:</span> <span id="monitorTotalCost">-</span></p>
+                <p style="margin: 3px 0;"><span class="debug-label">💸 Avg Cost/Request:</span> <span id="monitorAvgCost">-</span></p>
                 <button onclick="fetchMonitoringStats()" style="margin-top: 8px; padding: 4px 8px; background: #10b981; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px;">🔄 Refresh Stats</button>
             </div>
         </details>
