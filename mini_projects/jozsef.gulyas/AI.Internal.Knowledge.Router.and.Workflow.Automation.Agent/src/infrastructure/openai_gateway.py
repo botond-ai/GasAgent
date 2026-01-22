@@ -1,4 +1,6 @@
 import httpx
+from typing import Optional
+
 
 class OpenAIGateway:
     EMBEDDING_URL = "https://api.openai.com/v1/embeddings"
@@ -27,27 +29,57 @@ class OpenAIGateway:
             response.raise_for_status()
             return response.json()["choices"][0]["message"]["content"].strip()
 
-    async def get_completion(self, prompt, context, history):
-        messages = [{
-            "role": "user",
-            "content": "Context is in json format, and it contains 'texts' field with relevant information. It also contains 'sources' with the source of the information. Include that in your answer as citation."
-        }, {
-            "role": "user",
-            "content": f"Context: {context}\n\nQuestion: {prompt}"
-        }]
+    async def get_completion_with_tools(
+        self,
+        messages: list[dict],
+        tools: Optional[list[dict]] = None
+    ) -> dict:
+        """
+        Get completion with optional tool calling support.
 
-        if history:
-            for q, a in history:
-                messages.append({
-                    "role": "user",
-                    "content": q
-                })
-                messages.append({
-                    "role": "assistant",
-                    "content": a
-                })
+        Returns the full message object which may contain tool_calls.
+        """
+        payload = {
+            "model": self.completion_model,
+            "messages": messages,
+            "temperature": 0.2,
+        }
 
-        return await self.get_completion_response(messages)
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                self.COMPLETION_URL,
+                headers=self.headers,
+                json=payload,
+                timeout=60.0
+            )
+            response.raise_for_status()
+            return response.json()["choices"][0]["message"]
+
+    # async def get_completion(self, prompt, context, history):
+    #     messages = [{
+    #         "role": "user",
+    #         "content": "Context is in json format, and it contains 'texts' field with relevant information. It also contains 'sources' with the source of the information. Include that in your answer as citation."
+    #     }, {
+    #         "role": "user",
+    #         "content": f"Context: {context}\n\nQuestion: {prompt}"
+    #     }]
+
+    #     if history:
+    #         for q, a in history:
+    #             messages.append({
+    #                 "role": "user",
+    #                 "content": q
+    #             })
+    #             messages.append({
+    #                 "role": "assistant",
+    #                 "content": a
+    #             })
+
+    #     return await self.get_completion_response(messages)
 
     async def get_embedding(self, text):
         async with httpx.AsyncClient() as client:
@@ -75,7 +107,7 @@ class OpenAIGateway:
 
         Return only the domain name as a single word.
         """
-        message = [{"role": "user", "content": prompt}]
+        message = [{"role": "system", "content": prompt}]
         result = await self.get_completion_response(message)
         return result.lower()
 

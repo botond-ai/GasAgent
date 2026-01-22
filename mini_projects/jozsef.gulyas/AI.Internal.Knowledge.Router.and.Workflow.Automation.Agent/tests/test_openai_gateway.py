@@ -73,62 +73,6 @@ class TestGetCompletionResponse:
             with pytest.raises(httpx.HTTPStatusError):
                 await gateway.get_completion_response([{"role": "user", "content": "Hi"}])
 
-
-class TestGetCompletion:
-    @pytest.mark.asyncio
-    async def test_builds_messages_correctly(self, gateway):
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "choices": [{"message": {"content": "Answer"}}]
-        }
-        mock_response.raise_for_status = MagicMock()
-
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.post.return_value = mock_response
-            mock_client_class.return_value.__aenter__.return_value = mock_client
-
-            result = await gateway.get_completion(
-                prompt="What is 2+2?",
-                context='{"texts": ["math"]}',
-                history=[]
-            )
-
-            assert result == "Answer"
-            call_args = mock_client.post.call_args
-            messages = call_args.kwargs["json"]["messages"]
-            assert len(messages) == 2
-            assert "Context is in json format" in messages[0]["content"]
-            assert "What is 2+2?" in messages[1]["content"]
-
-    @pytest.mark.asyncio
-    async def test_includes_history(self, gateway):
-        mock_response = MagicMock()
-        mock_response.json.return_value = {
-            "choices": [{"message": {"content": "Answer"}}]
-        }
-        mock_response.raise_for_status = MagicMock()
-
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.post.return_value = mock_response
-            mock_client_class.return_value.__aenter__.return_value = mock_client
-
-            await gateway.get_completion(
-                prompt="Follow up?",
-                context="",
-                history=[("First question", "First answer")]
-            )
-
-            call_args = mock_client.post.call_args
-            messages = call_args.kwargs["json"]["messages"]
-            assert len(messages) == 4
-            assert messages[2]["role"] == "user"
-            assert messages[2]["content"] == "First question"
-            assert messages[3]["role"] == "assistant"
-            assert messages[3]["content"] == "First answer"
-
-
 class TestGetEmbedding:
     @pytest.mark.asyncio
     async def test_returns_embedding_vector(self, gateway):
