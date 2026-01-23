@@ -1,7 +1,7 @@
 # KnowledgeRouter - Vállalati Tudásirányító & Workflow-Automata
 
-**Version:** 2.11.0 (Monitoring Upgrade)  
-**Status:** ✅ Stable (Prometheus + Grafana added 2026-01-21)
+**Version:** 2.12.0 (STRICT_RAG_MODE Feature)  
+**Status:** ✅ Stable (Configurable RAG strictness 2026-01-23)
 
 Multi-domain AI agent rendszer Python Django backenddel, LangGraph orchestrációval és modern Tailwind CSS frontenddel (ChatGPT-style UI).
 
@@ -56,6 +56,7 @@ KnowledgeRouter egy vállalati belső tudásbázis rendszer, amely:
 🆕 **Observation Node + Replan Loop (v2.8)** - LLM-based evaluation: sufficient info? → generate OR replan (max 2x), gap detection, automatic replanning
 🔧 **Production Hardened (v2.9)** - Manual JSON parsing, state management fixes, 50 recursion limit, IT domain UX guarantee
 🚀 **Dual Pipeline Modes (v2.10)** - USE_SIMPLE_PIPELINE feature flag: Simple (15 sec, RAG-only) vs Complex (30-50 sec, full LangGraph with replan/tools/workflows)
+🆕 **STRICT_RAG_MODE Feature Flag (v2.12)** - Configurable RAG behavior: `true` = refuse without context (original), `false` = allow LLM general knowledge with ⚠️ warning prefix
 
 ## 📋 Tech Stack
 

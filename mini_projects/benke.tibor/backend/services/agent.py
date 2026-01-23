@@ -3,6 +3,7 @@ Services - LangGraph-based agent orchestration.
 """
 import asyncio
 import logging
+import os
 import re
 import time
 from typing import Dict, Any, Sequence
@@ -959,6 +960,40 @@ Format your offer like this:
 This question MUST appear at the end of EVERY IT domain response.
 """
 
+        # Check if strict RAG mode is enabled (feature flag)
+        strict_rag_mode = os.getenv("STRICT_RAG_MODE", "true").lower() == "true"
+        logger.info(f"🔧 STRICT_RAG_MODE: env={os.getenv('STRICT_RAG_MODE', 'NOT_SET')}, strict_rag_mode={strict_rag_mode}")
+        
+        # Build fail-safe instructions based on feature flag
+        if strict_rag_mode:
+            # STRICT MODE: Require RAG context, refuse to answer without it
+            failsafe_instructions = """
+CRITICAL FAIL-SAFE INSTRUCTIONS:
+1. **Only use information from the retrieved documents above** - DO NOT invent facts, policies, or procedures
+2. **If information is contradictory, unclear, or missing:**
+   - DO NOT hallucinate or make assumptions
+   - Instead, respond with: "Sajnálom, nem tudok pontos választ adni a rendelkezésre álló információk alapján. Kérlek, pontosítsd a kérdést vagy fordulj a [domain] csapathoz közvetlenül."
+   - For Hungarian queries: "Sajnálom, az elérhető dokumentumok nem tartalmaznak elegendő információt ehhez a kérdéshez. Kérlek, vedd fel a kapcsolatot a [HR/IT/Finance/Legal/Marketing] csapattal további segítségért."
+3. **If no relevant documents were retrieved** (empty context):
+   - Respond with: "Sajnálom, nem találtam releváns információt ehhez a kérdéshez a rendelkezésre álló dokumentumokban. Kérlek, próbáld meg átfogalmazni a kérdést vagy vedd fel a kapcsolatot a megfelelő csapattal."
+4. **Never fabricate:** email addresses, phone numbers, section IDs, policy details, dates, or procedures not explicitly stated in the retrieved documents
+5. **If uncertain about any detail:** acknowledge the uncertainty and suggest contacting the relevant team
+"""
+        else:
+            # RELAXED MODE: Allow LLM to use general knowledge if RAG context is empty
+            failsafe_instructions = """
+INSTRUCTIONS:
+1. **Prefer information from the retrieved documents above**, but you may use your general knowledge if documents are insufficient
+2. **If using general knowledge (not from documents):**
+   - Clearly state: "⚠️ A következő információ általános tudásomon alapul, nem pedig a szervezeti dokumentumokon:"
+   - Be conservative and factual - only provide widely accepted information
+   - Suggest verifying with the relevant team for organization-specific details
+3. **If information is contradictory or unclear in documents:**
+   - Note the discrepancy and suggest contacting the relevant team for clarification
+4. **Never fabricate organization-specific details:** email addresses, phone numbers, section IDs, policy details, dates, or internal procedures
+5. **If uncertain about any detail:** acknowledge the uncertainty and suggest contacting the relevant team
+"""
+
         prompt = f"""
 You are a helpful HR/IT/Finance/Legal/Marketing assistant.
 
@@ -972,16 +1007,7 @@ User query: "{state['query']}"
 
 {domain_instructions}
 
-CRITICAL FAIL-SAFE INSTRUCTIONS:
-1. **Only use information from the retrieved documents above** - DO NOT invent facts, policies, or procedures
-2. **If information is contradictory, unclear, or missing:**
-   - DO NOT hallucinate or make assumptions
-   - Instead, respond with: "Sajnálom, nem tudok pontos választ adni a rendelkezésre álló információk alapján. Kérlek, pontosítsd a kérdést vagy fordulj a [domain] csapathoz közvetlenül."
-   - For Hungarian queries: "Sajnálom, az elérhető dokumentumok nem tartalmaznak elegendő információt ehhez a kérdéshez. Kérlek, vedd fel a kapcsolatot a [HR/IT/Finance/Legal/Marketing] csapattal további segítségért."
-3. **If no relevant documents were retrieved** (empty context):
-   - Respond with: "Sajnálom, nem találtam releváns információt ehhez a kérdéshez a rendelkezésre álló dokumentumokban. Kérlek, próbáld meg átfogalmazni a kérdést vagy vedd fel a kapcsolatot a megfelelő csapattal."
-4. **Never fabricate:** email addresses, phone numbers, section IDs, policy details, dates, or procedures not explicitly stated in the retrieved documents
-5. **If uncertain about any detail:** acknowledge the uncertainty and suggest contacting the relevant team
+{failsafe_instructions}
 
 Provide a comprehensive answer based on the retrieved documents above.
 Combine information from multiple sources when they relate to the same topic.

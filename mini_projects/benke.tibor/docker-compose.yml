@@ -31,7 +31,9 @@ services:
       - JIRA_API_TOKEN=${JIRA_API_TOKEN}
       - JIRA_EMAIL=${JIRA_EMAIL}
       - USE_SIMPLE_PIPELINE=True  # Enable simple fast pipeline
+      - STRICT_RAG_MODE=${STRICT_RAG_MODE:-true}  # Feature flag: true=refuse without RAG, false=allow general knowledge
     volumes:
+      - ./backend:/app  # Mount entire backend for hot-reload
       - ./backend/data:/app/data
       - ./backend/credentials:/app/credentials
     depends_on:

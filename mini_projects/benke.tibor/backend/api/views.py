@@ -3,6 +3,8 @@ API views - REST endpoints.
 """
 import logging
 import time
+from django.views import View
+from django.http import HttpResponse
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
@@ -851,30 +853,35 @@ class CreateJiraTicketAPIView(APIView):
             )
 
 
-class MetricsAPIView(APIView):
+
+
+class MetricsAPIView(View):
     """
     GET /api/metrics/ - Prometheus metrics endpoint.
     Returns metrics in Prometheus text format for scraping.
     """
     
-    def get(self, request: Request) -> Response:
+    def get(self, request):
         """Return Prometheus metrics."""
         try:
             from infrastructure.prometheus_metrics import get_metrics_output
-            from django.http import HttpResponse
             
             metrics_output = get_metrics_output()
             
             # Return as plain text with Prometheus content type
-            return HttpResponse(
+            response = HttpResponse(
                 metrics_output,
                 content_type='text/plain; version=0.0.4; charset=utf-8'
             )
+            # Add CORS headers
+            response['Access-Control-Allow-Origin'] = '*'
+            return response
             
         except Exception as e:
             logger.error(f"Metrics endpoint error: {e}", exc_info=True)
-            return Response(
-                {"error": "Failed to generate metrics"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            return HttpResponse(
+                "Failed to generate metrics",
+                status=500,
+                content_type='text/plain'
             )
 
