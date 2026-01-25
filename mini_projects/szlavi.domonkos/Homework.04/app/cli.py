@@ -2,7 +2,7 @@
 
 The CLI is a thin layer that interacts with the user and delegates
 work to `EmbeddingApp` and `RAGAgent` which follow dependency injection principles.
-Includes support for LangGraph workflow orchestration.
+Includes support for LangGraph workflow orchestration and metrics monitoring.
 """
 from __future__ import annotations
 
@@ -10,12 +10,14 @@ from dataclasses import dataclass
 from typing import List, Tuple, Optional, TYPE_CHECKING
 import uuid
 import textwrap
+import json
 
 from .embeddings import EmbeddingService
 from .vector_store import VectorStore
 from .rag_agent import RAGAgent
 from .google_calendar import CalendarService
 from .tool_clients import GeolocationClient, WeatherClient, CryptoClient, ForexClient
+from .metrics import MetricCollector
 
 if TYPE_CHECKING:
     from .langgraph_workflow import MeetingAssistantWorkflow
@@ -73,6 +75,7 @@ class CLI:
         crypto_client: Optional[CryptoClient] = None,
         forex_client: Optional[ForexClient] = None,
         workflow: Optional[MeetingAssistantWorkflow] = None,
+        metrics_collector: Optional[MetricCollector] = None,
     ) -> None:
         self.app = EmbeddingApp(emb_service, vector_store)
         self.rag_agent = rag_agent
@@ -82,6 +85,7 @@ class CLI:
         self.crypto_client = crypto_client
         self.forex_client = forex_client
         self.workflow = workflow
+        self.metrics_collector = metrics_collector
 
     def _print_intro(self) -> None:
         intro = (
@@ -101,6 +105,8 @@ class CLI:
             intro += "\nForex: '/forex BASE TARGET' (e.g., '/forex USD EUR')"
         if self.workflow:
             intro += "\nWorkflow: '/workflow your request' (LangGraph multi-step orchestration)"
+        if self.metrics_collector:
+            intro += "\nMetrics: '/metrics' (show API call statistics), '/metrics export' (save to file)"
         print(textwrap.dedent(intro))
 
     def _print_results(self, uid: str, neighbors: List[Neighbor]) -> None:
@@ -204,6 +210,45 @@ class CLI:
         print(f"Rate: 1 {forex_data.get('base')} = {forex_data.get('rate')} {forex_data.get('target')}")
         print(f"Date: {forex_data.get('timestamp')}")
 
+    def _print_metrics_summary(self, summary) -> None:
+        """Print AI metrics summary."""
+        print("\n--- AI Metrics Summary ---")
+        print(f"Total Inferences: {summary.total_inferences}")
+        print(f"Total Tokens In: {summary.total_tokens_in:,}")
+        print(f"Total Tokens Out: {summary.total_tokens_out:,}")
+        print(f"Total Cost: ${summary.total_cost_usd:.6f}")
+        
+        print(f"\nError Rate: {summary.error_rate:.2f}% ({summary.total_errors} errors)")
+        
+        print(f"\nLatency Statistics (milliseconds):")
+        print(f"  p95: {summary.latency_p95_ms:.2f}ms")
+        print(f"  p50 (median): {summary.latency_p50_ms:.2f}ms")
+        print(f"  Mean: {summary.latency_mean_ms:.2f}ms")
+        
+        if summary.agent_execution_latency_mean_ms > 0:
+            print(f"\nAgent Execution Latency (milliseconds):")
+            print(f"  p95: {summary.agent_execution_latency_p95_ms:.2f}ms")
+            print(f"  Mean: {summary.agent_execution_latency_mean_ms:.2f}ms")
+        
+        # Breakdown by operation type
+        if summary.by_operation:
+            print(f"\nBreakdown by Operation:")
+            for op_type, stats in summary.by_operation.items():
+                print(f"  {op_type}:")
+                print(f"    Calls: {stats['count']}")
+                print(f"    Tokens In: {stats['tokens_in']:,}")
+                print(f"    Tokens Out: {stats['tokens_out']:,}")
+                print(f"    Cost: ${stats['cost_usd']:.6f}")
+                print(f"    Latency p95: {stats.get('latency_p95_ms', 0):.2f}ms")
+        
+        # Breakdown by model
+        if summary.by_model:
+            print(f"\nBreakdown by Model:")
+            for model, stats in summary.by_model.items():
+                print(f"  {model}:")
+                print(f"    Calls: {stats['count']}")
+                print(f"    Cost: ${stats['cost_usd']:.6f}")
+                print(f"    Latency p95: {stats.get('latency_p95_ms', 0):.2f}ms")
 
     def run(self) -> None:
         self._print_intro()
@@ -381,6 +426,27 @@ class CLI:
                             
                 except Exception as exc:
                     print(f"Workflow error: {exc}")
+                continue
+
+            if text.startswith("/metrics"):
+                if not self.metrics_collector:
+                    print("Metrics not available")
+                    continue
+
+                try:
+                    cmd_parts = text.split(maxsplit=1)
+                    cmd = cmd_parts[1].strip() if len(cmd_parts) > 1 else ""
+                    
+                    if cmd == "export":
+                        filepath = "./metrics_export.json"
+                        self.metrics_collector.export(filepath)
+                        print(f"Metrics exported to {filepath}")
+                    else:
+                        # Default: display metrics summary
+                        summary = self.metrics_collector.get_summary()
+                        self._print_metrics_summary(summary)
+                except Exception as exc:
+                    print(f"Metrics error: {exc}")
                 continue
 
             uid, neighbors = self.app.process_query(text, k=k, mode=mode, alpha=alpha)

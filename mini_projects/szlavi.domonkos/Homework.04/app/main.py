@@ -11,6 +11,7 @@ If RAG agent is configured (via env vars), retrieval results are augmented with 
 If Google Calendar is configured, calendar commands are available in interactive mode.
 Tool clients (geolocation, weather, crypto, forex) are auto-initialized if available.
 LangGraph workflow orchestrates multi-step agent operations.
+AI metrics monitoring tracks API calls, tokens, costs, and latency.
 """
 from __future__ import annotations
 
@@ -26,6 +27,7 @@ from .rag_agent import RAGAgent
 from .google_calendar import GoogleCalendarService
 from .tool_clients import IPAPIGeolocationClient, OpenWeatherMapClient, CoinGeckoClient, ExchangeRateAPIClient
 from .langgraph_workflow import MeetingAssistantWorkflow
+from .metrics import create_metrics_collector
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -38,9 +40,25 @@ def main(argv: list[str] | None = None) -> int:
         logging.error("Configuration error: %s", exc)
         return 1
 
+    # Initialize metrics collector
+    metrics_collector = create_metrics_collector()
+    logging.info("Metrics collector initialized")
+
     # Instantiate services (dependencies injected)
-    emb_service = OpenAIEmbeddingService(api_key=cfg.openai_api_key, model=cfg.embedding_model)
-    vector_store = ChromaVectorStore(persist_dir=cfg.chroma_persist_dir)
+    emb_service = OpenAIEmbeddingService(
+        api_key=cfg.openai_api_key,
+        model=cfg.embedding_model,
+        metrics_collector=metrics_collector,
+    )
+    
+    # Create metrics middleware for vector store
+    from .metrics import MetricsMiddleware
+    metrics_middleware = MetricsMiddleware(metrics_collector)
+    
+    vector_store = ChromaVectorStore(
+        persist_dir=cfg.chroma_persist_dir,
+        metrics_middleware=metrics_middleware,
+    )
 
     # Optionally instantiate RAG agent
     rag_agent = None
@@ -50,6 +68,7 @@ def main(argv: list[str] | None = None) -> int:
             llm_model=cfg.llm_model,
             temperature=cfg.llm_temperature,
             max_tokens=cfg.llm_max_tokens,
+            metrics_collector=metrics_collector,
         )
         logging.info("RAG agent initialized: %s", cfg.llm_model)
     except Exception as exc:
@@ -132,6 +151,7 @@ def main(argv: list[str] | None = None) -> int:
         crypto_client=crypto_client,
         forex_client=forex_client,
         workflow=workflow,
+        metrics_collector=metrics_collector,
     )
     # If a `data/` directory exists in the current working directory, process files in batch mode.
     data_dir = os.path.join(os.getcwd(), "data")
@@ -149,3 +169,4 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))
+
