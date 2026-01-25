@@ -17,3 +17,4 @@ RUN pip install --no-cache-dir -r /app/requirements.txt
 COPY . /app
 
 CMD ["python", "-m", "app.cli", "chat"]
+ENV PYTHONPATH=/app

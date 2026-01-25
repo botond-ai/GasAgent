@@ -4,6 +4,7 @@ services:
     env_file:
       - .env
     environment:
+      - PYTHONPATH=/app
       - DEV_MODE=${DEV_MODE:-1}
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
@@ -28,6 +29,7 @@ services:
   ticket-api:
     build: ./ticket_api
     environment:
+      - PYTHONPATH=/app
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
     volumes:
       - ./data:/data

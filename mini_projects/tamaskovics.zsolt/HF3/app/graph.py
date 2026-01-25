@@ -93,4 +93,21 @@ def build_graph(cfg: AppConfig, llm: OpenAICompatClient, meteo: OpenMeteoClient,
     g.add_edge("ticket_api", "synth")
     g.add_edge("synth", END)
 
-    return g.compile()
+compiled = g.compile()
+
+class _GraphWrapper:
+    def __init__(self, inner):
+        self._inner = inner
+
+    def invoke(self, *args, **kwargs):
+        res = self._inner.invoke(*args, **kwargs)
+        if isinstance(res, KRState):
+            return res
+        if hasattr(KRState, "model_validate"):  # pydantic v2
+            return KRState.model_validate(res)
+        return KRState(**res)
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+return _GraphWrapper(compiled)
