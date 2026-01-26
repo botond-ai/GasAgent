@@ -524,7 +524,11 @@ environment:
 #### RAG Pipeline
 - **Semantic Search**: OpenAI `text-embedding-3-small` (1536 dims)
 - **Top-K Retrieval**: Configurable number of relevant documents
-- **Citation Support**: Document references with source links
+- **Citation Support**: Enhanced card display with:
+  - **Relevance Score**: Percentage-based similarity score (0-100%)
+  - **Document Metadata**: Section ID (IT-KB-xxx), Doc ID tracking
+  - **Interactive Cards**: Hover effects, clickable URLs, emoji icons
+  - **Visual Hierarchy**: Card layout with header/metadata sections
 - **Context Window Management**: Auto-truncate to fit model limits (128k tokens)
 
 ---

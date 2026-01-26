@@ -40,6 +40,7 @@ KnowledgeRouter egy vállalati belső tudásbázis rendszer, amely:
 ✅ **Feedback-weighted ranking** tiered boost system (>70%: +30%, <40%: -20%)  
 ✅ **Workflow-okat** futtat (HR szabadság igénylés, IT ticket, stb.) - LangGraph workflow node  
 ✅ **Citációkkal** ellátott válaszokat ad (section ID format: IT-KB-234)  
+✅ **Enhanced citation display** - Card layout relevancia score-ral (%), section ID, hover effect  
 ✅ **Konverzáció előzményt** mentesít JSON-ban  
 ✅ **Docker Compose** multi-container (backend, frontend, qdrant, redis, postgres)  
 🆕 **SOLID architektúra** ABC interfészekkel  

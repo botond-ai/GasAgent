@@ -453,6 +453,78 @@ main {
             text-decoration: underline;
         }
         
+        /* Citation card - enhanced display with score and metadata */
+        .citation-card {
+            background: #2d2d2d;
+            border: 1px solid #3d3d3d;
+            border-radius: 8px;
+            padding: 12px 14px;
+            margin: 8px 0;
+            transition: all 0.2s ease;
+        }
+        
+        .citation-card:hover {
+            background: #353535;
+            border-color: #10a37f;
+            box-shadow: 0 2px 8px rgba(16, 163, 127, 0.15);
+        }
+        
+        .citation-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 6px;
+        }
+        
+        .citation-title {
+            flex: 1;
+            color: #ececf1;
+            font-size: 0.875rem;
+            font-weight: 500;
+            line-height: 1.4;
+            margin-right: 12px;
+        }
+        
+        .citation-title a {
+            color: #10a37f;
+            text-decoration: none;
+            transition: color 0.2s ease;
+        }
+        
+        .citation-title a:hover {
+            color: #1ad1a5;
+            text-decoration: underline;
+        }
+        
+        .citation-score {
+            flex-shrink: 0;
+            background: rgba(16, 163, 127, 0.15);
+            color: #10a37f;
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 4px 8px;
+            border-radius: 12px;
+            white-space: nowrap;
+        }
+        
+        .citation-metadata {
+            display: flex;
+            gap: 12px;
+            color: #999;
+            font-size: 0.75rem;
+            margin-top: 4px;
+        }
+        
+        .citation-meta-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        .citation-meta-icon {
+            opacity: 0.7;
+        }
+        
         /* No citations message */
         .no-citations-container {
             margin-top: 1.5rem;

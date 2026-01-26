@@ -85,19 +85,49 @@ function addMessage(content, type = 'info', citations = null, originalQuery = nu
             html += `<h4 class="citations-title">📚 Felhasznált források (${citationObjects.length})</h4>`;
             html += `</div>`;
             
-            // List all source documents
-            html += `<ul class="citations-list">`;
+            // Display citations as enhanced cards with score and metadata
             citationObjects.forEach((citation, index) => {
                 const title = citation.title || 'Ismeretlen dokumentum';
                 const url = citation.url || null;
+                const score = citation.score || 0;
+                const scorePercent = Math.round(score * 100);
+                const sectionId = citation.section_id || null;
+                const docId = citation.doc_id || null;
+                
+                html += `<div class="citation-card">`;
+                html += `  <div class="citation-header">`;
+                html += `    <div class="citation-title">`;
                 
                 if (url) {
-                    html += `<li><a href="${url}" target="_blank" class="citation-link">🔗 ${escapeHtml(title)}</a></li>`;
+                    html += `<a href="${url}" target="_blank">🔗 ${escapeHtml(title)}</a>`;
                 } else {
-                    html += `<li>📄 ${escapeHtml(title)}</li>`;
+                    html += `📄 ${escapeHtml(title)}`;
                 }
+                
+                html += `    </div>`;
+                html += `    <div class="citation-score">${scorePercent}%</div>`;
+                html += `  </div>`;
+                
+                // Display metadata (section_id, doc_id)
+                if (sectionId || docId) {
+                    html += `  <div class="citation-metadata">`;
+                    if (sectionId) {
+                        html += `    <span class="citation-meta-item">`;
+                        html += `      <span class="citation-meta-icon">🔖</span>`;
+                        html += `      <span>${escapeHtml(sectionId)}</span>`;
+                        html += `    </span>`;
+                    }
+                    if (docId) {
+                        html += `    <span class="citation-meta-item">`;
+                        html += `      <span class="citation-meta-icon">🆔</span>`;
+                        html += `      <span>${escapeHtml(docId)}</span>`;
+                        html += `    </span>`;
+                    }
+                    html += `  </div>`;
+                }
+                
+                html += `</div>`;
             });
-            html += `</ul>`;
         } else {
             // No citations - show info message
             html += `<div class="no-citations-container">`;
