@@ -14,6 +14,7 @@ from api.views import (
     FeedbackStatsAPIView,
     RegenerateAPIView,
     CreateJiraTicketAPIView,
+    MetricsAPIView,
 )
 
 urlpatterns = [
@@ -28,4 +29,5 @@ urlpatterns = [
     path('feedback/citation/', CitationFeedbackAPIView.as_view(), name='citation_feedback'),
     path('feedback/stats/', FeedbackStatsAPIView.as_view(), name='feedback_stats'),
     path('jira/ticket/', CreateJiraTicketAPIView.as_view(), name='create_jira_ticket'),
+    path('metrics/', MetricsAPIView.as_view(), name='metrics'),  # Prometheus metrics endpoint
 ]

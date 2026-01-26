@@ -1,0 +1,55 @@
+# Prometheus Alerting Rules
+# Critical SLA alerts for Knowledge Router
+
+groups:
+  - name: cost_alerts
+    interval: 60s
+    rules:
+      - alert: HighCostPerHour
+        expr: rate(llm_cost_usd_total[1h]) > 10.0
+        for: 5m
+        labels:
+          severity: critical
+          category: cost
+        annotations:
+          summary: "LLM cost exceeds $10/hour"
+          description: "Current cost rate: {{ $value | humanize }}$/hour. Check for infinite loops or excessive API calls."
+
+  - name: error_alerts
+    interval: 30s
+    rules:
+      - alert: HighErrorRate
+        expr: rate(errors_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+          category: reliability
+        annotations:
+          summary: "Error rate exceeds 10%"
+          description: "Current error rate: {{ $value | humanizePercentage }}. Check logs for root cause."
+
+  - name: performance_alerts
+    interval: 30s
+    rules:
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(llm_latency_seconds_bucket[5m])) > 5.0
+        for: 5m
+        labels:
+          severity: warning
+          category: performance
+        annotations:
+          summary: "P95 latency exceeds 5s (SLA violation)"
+          description: "Current P95 latency: {{ $value | humanizeDuration }}. Check for slow LLM calls or database queries."
+
+  - name: agent_loop_alerts
+    interval: 30s
+    rules:
+      - alert: TokenUsageSpike
+        expr: histogram_quantile(0.95, rate(token_usage_per_request_bucket[5m])) > 8000
+        for: 3m
+        labels:
+          severity: critical
+          category: agent_loop
+        annotations:
+          summary: "Token usage exceeds 8k per request (potential infinite loop)"
+          description: "Current P95 token usage: {{ $value }} tokens. Check agent reflection loop logic."

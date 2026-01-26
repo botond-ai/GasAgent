@@ -9,13 +9,69 @@ from unittest.mock import MagicMock, AsyncMock
 
 from services.agent import QueryAgent, DomainType
 from domain.models import Citation
+from domain.llm_outputs import IntentOutput, RAGGenerationOutput, MemoryUpdate, TurnMetrics
 
 
 @pytest.fixture
 def mock_llm():
-    """Mock LLM client with domain-aware responses."""
+    """Mock LLM client with domain-aware responses and structured output support."""
     llm = MagicMock()
     
+    # Create structured output mock
+    structured_llm = MagicMock()
+    
+    async def structured_ainvoke(messages):
+        """Handle structured output requests (Pydantic models)."""
+        if isinstance(messages, list) and len(messages) > 0:
+            content = messages[0].content if hasattr(messages[0], 'content') else ""
+        else:
+            content = ""
+        
+        # Intent detection (IntentOutput)
+        if "Classify this query" in str(content) or "Category:" in str(content):
+            match = re.search(r'Query:\s*"(.+?)"', str(content), re.IGNORECASE | re.DOTALL)
+            query_text = match.group(1) if match else str(content)
+            ql = query_text.lower()
+            
+            if any(k in ql for k in ["vpn", "computer", "software"]):
+                return IntentOutput(domain="it", confidence=0.95, reasoning="IT keywords detected")
+            elif any(k in ql for k in ["vacation", "employee", "szabadság"]):
+                return IntentOutput(domain="hr", confidence=0.92, reasoning="HR keywords")
+            elif any(k in ql for k in ["brand", "logo", "arculat"]):
+                return IntentOutput(domain="marketing", confidence=0.90, reasoning="Marketing keywords")
+            else:
+                return IntentOutput(domain="general", confidence=0.70, reasoning="No specific domain")
+        
+        # Memory update (MemoryUpdate)
+        if "REDUCER PATTERN" in str(content) or "memory" in str(content).lower():
+            return MemoryUpdate(
+                summary="Test conversation summary",
+                facts=["Fact 1", "Fact 2"],
+                decisions=[]
+            )
+        
+        # Turn metrics (TurnMetrics)
+        if "llm_latency" in str(content).lower() or "metrics" in str(content).lower():
+            return TurnMetrics(
+                retrieval_score_top1=0.85,
+                retrieval_score_avg=0.75,
+                citations_count=3,
+                llm_latency_ms=1200,
+                cache_hit=False
+            )
+        
+        # Generation (RAGGenerationOutput)
+        return RAGGenerationOutput(
+            answer="Response with citation [IT-KB-267]",
+            section_ids=["IT-KB-267"],
+            confidence=0.88,
+            language="hu"
+        )
+    
+    structured_llm.ainvoke = AsyncMock(side_effect=structured_ainvoke)
+    llm.with_structured_output = MagicMock(return_value=structured_llm)
+    
+    # Legacy ainvoke for backward compatibility (if still used)
     async def llm_response(messages):
         """Handle both intent detection and generation requests."""
         if isinstance(messages, list) and len(messages) > 0:

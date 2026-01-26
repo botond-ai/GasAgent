@@ -15,7 +15,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, System
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, END
 
-from domain.models import Message, Memory, WorkflowState, ToolCall
+from domain.models import Message, Memory, WorkflowState, ToolCall, MCPTool
 from services.tools import (
     RegulationTool,
     GasExportTool
@@ -50,7 +50,8 @@ class AIAgent:
         self,
         openai_api_key: str,
         regulation_tool: RegulationTool = None,
-        gas_export_tool: GasExportTool = None
+        gas_export_tool: GasExportTool = None,
+        mcp_enabled: bool = True
     ):
         self.llm = ChatOpenAI(
             model="gpt-4-turbo-preview",
@@ -63,6 +64,9 @@ class AIAgent:
             self.tools["regulation"] = regulation_tool
         if gas_export_tool:
             self.tools["gas_exported_quantity"] = gas_export_tool
+        self.mcp_enabled = mcp_enabled
+        self.mcp_client = None
+        self.eia_tools: list[MCPTool] = []
         # Build LangGraph workflow
         self.workflow = self._build_graph()
     
@@ -110,6 +114,29 @@ class AIAgent:
         # Compile the workflow
         return workflow.compile()
     
+    async def _connect_eia_mcp(self, state):
+        if not self.mcp_client:
+            self.mcp_client = MCPClient()
+            await self.mcp_client.connect()
+        state["eia_mcp_client"] = self.mcp_client
+        state["mcp_session_id"] = self.mcp_client.session_id
+        return state
+
+    async def _fetch_eia_tools(self, state):
+        client = state["eia_mcp_client"]
+        tools = await client.list_tools()
+        self.eia_tools = [MCPTool(**t) for t in tools]
+        state["eia_tools"] = self.eia_tools
+        return state
+
+    def _format_tools_for_prompt(self, tools):
+        lines = []
+        for t in tools:
+            name = t.name
+            desc = t.description or ""
+            lines.append(f"- {name}: {desc}")
+        return "\n".join(lines)
+
     async def _agent_decide_node(self, state: AgentState) -> AgentState:
         """
         Agent decision node: Analyzes user request and decides next action.
@@ -234,19 +261,19 @@ IMPORTANT: The "action" field must ALWAYS be either "call_tool" or "final_answer
         """Create a tool execution node."""
         async def tool_node(state: AgentState) -> AgentState:
             logger.info(f"Executing tool: {tool_name}")
-            
+
             tool = self.tools[tool_name]
             decision = state.get("tool_decision", {})
             arguments = decision.get("arguments", {})
-            
+
             # Add user_id for file creation tool
             if tool_name == "create_file":
                 arguments["user_id"] = state["current_user_id"]
-            
+
             # Execute tool
             try:
                 result = await tool.execute(**arguments)
-                
+
                 # Record tool call
                 tool_call = ToolCall(
                     tool_name=tool_name,
@@ -255,17 +282,16 @@ IMPORTANT: The "action" field must ALWAYS be either "call_tool" or "final_answer
                     error=result.get("error") if not result.get("success") else None
                 )
                 state["tools_called"].append(tool_call)
-                
+
                 # Add system message - include full message content if available
-                # This ensures the LLM sees the actual tool output (e.g., station names)
                 if result.get("message"):
                     system_msg = result.get("message")
                 else:
                     system_msg = result.get("system_message", f"Tool {tool_name} executed")
                 state["messages"].append(SystemMessage(content=system_msg))
-                
+
                 logger.info(f"Tool {tool_name} completed: {result.get('success', False)}")
-                
+
             except Exception as e:
                 logger.error(f"Tool {tool_name} error: {e}")
                 error_msg = f"Error executing {tool_name}: {str(e)}"
@@ -275,7 +301,7 @@ IMPORTANT: The "action" field must ALWAYS be either "call_tool" or "final_answer
                     arguments=arguments,
                     error=str(e)
                 ))
-            
+
             return state
         
         return tool_node
@@ -447,3 +473,6 @@ User preferences:
             "messages": final_state["messages"],
             "memory": final_state["memory"]
         }
+
+# --- MCP/EIA integráció ---
+from infrastructure.tool_clients import MCPClient

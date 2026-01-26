@@ -9,6 +9,7 @@ Usage:
 The app starts in batch or interactive mode depending on whether a `data/` directory exists.
 If RAG agent is configured (via env vars), retrieval results are augmented with LLM responses.
 If Google Calendar is configured, calendar commands are available in interactive mode.
+Tool clients (geolocation, weather, crypto, forex) are auto-initialized if available.
 """
 from __future__ import annotations
 
@@ -22,6 +23,7 @@ from .vector_store import ChromaVectorStore
 from .cli import CLI
 from .rag_agent import RAGAgent
 from .google_calendar import GoogleCalendarService
+from .tool_clients import IPAPIGeolocationClient, OpenWeatherMapClient, CoinGeckoClient, ExchangeRateAPIClient
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -65,7 +67,49 @@ def main(argv: list[str] | None = None) -> int:
     except Exception as exc:
         logging.warning("Google Calendar service not available: %s", exc)
 
-    cli = CLI(emb_service=emb_service, vector_store=vector_store, rag_agent=rag_agent, calendar_service=calendar_service)
+    # Initialize tool clients (geolocation, weather, crypto, forex)
+    geolocation_client = None
+    weather_client = None
+    crypto_client = None
+    forex_client = None
+
+    try:
+        geolocation_client = IPAPIGeolocationClient(use_pro=False)
+        logging.info("IP Geolocation client initialized")
+    except Exception as exc:
+        logging.debug("IP Geolocation client not available: %s", exc)
+
+    try:
+        if cfg.openweather_api_key:
+            weather_client = OpenWeatherMapClient(api_key=cfg.openweather_api_key)
+            logging.info("Weather client initialized")
+        else:
+            logging.debug("Weather API key not configured")
+    except Exception as exc:
+        logging.debug("Weather client not available: %s", exc)
+
+    try:
+        crypto_client = CoinGeckoClient()
+        logging.info("Crypto price client initialized")
+    except Exception as exc:
+        logging.debug("Crypto client not available: %s", exc)
+
+    try:
+        forex_client = ExchangeRateAPIClient(api_key=cfg.exchangerate_api_key)
+        logging.info("Forex client initialized")
+    except Exception as exc:
+        logging.debug("Forex client not available: %s", exc)
+
+    cli = CLI(
+        emb_service=emb_service,
+        vector_store=vector_store,
+        rag_agent=rag_agent,
+        calendar_service=calendar_service,
+        geolocation_client=geolocation_client,
+        weather_client=weather_client,
+        crypto_client=crypto_client,
+        forex_client=forex_client,
+    )
     # If a `data/` directory exists in the current working directory, process files in batch mode.
     data_dir = os.path.join(os.getcwd(), "data")
     try:

@@ -1,0 +1,61 @@
+AI rendszer fejlesztési útmutató – Phase 2.0 RAG architektúra
+
+1. Bevezetés és célkitűzések
+
+Ez a dokumentum a Phase 2.0 RAG architektúra technikai tervezését és megvalósítását írja le. Elsődleges célja a chunkolás, az embedding generálás, valamint a retrieval működésének tesztelése és validálása valós, magyar nyelvű tartalmon. Kiemelt hangsúlyt kap az UTF-8 kódolás helyes kezelése, különös tekintettel a magyar ékezetes karakterekre, mint az á, é, í, ó, ö, ő, ú, ü és ű.
+
+A Phase 2.0 fókusza nem a felhasználói élmény, hanem a háttérrendszerek megbízhatósága. A cél az, hogy a RAG pipeline determinisztikusan, reprodukálható módon működjön, és a vektor alapú similarity keresés konzisztens eredményeket adjon eltérő témájú dokumentumok esetén is. Ez az útmutató fejlesztőknek és architekt tervezőknek szól, nem marketing vagy bevezető anyag.
+
+2. Dokumentum feltöltés és előfeldolgozás
+
+A dokumentumfeldolgozás a RAG pipeline első kritikus lépése. A rendszernek képesnek kell lennie különböző forrásokból származó szöveges állományok fogadására, például TXT, PDF vagy Markdown formátumban. Phase 2.0-ban a hangsúly a szöveges input determinisztikus feldolgozásán van, nem az OCR pontosságán.
+
+Az előfeldolgozás során minden dokumentum UTF-8 kódolásra normalizálódik. Ez kulcsfontosságú, mert a magyar nyelvben gyakori ékezetes karakterek hibás kezelése torzíthatja az embeddinget, és rontja a retrieval minőségét. A normalizálás után a szöveg megtisztításra kerül, eltávolítva a redundáns whitespace-eket, kontroll karaktereket és nem informatív elemeket.
+
+3. Chunkolási stratégiák és RecursiveCharacterTextSplitter
+
+A chunkolás célja, hogy a hosszú dokumentumokat kezelhető méretű szövegdarabokra bontsa. A Phase 2.0 implementációban a RecursiveCharacterTextSplitter kerül alkalmazásra, amely hierarchikus elválasztási logikát használ. Először bekezdések, majd mondatok, végső esetben karakterek mentén vágja a szöveget.
+
+A chunk méret tipikusan 500–800 token között van, 10–20 százalékos átfedéssel. Az átfedés segít megőrizni a szemantikai folytonosságot, különösen összetett technikai leírásoknál. A chunkolás során fontos szempont, hogy az ékezetes magyar szavak ne sérüljenek, és a karakterhatárok ne törjék meg az UTF-8 kódolást.
+
+4. Embedding generálás és nyelvi sajátosságok
+
+Az embedding generálás során minden chunk numerikus vektorrá alakul. Ez a vektor reprezentálja a szöveg jelentését egy nagy dimenziós térben. Phase 2.0-ban kötelező azonos embedding modellt használni dokumentumokra és lekérdezésekre, hogy a similarity számítás konzisztens legyen.
+
+A magyar nyelv sajátosságai miatt fontos a megfelelő modellválasztás. Az ékezetes karakterek, az összetett szavak és a ragozás mind befolyásolják az embedding minőségét. Rosszul választott modell esetén a hasonló jelentésű, de eltérő toldalékolású szavak távol kerülhetnek egymástól a vektor térben, ami rontja a retrieval hatékonyságát.
+
+5. Vektoradatbázis és Qdrant használata
+
+A generált embeddingek tárolására dedikált vektor adatbázis szükséges. A Phase 2.0 architektúrában Qdrant kerül alkalmazásra, cosine similarity alapú távolságméréssel. A Qdrant előnye a gyors keresés, a szűrhető metaadatok és az on-disk payload támogatás.
+
+Minden vektorhoz metaadatok tartoznak, például dokumentum forrás, tenant azonosító, user azonosító és időbélyeg. Ezek a metaadatok lehetővé teszik a tenant-alapú szeparációt, ami elengedhetetlen többfelhasználós rendszerekben. A vektor keresés során ezek a szűrők kombinálhatók a similarity feltételekkel.
+
+6. PostgreSQL és Qdrant integráció
+
+A Phase 2.0 architektúrában a strukturált adatok PostgreSQL-ben, míg a szemantikus tartalom Qdrant-ben kerül tárolásra. A két rendszer között nincs direkt join, az összekötést logikai kulcsok és metaadatok biztosítják. Ez a szétválasztás skálázhatóbb és tisztább architektúrát eredményez.
+
+A PostgreSQL tárolja a dokumentum metaadatokat, feldolgozási státuszokat és a tenant konfigurációkat. A Qdrant kizárólag a vektor és a hozzá tartozó payload kezeléséért felel. Ez a megközelítés csökkenti a relációs adatbázis terhelését, és optimalizálja a retrieval teljesítményét.
+
+7. LangGraph workflow és RAG pipeline
+
+A RAG pipeline vezérlése LangGraph alapú workflow-val történik. Minden lépés külön node-ként jelenik meg: dokumentum betöltés, chunkolás, embedding generálás, vektor indexelés, majd runtime retrieval és válaszgenerálás. Ez a gráf-alapú modell jól vizualizálható és könnyen bővíthető.
+
+A retrieval lépés során a felhasználói kérdés embeddingje összehasonlításra kerül a Qdrant-ben tárolt vektorokkal. A top-k találatok kerülnek kiválasztásra cosine similarity alapján. Ezek a chunkok kontextusként kerülnek az LLM elé, amely a választ kizárólag erre a kontextusra támaszkodva generálja.
+
+8. Tenant és user kontextus kezelése
+
+A több tenantos működés alapkövetelmény a Phase 2.0 rendszerben. Minden dokumentum, embedding és retrieval művelet tenant szinten izolált. Ez biztosítja, hogy egyik ügyfél adatai sem keverednek egy másikéval, még azonos témájú dokumentumok esetén sem.
+
+A user kontextus kiegészíti a tenant logikát. A retrieval során figyelembe vehető a user szerepe, jogosultsága és korábbi interakciói. Ezek az információk nem közvetlenül a vektor térben jelennek meg, hanem metaadat szűrők és prompt szintű szabályok formájában.
+
+9. Retrieval minőség, similarity és tesztelés
+
+A retrieval minőségének mérése kulcsfontosságú. A Phase 2.0 tesztek során különböző témájú dokumentumok kerülnek indexelésre, majd célzott kérdésekkel vizsgálható, hogy a similarity alapú keresés mennyire releváns chunkokat ad vissza. A rossz chunkolás vagy hibás embedding azonnal észrevehető gyenge találatok formájában.
+
+A magyar nyelvű tesztadatok különösen alkalmasak az UTF-8 kezelés és a modell robusztusságának ellenőrzésére. Az ékezetes szavak torzulása vagy elvesztése egyértelműen rontja a retrieval pontosságát, ezért ezek a tesztek nem opcionálisak, hanem kötelezőek a Phase 2.0 validáció során.
+
+10. Összegzés és továbblépési irányok
+
+A Phase 2.0 RAG architektúra célja egy stabil, skálázható és nyelvileg korrekt alap megteremtése. A chunkolás, embedding, vektor tárolás és retrieval együttese határozza meg a rendszer minőségét. Bármelyik komponens gyengesége az egész pipeline teljesítményét visszahúzza.
+
+A következő fázisokban a hangsúly a komplexebb retrieval stratégiákon, például hibrid keresésen, reranking modellen és hosszú távú memória integráción lesz. Ezek azonban csak akkor hoznak valódi értéket, ha a Phase 2.0 alapjai – különösen a magyar nyelvi támogatás és a tenant izoláció – már kifogástalanul működnek.

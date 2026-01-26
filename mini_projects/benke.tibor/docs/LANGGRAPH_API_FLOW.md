@@ -1,8 +1,38 @@
 # API Hívások és LangGraph Workflow Elemzés
 
+**Version:** 2.12.0 (STRICT_RAG_MODE Feature)  
+**Last Updated:** 2026-01-23  
+**Breaking Changes:** Manual JSON parsing (LangChain structured_output bug), 50 recursion limit, STRICT_RAG_MODE feature flag
+
+---
+
+## ⚠️ CRITICAL NOTES (v2.12.0)
+
+**STRICT_RAG_MODE Feature Flag** (NEW in v2.12):
+- **Purpose**: Controls LLM fallback behavior when RAG returns 0 documents
+- **Environment Variable**: `STRICT_RAG_MODE=true` (default) or `false`
+- **Strict Mode (true)**: Refuses to answer if no documents found (original behavior)
+- **Relaxed Mode (false)**: Allows LLM general knowledge with ⚠️ warning prefix
+- **Affected Node**: `generation` (Node 6)
+- **See**: [FEATURES.md STRICT_RAG_MODE section](./FEATURES.md#-strict_rag_mode-feature-flag-new-in-v212) for full details
+
+**LangChain Structured Output Bug**: All `with_structured_output()` calls replaced with manual JSON parsing:
+- **Affected Nodes**: intent_detection, plan, tool_selection, observation_check, generation (2x)
+- **Pattern**: Prompt + JSON format → Regex extract ```json...``` or {...} → json.loads()
+- **Impact**: Stable, but verbose. Monitor LangChain updates for fix.
+
+**LangGraph State Management**:
+- **Decision Functions**: Read-only (no state mutations)
+- **State Mutations**: In nodes only (e.g., plan_node increments replan_count)
+- **Recursion Limit**: 50 (config in ainvoke, NOT compile)
+
+**See**: [házi feladatok/3.md](./házi%20feladatok/3.md#kritikus-bugfixek-2026-01-21) for full technical details.
+
+---
+
 ## ✅ IGEN - Az API hívások már LangGraph alapúak!
 
-### 🔄 LangGraph Workflow Architektúra
+### � Pipeline Mode Routing (v2.10)
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -13,6 +43,34 @@
                             ▼
 ┌─────────────────────────────────────────────────────────────────┐
 │           chat_service.process_query()                           │
+│                                                                  │
+│   if settings.USE_SIMPLE_PIPELINE:                               │
+│       ├─► agent.run_simple() ────► Simple RAG Pipeline          │
+│       │   (15 sec, 1-2 LLM calls)                                │
+│   else:                                                          │
+│       └─► agent.run() ───────────► Complex LangGraph Workflow   │
+│           (30-50 sec, 4-6 LLM calls, replan loop)                │
+└───────────────────────────┬─────────────────────────────────────┘
+```
+
+**USE_SIMPLE_PIPELINE=True (Fast Path):**
+```
+Intent (keyword) → RAG → Generation → Guardrail → Response
+~15 seconds total
+```
+
+**USE_SIMPLE_PIPELINE=False (Full Workflow - Default):**
+```
+Intent (LLM) → Plan → Tools → Observation → [Replan Loop] → 
+Generation → Guardrail → Workflow → Memory → Response
+~30-50 seconds total
+```
+
+### 🔄 LangGraph Workflow Architektúra (Complex Mode)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│           chat_service.process_query()                           │
 │              ↓                                                   │
 │        agent.process_query()                                     │
 │              ↓                                                   │
@@ -21,7 +79,7 @@
                             │
                             ▼
         ╔═══════════════════════════════════════╗
-        ║   LangGraph StateGraph (7 nodes)      ║
+        ║ LangGraph StateGraph (11 nodes + Replan Loop) ║
         ╚═══════════════════════════════════════╝
                             │
         ┌───────────────────┴───────────────────┐
@@ -29,52 +87,94 @@
         ▼                                       │
    🔍 Node 1: intent_detection                 │
         │ (detect domain: IT/HR/Finance/...)   │
+        │ (JSON parsing: manual regex extract) │
         ▼                                       │
-   📚 Node 2: retrieval                         │
-        │ (Qdrant RAG search)                  │
+   📝 Node 2: plan                              │
+        │ (execution plan, replan_count++)     │
+        │ (JSON parsing: manual regex extract) │
         ▼                                       │
-   🤖 Node 3: generation                        │
-        │ (OpenAI GPT-4o-mini LLM)             │
+   🛠️ Node 3: select_tools                     │
+        │ (choose route: rag_only/tools_only/rag_and_tools) │
+        │ (JSON parsing: manual regex extract) │
         ▼                                       │
-   ✅ Node 4: guardrail ────────────────────┐  │
-        │                                   │  │
-        │ (validation passed?)              │  │
-        ├─ NO (retry count < 2) ───────────┘  │
-        │                                      │
-        ▼ YES                                  │
-   📊 Node 5: collect_metrics                  │
-        │ (telemetry: latency, tokens)        │
-        ▼                                      │
-   ⚙️  Node 6: execute_workflow  ◄─────────────┘
-        │                        
-        │ ┌─ IF domain == IT ─────────────────────┐
-        │ │                                        │
-        │ │  Prepare Jira ticket draft:            │
-        │ │   - summary                            │
-        │ │   - description                        │
-        │ │   - citations                          │
-        │ │   - user_id                            │
-        │ │                                        │
-        │ │  state["workflow"] = {                 │
-        │ │    "action": "it_support_ready",       │
-        │ │    "jira_available": True,             │
-        │ │    "ticket_draft": {...}               │
-        │ │  }                                     │
-        │ └────────────────────────────────────────┘
-        │
-        ▼
-   💾 Node 7: memory_update
-        │ (conversation summary + facts)
-        ▼
-      END
-        │
-        ▼
-   Return QueryResponse to frontend
-        │
-        └─► Frontend displays:
-            - Answer
-            - Citations
-            - **Jira ticket button** (if IT domain)
+   ┌────┴─── Conditional Routing ─────┐        │
+   │                                  │        │
+   ▼                                  ▼        │
+📚 Node 4a: retrieval          🔧 Node 4b: tool_executor │
+   │ (Qdrant RAG search)             │ (async timeout 10s/tool) │
+   │                                  ▼        │
+   └────────────────► Node 5: observation_check│ ◄─┐
+        │ (LLM evaluate: sufficient?)           │   │
+        │ (JSON parsing: manual regex extract)  │   │
+        ▼                                        │   │
+   ┌────┴─── Decision: replan or generate? ────┤   │
+   │                                            │   │
+   │ IF insufficient (gaps detected):           │   │
+   │   replan_count < 2 → REPLAN ───────────────┘   │
+   │   replan_count >= 2 → FORCE GENERATE       │   │
+   │                                            │   │
+   ▼ GENERATE                                   │   │
+   🤖 Node 6: generation                        │   │
+        │ (OpenAI GPT-4o-mini LLM)             │   │
+        │ (JSON parsing: manual regex extract) │   │
+        │ (IT domain: auto-append Jira question) │  │
+        │                                       │   │
+        │ **STRICT_RAG_MODE Logic:**           │   │
+        │ ┌─ IF context.strip() == "" ────────┐│   │
+        │ │  (no RAG documents retrieved)      ││   │
+        │ │                                    ││   │
+        │ │  IF STRICT_RAG_MODE == true:       ││   │
+        │ │    ├─ Use CRITICAL FAIL-SAFE INSTRUCTIONS │  │
+        │ │    │  "Sajnálom, nem találtam..."  ││   │
+        │ │    │  (refuse to answer)           ││   │
+        │ │                                    ││   │
+        │ │  IF STRICT_RAG_MODE == false:      ││   │
+        │ │    └─ Use INSTRUCTIONS (relaxed)   ││   │
+        │ │       "⚠️ A következő információ..."││   │
+        │ │       (allow general knowledge)    ││   │
+        │ └────────────────────────────────────┘│   │
+        ▼                                       │   │
+   ✅ Node 7: guardrail ────────────────────┐  │   │
+        │                                   │  │   │
+        │ (validation passed?)              │  │   │
+        ├─ NO (retry count < 2) ───────────┘  │   │
+        │                                      │   │
+        ▼ YES                                  │   │
+   📊 Node 8: collect_metrics                  │   │
+        │ (telemetry: latency, tokens)        │   │
+        ▼                                      │   │
+   ⚙️  Node 9: execute_workflow  ◄─────────────┘   │
+        │                                           │
+        │ ┌─ IF domain == IT ─────────────────────┐│
+        │ │                                        ││
+        │ │  Prepare Jira ticket draft:            ││
+        │ │   - summary                            ││
+        │ │   - description                        ││
+        │ │   - citations                          ││
+        │ │   - user_id                            ││
+        │ │                                        ││
+        │ │  state["workflow"] = {                 ││
+        │ │    "action": "it_support_ready",       ││
+        │ │    "jira_available": True,             ││
+        │ │    "ticket_draft": {...}               ││
+        │ │  }                                     ││
+        │ └────────────────────────────────────────┘│
+        │                                           │
+        ▼                                           │
+   💾 Node 10: memory_update                        │
+        │ (conversation summary + facts)           │
+        │ (JSON parsing: manual regex extract)     │
+        ▼                                           │
+      END                                           │
+        │                                           │
+        ▼                                           │
+   Return QueryResponse to frontend                │
+        │                                           │
+        └─► Frontend displays:                      │
+            - Answer                                │
+            - Citations                             │
+            - **Jira ticket button** (if IT domain) │
+            - Debug panel (latency, RAG context)    │
 ```
 
 ---
@@ -326,6 +426,103 @@ async def _workflow_node(self, state: AgentState) -> AgentState:
 - ✅ No side-effects: LangGraph workflow idempotens (replay safe)
 - ✅ Error handling: Jira API failure nem befolyásolja a query response-t
 - ✅ Audit trail: Separate ticket creation logged
+
+---
+
+### `_generation_node` (agent.py:959-1020)
+
+**STRICT_RAG_MODE Feature (NEW in v2.12)**
+
+```python
+async def _generation_node(self, state: AgentState) -> AgentState:
+    """
+    Generate final response using LLM.
+    
+    STRICT_RAG_MODE controls fallback behavior when RAG returns no documents:
+    - true (default): Refuses to answer without RAG context
+    - false: Allows general knowledge with warning prefix
+    """
+    context = state.get("rag_context", "").strip()
+    query = state.get("query", "")
+    domain = state.get("domain", "general")
+    
+    # 🛡️ STRICT_RAG_MODE Logic
+    strict_rag_mode = os.getenv("STRICT_RAG_MODE", "true").lower() == "true"
+    logger.info(f"🔧 STRICT_RAG_MODE: {strict_rag_mode}")
+    
+    if not context:  # No RAG documents retrieved
+        if strict_rag_mode:
+            # Original behavior: Refuse to answer
+            failsafe_instructions = """
+CRITICAL FAIL-SAFE INSTRUCTIONS:
+1. **Only use information from the retrieved documents above** - DO NOT invent facts
+2. **If no relevant documents were retrieved** (empty context):
+   - Respond with: "Sajnálom, nem találtam releváns információt ehhez a kérdéshez a rendelkezésre álló dokumentumokban. Kérem, próbálkozzon más kulcsszavakkal, vagy forduljon a rendszer adminisztrátorához további segítségért."
+   - DO NOT answer from your general knowledge
+3. **Never fabricate** email addresses, internal policies, or organization-specific details
+"""
+        else:
+            # New behavior: Allow general knowledge with warning
+            failsafe_instructions = """
+INSTRUCTIONS:
+1. **Prefer information from the retrieved documents above**, but you may use your general knowledge if documents are insufficient
+2. **If using general knowledge (not from documents):**
+   - Clearly state: "⚠️ A következő információ általános tudásomon alapul, nem pedig a szervezeti dokumentumokon:"
+   - Suggest verifying with the relevant team for organization-specific details
+3. **Never fabricate** email addresses, internal policies, or organization-specific details
+"""
+    else:
+        # Normal flow: RAG context exists
+        failsafe_instructions = """
+Use the retrieved documents to answer accurately.
+Cite sources using [section_id] format.
+"""
+    
+    # Build LLM prompt with failsafe instructions
+    prompt = f"{failsafe_instructions}\n\nContext: {context}\n\nQuery: {query}"
+    
+    # ... rest of generation logic (LLM call, JSON parsing, etc.)
+    
+    return state
+```
+
+**STRICT_RAG_MODE Behavior Comparison:**
+
+| Scenario | STRICT_RAG_MODE=true (Default) | STRICT_RAG_MODE=false |
+|----------|--------------------------------|------------------------|
+| **RAG returns 3 documents** | ✅ Uses documents, cites sources | ✅ Uses documents, cites sources |
+| **RAG returns 0 documents** | ❌ Refuses: "Sajnálom, nem találtam..." | ⚠️ Uses general knowledge with warning |
+| **User asks: "What is an IP address?"** | ❌ Refuses (no company docs) | ✅ Answers with general knowledge + ⚠️ |
+| **User asks: "What's our VPN password?"** | ❌ Refuses (no docs) | ⚠️ "General knowledge: VPNs use passwords... [but verify with IT team]" |
+
+**Configuration:**
+
+```bash
+# .env file
+STRICT_RAG_MODE=true   # Default: strict mode (refuse without docs)
+STRICT_RAG_MODE=false  # Relaxed mode (allow general knowledge)
+```
+
+```yaml
+# docker-compose.yml
+services:
+  backend:
+    environment:
+      - STRICT_RAG_MODE=${STRICT_RAG_MODE:-true}  # Default to true
+```
+
+**When to use each mode:**
+
+| Mode | Use Case | Example |
+|------|----------|---------|
+| **Strict (true)** | Production, compliance-critical domains (Legal, Finance, HR) | "Only answer from approved company documentation" |
+| **Relaxed (false)** | Development, general knowledge queries, educational chatbots | "Help users with general IT concepts even if not in company docs" |
+
+**Important Notes:**
+- Environment variable changes require: `docker-compose up -d --force-recreate backend`
+- Simple `restart` does NOT reload environment variables (Docker caches them)
+- Both modes still **never fabricate** organization-specific details (emails, policies)
+- Relaxed mode uses ⚠️ prefix to clearly distinguish general knowledge from company docs
 
 ---
 

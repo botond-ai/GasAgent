@@ -30,7 +30,10 @@ services:
       - JIRA_BASE_URL=${JIRA_BASE_URL}
       - JIRA_API_TOKEN=${JIRA_API_TOKEN}
       - JIRA_EMAIL=${JIRA_EMAIL}
+      - USE_SIMPLE_PIPELINE=True  # Enable simple fast pipeline
+      - STRICT_RAG_MODE=${STRICT_RAG_MODE:-true}  # Feature flag: true=refuse without RAG, false=allow general knowledge
     volumes:
+      - ./backend:/app  # Mount entire backend for hot-reload
       - ./backend/data:/app/data
       - ./backend/credentials:/app/credentials
     depends_on:
@@ -101,10 +104,74 @@ services:
     networks:
       - knowledge_network
 
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: knowledgerouter_prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+      - '--web.console.templates=/usr/share/prometheus/consoles'
+    depends_on:
+      - backend
+    networks:
+      - knowledge_network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: knowledgerouter_grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      - prometheus
+      - loki
+    networks:
+      - knowledge_network
+
+  loki:
+    image: grafana/loki:latest
+    container_name: knowledgerouter_loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki-config.yml:/etc/loki/local-config.yaml
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - knowledge_network
+
+  promtail:
+    image: grafana/promtail:latest
+    container_name: knowledgerouter_promtail
+    volumes:
+      - ./promtail-config.yml:/etc/promtail/config.yml
+      - /var/log:/var/log
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+    networks:
+      - knowledge_network
+
 volumes:
   qdrant_data:
   redis_data:
   postgres_data:
+  prometheus_data:
+  grafana_data:
+  loki_data:
 
 networks:
   knowledge_network:

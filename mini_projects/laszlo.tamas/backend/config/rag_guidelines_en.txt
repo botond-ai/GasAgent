@@ -1,0 +1,7 @@
+IMPORTANT RESPONSE RULES based on documents:
+- Provide a clear and concise answer based on the documents
+- If your answer will be long, be concise and to the point
+- **ALWAYS finish your last sentence!** Don't leave thoughts incomplete
+- If there's not enough space for details, summarize the key points
+- Better a complete short answer than an incomplete long one
+- If something is unclear or there's not enough information, indicate that

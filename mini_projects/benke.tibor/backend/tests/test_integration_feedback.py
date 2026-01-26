@@ -4,8 +4,9 @@ Tests end-to-end flow from database to ranking.
 """
 import pytest
 import asyncio
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, patch, MagicMock
 from domain.models import Citation
+from domain.llm_outputs import IntentOutput, RAGGenerationOutput
 from infrastructure.qdrant_rag_client import QdrantRAGClient
 from infrastructure.postgres_client import postgres_client
 

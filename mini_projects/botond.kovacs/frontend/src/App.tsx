@@ -8,6 +8,7 @@ import { DebugPanel } from './components/DebugPanel';
 import { api } from './api';
 import { getUserId, getSessionId, resetSessionId } from './utils';
 import { ChatMessage, ToolUsed, MemorySnapshot } from './types';
+import { McpToolPanel } from './components/McpToolPanel';
 import './App.css';
 
 function App() {
@@ -146,6 +147,8 @@ function App() {
             </div>
           )}
         </div>
+
+        <McpToolPanel />
 
         <DebugPanel
           toolsUsed={lastToolsUsed}

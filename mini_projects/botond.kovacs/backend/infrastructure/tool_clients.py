@@ -1,4 +1,89 @@
 # ---------------- GasExportClient ----------------
+from typing import Annotated, Optional
+from pydantic import BaseModel, Field, ValidationError
+import asyncio
+# ToolNode-kompatibilis wrapper függvény GasExportClient-hez
+gas_export_client = None
+def get_gas_export_client():
+    global gas_export_client
+    if gas_export_client is None:
+        gas_export_client = GasExportClient()
+    return gas_export_client
+
+
+# Pydantic argumentum modell GasExportClient-hez
+class GasExportedQuantityArgs(BaseModel):
+    pointLabel: str = Field(..., description="A gázkapcsolati pont neve (pl. 'VIP Bereg')")
+    from_: str = Field(..., description="Kezdő dátum (YYYY-MM-DD)")
+    to: str = Field(..., description="Záró dátum (YYYY-MM-DD)")
+
+async def gas_exported_quantity(
+    pointLabel: str,
+    from_: str,
+    to: str
+) -> str:
+    """
+    Lekérdezi a Transparency.host API-ból a gázexport mennyiséget egy adott ponton és időszakban.
+    """
+    try:
+        args = GasExportedQuantityArgs(pointLabel=pointLabel, from_=from_, to=to)
+    except ValidationError as e:
+        return f"Hibás paraméterek: {e}"
+    client = get_gas_export_client()
+    result = await client.get_exported_quantity(args.pointLabel, args.from_, args.to)
+    if not result.get("success"):
+        return f"Hiba: {result.get('error', 'Ismeretlen hiba')}"
+    total = result.get("total", 0)
+    details = []
+    for r in result.get("results", []):
+        details.append(f"{r.get('date')}: {r.get('value'):,.0f} {r.get('unit', 'kWh')}")
+    details_str = "\n".join(details)
+    return f"{args.pointLabel} ponton {args.from_} és {args.to} között exportált gáz: {total:,.0f} kWh\nRészletek:\n{details_str}"
+
+# ---------------- RegulationRAGClient ToolNode wrapper ----------------
+regulation_rag_client = None
+def get_regulation_rag_client():
+    global regulation_rag_client
+    if regulation_rag_client is None:
+        # Ezeket az init paramétereket a projektedben kell beállítani!
+        regulation_rag_client = RegulationRAGClient(
+            pdf_path="data/regulation_vectordb/regulation.pdf",  # vagy a megfelelő PDF útvonal
+            openai_api_key="YOUR_OPENAI_API_KEY"
+        )
+    return regulation_rag_client
+
+
+# Pydantic argumentum modell RegulationRAGClient-hez
+class RegulationQueryArgs(BaseModel):
+    question: str = Field(..., description="A szabályozással kapcsolatos kérdés")
+    top_k: Optional[int] = Field(5, ge=1, le=20, description="A releváns szakaszok száma")
+
+async def regulation_query(
+    question: str,
+    top_k: int = 5
+) -> str:
+    """
+    Kérdés a szabályozásról (RAG pipeline, OpenAI + FAISS)
+    """
+    try:
+        args = RegulationQueryArgs(question=question, top_k=top_k)
+    except ValidationError as e:
+        return f"Hibás paraméterek: {e}"
+    client = get_regulation_rag_client()
+    result = await client.query(args.question, args.top_k)
+    if "error" in result:
+        return f"Hiba: {result['error']}"
+    answer = result.get("answer", "Nincs válasz")
+    sources = result.get("sources", [])
+    source_refs = []
+    for i, src in enumerate(sources[:3], 1):
+        page = src.get("page", "?")
+        preview = src.get("content_preview", "")[:100]
+        source_refs.append(f"[Oldal {page}]: {preview}...")
+    summary = f"📚 Válasz: {answer}"
+    if source_refs:
+        summary += f"\n\nForrások:\n" + "\n".join(source_refs)
+    return summary
 
 import httpx
 from domain.interfaces import IGasExportClient
@@ -307,3 +392,80 @@ Answer (provide a detailed response based on the regulation content):"""
             return await self.get_regulation_info()
         else:
             return {"error": f"Unknown action: {action}. Supported: query, info"}
+
+# ---------------- MCPClient (EIA MCP) ----------------
+import asyncio
+import json
+import os
+import uuid
+from typing import Any, Dict, List, Optional
+
+class MCPClient:
+    """
+    JSON-RPC 2.0 alapú MCP kliens stdio transzporttal.
+    A szervert alfolyamatként indítjuk: `python -m eia_mcp.server`
+    """
+    def __init__(self, command: Optional[List[str]] = None, env: Optional[Dict[str, str]] = None):
+        self.command = command or ["python", "-m", "eia_mcp.server"]
+        env = dict(env or os.environ)
+        # EIA_API_KEY betöltése .env-ből, ha nincs, None marad
+        try:
+            from dotenv import load_dotenv
+            # Gyökér .env betöltése
+            root_env_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '.env'))
+            load_dotenv(dotenv_path=root_env_path)
+        except ImportError:
+            pass  # Ha nincs telepítve a python-dotenv, csak az os.environ-t használjuk
+        eia_key = os.environ.get("EIA_API_KEY")
+        if eia_key:
+            env["EIA_API_KEY"] = eia_key
+        self.env = env
+        self.proc = None
+        self.connected = False
+        self.session_id: Optional[str] = None
+        self._next_id = 0
+
+    async def connect(self) -> None:
+        if self.connected:
+            return
+        self.proc = await asyncio.create_subprocess_exec(
+            *self.command,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            env=self.env,
+        )
+        self.connected = True
+        await self.initialize()
+
+    async def _rpc(self, method: str, params: Optional[dict] = None, id_: Optional[int] = None) -> Dict[str, Any]:
+        assert self.proc and self.proc.stdin and self.proc.stdout
+        self._next_id += 1
+        rid = id_ if id_ is not None else self._next_id
+        msg = {"jsonrpc": "2.0", "id": rid, "method": method, "params": params or {}}
+        line = json.dumps(msg) + "\n"
+        self.proc.stdin.write(line.encode("utf-8"))
+        await self.proc.stdin.drain()
+        raw = await self.proc.stdout.readline()
+        resp = json.loads(raw.decode("utf-8"))
+        if "error" in resp:
+            raise RuntimeError(resp["error"])
+        return resp
+
+    async def initialize(self) -> str:
+        init = await self._rpc("initialize", {
+            "protocolVersion": "2024-11-05",
+            "capabilities": {},
+            "clientInfo": {"name": "ai-agent", "version": "1.0.0"}
+        }, id_=1)
+        self.session_id = str(uuid.uuid4())
+        await self._rpc("initialized", {}, id_=2)
+        return self.session_id
+
+    async def list_tools(self) -> List[Dict[str, Any]]:
+        resp = await self._rpc("tools/list", {}, id_=3)
+        return resp.get("result", {}).get("tools", [])
+
+    async def call_tool(self, name: str, arguments: Dict[str, Any]) -> Dict[str, Any]:
+        params = {"name": name, "arguments": arguments}
+        resp = await self._rpc("tools/call", params, id_=4)
+        return resp.get("result", {})

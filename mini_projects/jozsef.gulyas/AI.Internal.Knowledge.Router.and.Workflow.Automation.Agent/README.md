@@ -1,447 +1,273 @@
-## AI Internal Knowledge Router & Workflow Automation Agent
+# Knowledge Router
 
-**Projekt név:** KnowledgeRouter  
-**Alcím:** Vállalati Belső Tudásirányító + Workflow-Automata Agent
+An enterprise multi-domain knowledge retrieval and workflow automation agent built with LangGraph.
 
-### Koncepció
+## Overview
 
-Egy agent, amely képes:
-1. ✅ **Felismerni a kérés típusát** (FAQ, HR, IT, pénzügy, jog, marketing)
-2. ✅ **Kiválasztani a megfelelő tudásbázist** (multi-vector store routing)
-3. ✅ **Kikeresni releváns információt** RAG-gal
-4. ✅ **Végrehajtani workflow lépést** (Jira ticket, Slack üzenet, approval, file generation)
-5. ✅ **Strukturált választ adni** citációkkal
+Knowledge Router is an AI-powered assistant that:
+- **Routes queries** to the appropriate domain (HR, IT, Finance, Legal, Marketing, General)
+- **Retrieves relevant information** from domain-specific vector stores using RAG
+- **Executes workflows** through integrated tools (Jira, Slack, currency conversion, holiday lookup)
+- **Provides structured responses** with source citations
 
-### Vállalati Probléma
+## Usage
 
-**Fájdalom pontok:**
-- 📁 10+ tudásbázis van szétszórva (Confluence, PDF-ek, HR fájlok, GitHub wiki, Google Docs)
-- 🔀 20+ workflow típus (IT ticket, HR request, szabadság, eszközigénylés, szerződés)
-- ❓ Senki nem tudja, „mi hol van"
-- ⏱️ Órák mennek el információkeresésre
+### Prerequisites
 
-**Megoldás:** Agent, amely tudja, „hova kell nyúlni"
+- Python 3.13+
+- [uv](https://github.com/astral-sh/uv) package manager
+- OpenAI API key
 
-### Technikai Architektúra
+### Installation
 
-**Multi-Vector Store:**
-```python
-vector_stores = {
-    "hr": PineconeVectorStore(namespace="hr_kb"),
-    "it": PineconeVectorStore(namespace="it_kb"),
-    "finance": PineconeVectorStore(namespace="finance_kb"),
-    "legal": PineconeVectorStore(namespace="legal_kb"),
-    "marketing": PineconeVectorStore(namespace="marketing_kb"),
-    "general": PineconeVectorStore(namespace="general_kb")
-}
+```bash
+# Clone and navigate to the project
+cd AI.Internal.Knowledge.Router.and.Workflow.Automation.Agent
+
+# Install dependencies
+uv sync
 ```
 
-**Routing Logic:**
-```python
-async def route_domain(query: str) -> str:
-    """LLM-based intent classification."""
-    prompt = f"""
-    Classify the following query into one domain:
-    - hr (human resources, vacation, benefits, hiring)
-    - it (tech support, VPN, access, software)
-    - finance (invoices, expenses, budgets)
-    - legal (contracts, compliance, policies)
-    - marketing (brand, campaigns, content)
-    - general (other)
+### Configuration
 
-    Query: {query}
+Create a `.env` file in the project root:
 
-    Return ONLY the domain name.
-    """
-
-    response = await llm.ainvoke(prompt)
-    return response.content.strip().lower()
+```env
+OPENAI_API_KEY=your_openai_api_key_here
+EMBEDDING_MODEL=text-embedding-3-small
+COMPLETION_MODEL=gpt-4o-mini
 ```
 
-### Workflow Node-ok
+### Adding Knowledge Base Documents
 
-**1. HR Workflow Node**
-```python
-async def hr_workflow_node(state: AgentState) -> AgentState:
-    """HR-specifikus workflow végrehajtás."""
-
-    if "szabadság" in state["query"].lower():
-        # Generate HR request JSON
-        hr_request = {
-            "type": "vacation_request",
-            "employee_id": state["user_id"],
-            "start_date": extract_date(state["query"], "start"),
-            "end_date": extract_date(state["query"], "end"),
-            "status": "pending_approval"
-        }
-
-        # Save to file
-        filename = f"hr_request_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        save_json(hr_request, filename)
-
-        state["workflow_output"] = {
-            "action": "hr_request_created",
-            "file": filename,
-            "next_step": "Manager approval required"
-        }
-
-    return state
-```
-
-**2. IT Workflow Node**
-```python
-async def it_workflow_node(state: AgentState) -> AgentState:
-    """IT-specifikus workflow végrehajtás."""
-
-    if "nem működik" in state["query"].lower():
-        # Create Jira ticket draft
-        ticket = {
-            "project": "ITSUPPORT",
-            "issue_type": "Bug",
-            "summary": extract_issue_summary(state["query"]),
-            "description": state["query"],
-            "priority": determine_priority(state["query"]),
-            "assignee": "it-team"
-        }
-
-        state["workflow_output"] = {
-            "action": "it_ticket_draft",
-            "ticket": ticket,
-            "next_step": "Review and submit to Jira"
-        }
-
-    return state
-```
-
-### LangGraph Multi-Branch Workflow
+Place markdown files in the `data/` directory, organized by domain:
 
 ```
-┌─────────────────┐
-│   User Query    │
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│ Intent Detection│  (LLM - domain routing)
-└────────┬────────┘
-         │
-    ┌────┴────┐
-    │ Router  │
-    └────┬────┘
-         │
-         ├─────────┬─────────┬─────────┬─────────┬─────────┐
-         │         │         │         │         │         │
-         ▼         ▼         ▼         ▼         ▼         ▼
-     ┌───────┐ ┌───────┐ ┌───────┐ ┌───────┐ ┌───────┐ ┌───────┐
-     │  HR   │ │  IT   │ │Finance│ │ Legal │ │Market │ │General│
-     │ RAG   │ │ RAG   │ │ RAG   │ │ RAG   │ │ RAG   │ │ RAG   │
-     └───┬───┘ └───┬───┘ └───┬───┘ └───┬───┘ └───┬───┘ └───┬───┘
-         │         │         │         │         │         │
-         ├─────────┴─────────┴─────────┴─────────┴─────────┤
-         │                                                   │
-         ▼                                                   ▼
-     ┌───────────┐                                   ┌───────────┐
-     │ Workflow  │                                   │   Draft   │
-     │ Execution │                                   │  Answer   │
-     └─────┬─────┘                                   └─────┬─────┘
-           │                                               │
-           └───────────────────┬───────────────────────────┘
-                               │
-                               ▼
-                        ┌─────────────┐
-                        │ Final Output│
-                        └─────────────┘
+data/
+├── hr/
+│   └── vacations_policy.md
+├── it/
+│   ├── vpn_issues.md
+│   └── printers.md
+├── finance/
+├── legal/
+├── marketing/
+└── general/
 ```
 
-### Demo Példák
+The loader automatically detects domains from folder names and indexes all `.md` files.
 
-**1. HR Szabadság Igénylés**
+### Running the Application
 
-**Input:**
-```
-"Szeretnék szabadságot igényelni október 3–4-re."
-```
-
-**Workflow:**
-```
-1. Intent Detection → "hr" domain
-2. HR Vector Store → vacation policy documents
-3. RAG Retrieval → "Szabadságkérés minimum 2 héttel előre"
-4. HR Workflow Node → Generate hr_request_2025-10-03.json
-5. Output:
-   {
-     "domain": "hr",
-     "answer": "Szabadságkérelmed rögzítésre került október 3-4 időszakra.
-                A policy szerint minimum 2 héttel előre kell jelezni. [HR-POL-001]
-                Kérlek, add meg a vezetőd jóváhagyását.",
-     "citations": [
-       {"doc_id": "HR-POL-001", "title": "Vacation Policy", "score": 0.94}
-     ],
-     "workflow": {
-       "action": "hr_request_created",
-       "file": "hr_request_2025-10-03.json",
-       "status": "pending_approval"
-     }
-   }
+```bash
+uv run python -m src.main
 ```
 
-**2. Marketing Brand Guideline**
+The assistant will:
+1. Load and index all documents from the `data/` folder
+2. Start an interactive CLI session
+3. Accept natural language queries and respond with relevant information
 
-**Input:**
-```
-"Hol van a legfrissebb marketing brand guideline?"
-```
+### Example Queries
 
-**Workflow:**
 ```
-1. Intent Detection → "marketing" domain
-2. Marketing Vector Store → brand docs
-3. RAG Retrieval → "Brand Guidelines v3.2 - Dec 2025"
-4. Output:
-   {
-     "domain": "marketing",
-     "answer": "A legfrissebb brand guideline a v3.2 verzió,
-                amely 2025 decemberében lett frissítve. [BRAND-v3.2]
-                Link: https://drive.google.com/marketing/brand-v3.2.pdf",
-     "citations": [
-       {"doc_id": "BRAND-v3.2", "title": "Brand Guidelines v3.2", "score": 0.97,
-        "url": "https://drive.google.com/marketing/brand-v3.2.pdf"}
-     ],
-     "workflow": null
-   }
-```
+You: What is the vacation policy?
+[Domain: hr]
+Assistant: According to the vacation policy, employees are entitled to...
+Sources:
+  - Vacation Policy (relevance: 0.94)
 
-**3. IT VPN Issue**
+You: How do I fix VPN connection issues?
+[Domain: it]
+Assistant: Here are common VPN troubleshooting steps...
+Sources:
+  - VPN Troubleshooting Guide (relevance: 0.91)
 
-**Input:**
-```
-"Nem működik a VPN"
+You: Convert 100 USD to EUR
+[Domain: general]
+Assistant: 100 USD is approximately 92.50 EUR based on current exchange rates.
 ```
 
-**Workflow:**
+Type `quit` or `exit` to end the session.
+
+## Technical Details
+
+### Architecture
+
 ```
-1. Intent Detection → "it" domain
-2. IT Vector Store → VPN troubleshooting docs
-3. RAG Retrieval → top-3 VPN solutions
-4. IT Workflow Node → Create Jira ticket draft
-5. Output:
-   {
-     "domain": "it",
-     "answer": "VPN kapcsolódási problémák gyakori okai: [IT-KB-234]
-                1. Ellenőrizd, hogy az IT VPN kliens fut-e
-                2. Próbáld újraindítani a VPN szolgáltatást
-                3. Ellenőrizd a hálózati kapcsolatot
-
-                Ha ezek nem segítenek, IT ticket került létrehozásra. [IT-TKT-DRAFT]",
-     "citations": [
-       {"doc_id": "IT-KB-234", "title": "VPN Troubleshooting Guide", "score": 0.91},
-       {"doc_id": "IT-KB-189", "title": "VPN Client Installation", "score": 0.87}
-     ],
-     "workflow": {
-       "action": "it_ticket_draft",
-       "ticket": {
-         "project": "ITSUPPORT",
-         "summary": "VPN connection failure",
-         "priority": "P2",
-         "description": "User reports VPN not working"
-       },
-       "next_step": "Submit to Jira or contact IT support"
-     }
-   }
-```
-
-### Technikai Stack
-
-**Backend:**
-- Python 3.11+
-- LangChain + LangGraph
-- Multi-Vector Store: Pinecone (namespaces) vagy Weaviate (tenants)
-- Embeddings: OpenAI text-embedding-3-large
-- LLM: GPT-4o / Claude 3.5 Sonnet
-- Workflow Tools: Jira SDK, Slack SDK, Google Drive API
-
-**Domain Coverage:**
-```python
-domains = {
-    "hr": ["vacation", "benefits", "hiring", "payroll", "onboarding"],
-    "it": ["vpn", "access", "software", "hardware", "network"],
-    "finance": ["invoice", "expense", "budget", "payment", "tax"],
-    "legal": ["contract", "compliance", "policy", "gdpr", "ip"],
-    "marketing": ["brand", "campaign", "content", "social", "analytics"],
-    "general": ["other", "faq", "general-info"]
-}
+┌─────────────────────────────────────────────────────────────────┐
+│                        Presentation Layer                        │
+│                         (CLI Interface)                          │
+└─────────────────────────────────────────────────────────────────┘
+                                 │
+┌─────────────────────────────────────────────────────────────────┐
+│                         Workflow Layer                           │
+│                    (LangGraph State Machine)                     │
+│  ┌─────────┐   ┌──────────┐   ┌──────────┐   ┌─────────────┐   │
+│  │  Route  │ → │ Retrieve │ → │ Generate │ ⇄ │ Tool Execute│   │
+│  └─────────┘   └──────────┘   └──────────┘   └─────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+                                 │
+┌─────────────────────────────────────────────────────────────────┐
+│                          Core Layer                              │
+│   ┌─────────────────┐  ┌────────────┐  ┌────────────────────┐   │
+│   │ KnowledgeLoader │  │ RAG Engine │  │ Document Processor │   │
+│   └─────────────────┘  └────────────┘  └────────────────────┘   │
+└─────────────────────────────────────────────────────────────────┘
+                                 │
+┌─────────────────────────────────────────────────────────────────┐
+│                      Infrastructure Layer                        │
+│   ┌────────────────┐  ┌─────────────┐  ┌───────────────────┐    │
+│   │ OpenAI Gateway │  │ VectorStore │  │   Tool Executor   │    │
+│   │ (Embeddings +  │  │ (ChromaDB)  │  │ (Jira, Slack,     │    │
+│   │  Completions)  │  │             │  │  Holidays, FX)    │    │
+│   └────────────────┘  └─────────────┘  └───────────────────┘    │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-### AI Skills Demonstrated
+### LangGraph Workflow
 
-| Skill | Implementáció |
-|-------|---------------|
-| **RAG (multi-dataset)** | 6 külön vector store, domain-specifikus embeddings |
-| **LangGraph (multi-branch)** | Conditional routing 6 domain-re |
-| **Memory** | Context tracking user sessionök között |
-| **Tool calling** | Jira API, Slack API, file generation |
-| **Reasoning** | Intent classification + domain routing |
-| **JSON output** | Structured response + citations |
-| **Policy check** | Guardrails (approval needed, SLA, compliance) |
-| **Prompt engineering** | Domain-specific prompts + few-shot examples |
+The application uses a LangGraph state machine with the following flow:
 
-### Compliance & Security
-
-**AI Act Compliance:**
-- ✅ **Citációk:** Minden válasz tartalmazza a forrás dokumentum ID-ját
-- ✅ **Traceability:** Logging minden döntésről (domain routing, retrieval scores)
-- ✅ **Human-in-the-loop:** Workflow approval-ok emberi jóváhagyással
-- ✅ **Audit log:** Teljes conversation history mentése
-
-**Security:**
-- 🔒 **Role-based access:** User csak a saját domain-jéhez fér hozzá
-- 🔒 **Data encryption:** Vector store titkosítva
-- 🔒 **PII masking:** Érzékeny adatok (személyes info) maszkolása
-
----
-
-## Technikai Összehasonlítás
-
-| Szempont | Meeting Assistant | Support Triage | Knowledge Router |
-|----------|-------------------|----------------|------------------|
-| **Komplexitás** | ⭐⭐ (Közepes) | ⭐⭐⭐ (Magas) | ⭐⭐⭐⭐ (Nagyon magas) |
-| **RAG szükséges?** | ❌ Nem | ✅ Igen (1 KB) | ✅ Igen (multi-KB) |
-| **Vector DB** | ❌ Nincs | ✅ 1 namespace | ✅ 6+ namespace |
-| **LangGraph node-ok** | 5-6 | 7-8 | 10+ |
-| **Workflow integration** | Jira API | Zendesk/Email | Jira + Slack + Drive |
-| **Output típusok** | JSON + Markdown | JSON + Citations | JSON + Citations + Files |
-| **Mérhetőség** | Summary quality | Triage accuracy + Draft acceptance | Intent routing + RAG precision |
-| **Üzleti érték** | Időmegtakarítás | SLA javítás | Tudásmenedzsment + Automation |
-| **Demo egyszerűsége** | ⭐⭐⭐⭐ | ⭐⭐⭐ | ⭐⭐ |
-| **Production readiness** | 2-3 hét | 4-6 hét | 8-12 hét |
-
----
-
-## Implementációs Útmutató
-
-### Közös Technikai Stack (mind a 3 projektre)
-
-```python
-# requirements.txt
-langchain>=0.1.0
-langgraph>=0.0.20
-langchain-openai>=0.0.5
-pydantic>=2.5.0
-fastapi>=0.108.0
-uvicorn>=0.25.0
-
-# Vector DB (válaszd ki egyet)
-pinecone-client>=3.0.0      # Managed cloud
-weaviate-client>=4.4.0      # Self-hosted vagy cloud
-qdrant-client>=1.7.0        # Self-hosted
-
-# Integrations (opcionális)
-jira>=3.5.0
-slack-sdk>=3.26.0
-google-api-python-client>=2.110.0
+```
+Route → Retrieve → Generate ⇄ Execute Tools → END
 ```
 
-### LangGraph Alapstruktúra (közös)
+1. **Route Node**: Classifies the user query into one of 6 domains using LLM
+2. **Retrieve Node**: Searches the domain-specific vector store using RAG
+3. **Generate Node**: Produces a response using retrieved context and available tools
+4. **Tool Node**: Executes tool calls (Jira, Slack, etc.) when requested by the LLM
 
-```python
-from langgraph.graph import StateGraph, END
-from typing_extensions import TypedDict
+The workflow supports a tool-calling loop where the LLM can request multiple tool executions before producing a final response.
 
-class ProjectState(TypedDict, total=False):
-    """Alapstruktúra - bővítsd projektenként."""
-    input: str
-    domain: str
-    retrieved_docs: list
-    output: dict
-    citations: list
+### Domain Routing
 
-def build_workflow() -> StateGraph:
-    workflow = StateGraph(ProjectState)
+Queries are classified into domains using LLM-based intent detection:
 
-    # Közös node-ok
-    workflow.add_node("intent_detection", intent_detection_node)
-    workflow.add_node("retrieval", retrieval_node)
-    workflow.add_node("generation", generation_node)
-    workflow.add_node("validation", validation_node)
+| Domain | Topics |
+|--------|--------|
+| HR | Vacation, benefits, hiring, payroll, onboarding |
+| IT | VPN, software, hardware, network, access |
+| Finance | Invoices, expenses, budgets, payments |
+| Legal | Contracts, compliance, policies |
+| Marketing | Brand, campaigns, content |
+| General | Everything else |
 
-    # Entry
-    workflow.set_entry_point("intent_detection")
+### Vector Store
 
-    # Edges
-    workflow.add_edge("intent_detection", "retrieval")
-    workflow.add_edge("retrieval", "generation")
-    workflow.add_edge("generation", "validation")
-    workflow.add_edge("validation", END)
+- **Engine**: ChromaDB (in-memory by default)
+- **Collections**: One per domain (`hr_kb`, `it_kb`, etc.)
+- **Similarity**: Cosine distance
+- **Embeddings**: OpenAI `text-embedding-3-small`
 
-    return workflow.compile()
+### Available Tools
+
+| Tool | Function | Description |
+|------|----------|-------------|
+| `convert_currency` | Currency conversion | Converts between currencies using live exchange rates |
+| `is_us_holiday` | Holiday check | Checks if a specific date is a US holiday |
+| `list_us_holidays` | Holiday list | Lists all US holidays for a given year |
+| `create_jira_ticket` | Jira integration | Creates a Jira ticket with specified details |
+| `send_slack_message` | Slack integration | Sends a message to a Slack channel |
+
+## Implementation Decisions
+
+### Why LangGraph?
+
+LangGraph was chosen over plain LangChain for:
+- **Explicit state management**: Clear data flow through `WorkflowState` dataclass
+- **Conditional routing**: Easy branching based on domain classification
+- **Tool loop support**: Built-in pattern for LLM ⇄ Tool execution cycles
+- **Debuggability**: Visual graph representation and state inspection
+
+### Why ChromaDB?
+
+- **Zero configuration**: In-memory mode requires no external services
+- **Namespace support**: Natural fit for multi-domain collections
+- **Python-native**: Simple integration without network overhead
+- **Switchable**: Can be replaced with Pinecone/Weaviate for production
+
+### Layered Architecture
+
+The codebase follows clean architecture principles:
+
+- **Presentation**: CLI interface, display abstractions
+- **Workflows**: LangGraph nodes and state definitions
+- **Core**: Business logic (RAG engine, document processing, chunking)
+- **Infrastructure**: External service integrations (OpenAI, ChromaDB, tools)
+
+This separation enables:
+- Unit testing with mocked dependencies
+- Swapping implementations (e.g., different LLM providers)
+- Clear responsibility boundaries
+
+### Document Processing
+
+- **Chunking**: Markdown-aware chunking that respects header boundaries
+- **Deduplication**: Hash-based detection to avoid re-indexing unchanged documents
+- **Metadata**: Each chunk retains source file, title, and domain information
+
+### RAG Strategy
+
+- **Relevance threshold**: 0.7 (configurable) - filters low-quality matches
+- **Top-K retrieval**: 5 documents per query
+- **Citation tracking**: All retrieved documents are returned as citations
+
+## Project Structure
+
+```
+src/
+├── main.py                    # Application entry point
+├── core/
+│   ├── document_processor.py  # Document ingestion and chunking
+│   ├── knowledge_base_loader.py # Folder traversal and domain detection
+│   ├── markdown_chunker.py    # Structure-aware text chunking
+│   └── rag_engine.py          # Retrieval and context building
+├── infrastructure/
+│   ├── openai_gateway.py      # OpenAI API wrapper
+│   ├── vector_store.py        # ChromaDB integration
+│   └── tools/
+│       ├── tool_executor.py   # Tool dispatch and execution
+│       ├── exchange_rates.py  # Currency conversion tool
+│       ├── holidays.py        # US holiday tools
+│       ├── jira.py            # Jira ticket creation
+│       └── slack.py           # Slack messaging
+├── presentation/
+│   ├── cli_interface.py       # Command-line interface
+│   └── display_writer_interface.py # Output abstraction
+└── workflows/
+    ├── knowledge_workflow.py  # LangGraph workflow definition
+    ├── state.py               # Workflow state dataclass
+    └── nodes/
+        ├── router_node.py     # Domain classification
+        ├── retrieve_node.py   # RAG retrieval
+        ├── generate_node.py   # LLM response generation
+        └── tool_node.py       # Tool execution
 ```
 
-### Projekt-specifikus Bővítések
+## Testing
 
-**Meeting Assistant:**
-```python
-# Extra node-ok
-workflow.add_node("parse_transcript", parse_transcript_node)
-workflow.add_node("extract_actions", extract_actions_node)
-workflow.add_node("generate_summary", generate_summary_node)
+Run the test suite:
+
+```bash
+uv run pytest
 ```
 
-**Support Triage:**
-```python
-# Extra node-ok
-workflow.add_node("triage_classify", triage_classify_node)
-workflow.add_node("rag_search", rag_search_node)
-workflow.add_node("rerank", rerank_node)
-workflow.add_node("draft_answer", draft_answer_node)
-workflow.add_node("policy_check", policy_check_node)
-```
+Tests cover:
+- Vector store operations
+- Document processing
+- RAG retrieval
+- Tool execution
+- Individual workflow components
 
-**Knowledge Router:**
-```python
-# Extra node-ok
-workflow.add_node("domain_router", domain_router_node)
-workflow.add_node("hr_rag", hr_rag_node)
-workflow.add_node("it_rag", it_rag_node)
-# ... további domain RAG node-ok
-workflow.add_node("workflow_executor", workflow_executor_node)
+## Dependencies
 
-# Conditional routing
-workflow.add_conditional_edges(
-    "domain_router",
-    route_to_domain,
-    {
-        "hr": "hr_rag",
-        "it": "it_rag",
-        "finance": "finance_rag",
-        # ...
-    }
-)
-```
+Core dependencies (see `pyproject.toml`):
 
-### Deployment
+- `langgraph` - Workflow orchestration
+- `chromadb` - Vector storage
+- `httpx` - Async HTTP client for API calls
 
-**Docker Compose:**
-```yaml
-version: '3.8'
-services:
-  backend:
-    build: ./backend
-    ports:
-      - "8000:8000"
-    environment:
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - PINECONE_API_KEY=${PINECONE_API_KEY}
-    volumes:
-      - ./data:/app/data
-
-  frontend:
-    build: ./frontend
-    ports:
-      - "3000:3000"
-```
-
-**Production Considerations:**
-- Load balancing (több backend instance)
-- Redis cache (embedding cache)
-- Monitoring (Prometheus + Grafana)
-- Logging (ELK stack)
+Dev dependencies:
+- `pytest` - Testing framework
+- `pytest-asyncio` - Async test support

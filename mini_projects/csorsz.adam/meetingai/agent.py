@@ -2,51 +2,37 @@ import os
 import json
 import asyncio
 import numpy as np
-from typing import Any, Dict
+import requests  
+from typing import Any, Dict, List
 from pathlib import Path
 from openai import OpenAI
 from dotenv import load_dotenv
 
-# --- RAG INFRASTRUKTÚRA (A tanár által hiányolt technológiák) ---
+# --- RAG INFRASTRUKTÚRA ---
 import faiss
 from sentence_transformers import SentenceTransformer
 
 class SimpleRAG:
     """Valódi RAG implementáció Vector Database-szel."""
     def __init__(self):
-        # ❌ Tanári hiánypótló: Embeddings (HuggingFace modell)
         self.model = SentenceTransformer('all-MiniLM-L6-v2')
         self.index = None
         self.chunks = []
 
     def add_documents(self, text: str):
-        """Dokumentum feldarabolása és indexelése (Document retrieval alapja)."""
-        # Szöveg darabolása (Chunking)
         self.chunks = [c.strip() for c in text.split('\n') if len(c.strip()) > 15]
         if not self.chunks:
             return
-
-        # ❌ Tanári hiánypótló: Vector database (FAISS)
-        # Elkészítjük a beágyazásokat (embeddings)
         embeddings = self.model.encode(self.chunks)
         dimension = embeddings.shape[1]
-        
-        # FAISS index létrehozása a vektorok tárolásához és kereséséhez
         self.index = faiss.IndexFlatL2(dimension)
         self.index.add(np.array(embeddings).astype('float32'))
 
     def search(self, query: str, top_k: int = 2):
-        """Releváns információ kikeresése a vektoradatbázisból."""
         if self.index is None or not self.chunks:
             return ""
-        
-        # A kérdést is vektorrá alakítjuk
         query_embedding = self.model.encode([query]).astype('float32')
-        
-        # Keresés a vektoradatbázisban
         distances, indices = self.index.search(query_embedding, top_k)
-        
-        # A legközelebbi találatok összeszedése
         results = [self.chunks[i] for i in indices[0] if i != -1]
         return "\n".join(results)
 
@@ -55,7 +41,6 @@ current_dir = Path(__file__).parent.parent
 env_path = current_dir / 'apikulcs.env'
 load_dotenv(dotenv_path=env_path)
 
-# Kliens inicializálása
 _openai_client = OpenAI(
     base_url=os.getenv("OPENAI_BASE_URL"), 
     api_key=os.getenv("OPENAI_API_KEY"),
@@ -68,23 +53,44 @@ except ImportError:
     from sentiment_client import AsyncSentimentClient
 
 class MeetingAgent:
-    """RAG-alapú MeetingAI ügynök (HW2 Megfelelő verzió)."""
+    """Összetett Multi-Tool ágens (8. óra HW - Plan-and-Execute)."""
 
     def __init__(self, openai_key: str | None = None):
         self.openai_key = openai_key or os.getenv("OPENAI_API_KEY")
+        self.weather_api_key = os.getenv("OPENWEATHER_API_KEY")
         self.sentiment_client = AsyncSentimentClient()
-        self.rag = SimpleRAG() # RAG motor inicializálása
+        self.rag = SimpleRAG()
+
+    def _get_weather_external(self, city: str) -> Dict[str, Any]:
+        if not self.weather_api_key:
+            return {"error": "Hiányzó OpenWeather API kulcs!"}
+        url = f"https://api.openweathermap.org/data/2.5/weather?q={city}&appid={self.weather_api_key}&units=metric&lang=hu"
+        try:
+            response = requests.get(url, timeout=10)
+            data = response.json() 
+            if response.status_code != 200:
+                return {"error": data.get("message", "Ismeretlen hiba")}
+            return {
+                "source": "OpenWeatherMap API",
+                "city": data.get("name"),
+                "temp": data.get("main", {}).get("temp"),
+                "description": data.get("weather", [{}])[0].get("description")
+            }
+        except Exception as e:
+            return {"error": str(e)}
 
     async def _call_planner(self, context: str) -> Dict[str, Any]:
-        """❌ Tanári hiánypótló: LLM answer generation a kinyert adatok alapján."""
-        if not self.openai_key:
-            return {"call_tool": True, "tool": "analyze_sentiment", "reason": "no key"}
-
-        system = "You are a meeting analyst. Use ONLY the provided context. Reply in JSON."
+        """❌ 8. ÓRA ÚJDONSÁG: Multi-tool tervezés. Az LLM egy listát ad vissza a teendőkről."""
+        system = (
+            "You are a strategic meeting planner. Analyze the context and decide which tools to use. "
+            "You can choose MULTIPLE tools if necessary. Reply ONLY with a JSON object."
+        )
         prompt = (
-            "Based on this retrieved context, is there any tension or decision mentioned?\n"
-            "JSON format: {\"call_tool\": true, \"tool\": \"analyze_sentiment\", \"reason\": \"...\"}\n\n"
-            "Context from Vector DB:\n" + context
+            "Available tools:\n"
+            "1. 'get_weather': Use if location or outdoor plans are mentioned.\n"
+            "2. 'analyze_sentiment': Use if mood, tension, or satisfaction is mentioned.\n\n"
+            "Context:\n" + context + "\n\n"
+            "Respond in this format: {\"tools\": [\"tool1\", \"tool2\"], \"city\": \"city_name\", \"reason\": \"...\"}"
         )
 
         try:
@@ -95,39 +101,36 @@ class MeetingAgent:
                 temperature=0.0,
             )
             text_out = resp.choices[0].message.content
-            
-            # JSON tisztítás
             start = text_out.find('{')
             end = text_out.rfind('}') + 1
             return json.loads(text_out[start:end])
-        except Exception as e:
-            return {"call_tool": True, "tool": "analyze_sentiment", "reason": f"fallback: {e}"}
+        except:
+            return {"tools": [], "reason": "Hiba a tervezés során."}
 
     async def run(self, notes: str) -> Dict[str, Any]:
-        """❌ Tanári hiánypótló: Teljes RAG workflow."""
-        
-        # 1. Indexing: Szöveg betöltése a vektoradatbázisba
+        """Multi-tool munkafolyamat futtatása."""
+        # 1. RAG Indexelés
         self.rag.add_documents(notes)
         
-        # 2. Retrieval: Keresés a vektorok között
-        # (Pl. megkeressük a hangulattal vagy döntésekkel kapcsolatos részeket)
-        relevant_context = self.rag.search("mood, feelings and decisions")
+        # 2. Retrieval - mindkét témára keresünk
+        relevant_context = self.rag.search("weather, city, location, mood, feelings, satisfaction")
         
-        # 3. Planning & Generation: Válasz az adatok alapján
+        # 3. Planning - az ágens eldönti az eszköztárat
         plan = await self._call_planner(relevant_context)
+        tools_to_run = plan.get("tools", [])
         
         result: Dict[str, Any] = {
-            "plan": plan,
-            "rag_system": {
-                "vector_db": "FAISS",
-                "embeddings": "all-MiniLM-L6-v2",
-                "status": "ready"
-            },
-            "retrieved_context": relevant_context
+            "agent_plan": plan,
+            "tool_outputs": {}
         }
 
-        if plan.get("call_tool") and plan.get("tool") == "analyze_sentiment":
-            sent = await self.sentiment_client.analyze(relevant_context)
-            result["tool_output"] = sent
+        for tool in tools_to_run:
+            if tool == "get_weather":
+                city = plan.get("city", "Budapest")
+                result["tool_outputs"]["weather"] = self._get_weather_external(city)
+
+            if tool == "analyze_sentiment":
+                sent = await self.sentiment_client.analyze(relevant_context)
+                result["tool_outputs"]["sentiment"] = sent
 
         return result

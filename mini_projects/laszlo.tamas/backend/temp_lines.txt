@@ -1,0 +1,171 @@
+    # ===== HELPER FUNCTIONS =====
+    
+    # ===== HELPER FUNCTIONS =====
+        """
+        query = state["query"]
+        user_ctx = state["user_context"]
+        user_lang = user_ctx.get("user_language", "en")
+        query_lower = query.lower()
+        
+        # Fast-path: Simple greetings (no LLM needed)
+        simple_greetings_hu = ["szia", "hello", "heló", "helló", "üdv", "csá", "sziasztok"]
+        simple_greetings_en = ["hi", "hello", "hey", "greetings"]
+        greetings = simple_greetings_hu if user_lang == "hu" else simple_greetings_en
+        
+        query_words = query_lower.strip().split()
+        if len(query_words) <= 2 and any(greeting in query_lower for greeting in greetings):
+            logger.info(f"[DECISION] Simple greeting detected (fast-path) → CHAT")
+            return "CHAT"
+        
+        # LLM-based decision
+        logger.info(f"[DECISION] Asking LLM for routing decision")
+        
+        user_firstname = user_ctx.get("firstname", "User")
+        user_lastname = user_ctx.get("lastname", "")
+        user_email = user_ctx.get("email", "")
+        user_role = user_ctx.get("role", "")
+        
+        decision_prompts = {
+            "hu": """Döntsd el, hogy a felhasználó kérdése milyen típusú választ igényel.
+
+KÉRDÉS: "{query}"
+
+FONTOS INFORMÁCIÓK:
+- A felhasználó neve: {user_firstname} {user_lastname}
+- Email címe: {user_email}
+- Szerepköre: {user_role}
+
+LEHETSÉGES VÁLASZOK:
+1. **MEMORY_READ** - Ha korábbi memóriáira/tényekre kérdez rá
+   - Példák: "mire emlékszel rólam?", "mit tudsz rólam?", "milyen tényeket tudtál meg rólam?"
+   - Példák: "what do you remember about me?", "what facts do you know about me?"
+
+2. **MEMORY_WRITE** - Ha KIFEJEZETTEN kéri valaminek a megjegyzését/eltárolását
+   - Példák: "jegyezd meg hogy nem bírom a macskákat", "emlékezz rá hogy vegetáriánus vagyok"
+   - Példák: "remember that I like pizza", "note that my birthday is May 5th"
+   - CSAK akkor használd, ha EXPLICIT memória kérés van ("jegyezd meg", "emlékezz", "remember", "note that")!
+
+2. **CHAT** - Ha SZEMÉLYES ADATOKAT kérdez (név, email, szerepkör) VAGY általános beszélgetés
+   - Példák: "mi a nevem?", "tudod a nevem?", "ki vagyok?", "mi az email címem?", "mi a szerepköröm?"
+   - Példák: "köszönöm", "hogy vagy?", "mi újság?", "szia"
+   
+3. **LIST** - Ha dokumentumok listázását kéri
+   - Példák: "milyen dokumentumok vannak?", "listázd a doksijaimat", "mutasd meg a feltöltött fájlokat"
+   
+4. **SEARCH** - Ha DOKUMENTUMOKBAN lévő specifikus információt keres vagy dokumentumok tartalmáról kérdez
+   - Példák: "keress rá az elfekre", "mi van a fantasy dokumentumban?", "találd meg Elenar kapitányt"
+   - Példák: "mit írnak a dokumentumokban?", "kik szerepelnek a doksiban?", "milyen nevek vannak említve?"
+   - Példák: "az emberekről mit írnak?", "az orkokról van infó?", "ki az a Lady Miriel?"
+   - HASZNÁLD akkor is, ha a kérdés dokumentumok tartalmára, szereplőkre, nevekre, eseményekre vonatkozik!
+   - NE használd személyes adatokra (név, email, szerepkör)!
+
+PRIORITÁS: 
+1. Explicit memória kérés ("jegyezd meg", "remember") → MINDIG MEMORY_WRITE!
+2. Memória lekérdezés ("mire emlékszel?", "mit tudsz rólam?") → MINDIG MEMORY_READ!
+3. Személyes adatok (név, email, szerepkör) → MINDIG CHAT, SOHA SEARCH!
+4. Dokumentumok tartalma, szereplők, nevek, események → MINDIG SEARCH!
+
+Válaszolj CSAK egy szóval: MEMORY_READ, MEMORY_WRITE, LIST, SEARCH, vagy CHAT
+
+Válasz:""",
+            "en": """Decide what type of response the user's query requires.
+
+QUERY: "{query}"
+
+IMPORTANT INFORMATION:
+- User's name: {user_firstname} {user_lastname}
+- Email: {user_email}
+- Role: {user_role}
+
+POSSIBLE ANSWERS:
+1. **MEMORY_READ** - If asking about previous memories/facts
+   - Examples: "what do you remember about me?", "what facts do you know about me?"
+   - Examples: "mire emlékszel rólam?", "mit tudsz rólam?", "milyen tényeket tudtál meg rólam?"
+
+2. **MEMORY_WRITE** - If user EXPLICITLY asks to remember/note/store something
+   - Examples: "remember that I don't like cats", "note that I'm vegetarian"
+   - Examples: "jegyezd meg hogy allergias vagyok", "emlékezz rá hogy május 5-én van a szülinapom"
+   - ONLY use if there's an EXPLICIT memory request ("remember", "note that", "jegyezd meg", "emlékezz")!
+
+2. **CHAT** - If asking about PERSONAL DATA (name, email, role) OR general conversation
+   - Examples: "what's my name?", "do you know my name?", "who am I?", "what's my email?", "what's my role?"
+   - Examples: "thanks", "how are you?", "what's up?", "hi"
+   
+3. **LIST** - If user wants to list/show documents
+   - Examples: "what documents do I have?", "list my files", "show all documents"
+   
+4. **SEARCH** - If searching for SPECIFIC INFORMATION IN DOCUMENTS or asking about document content
+   - Examples: "search for elves", "what's in the fantasy document?", "find Captain Elenar"
+   - Examples: "what do the documents say?", "who is mentioned in the docs?", "what names are mentioned?"
+   - Examples: "what about humans?", "is there info about orcs?", "who is Lady Miriel?"
+   - USE this even if the question is about document content, characters, names, events!
+   - DO NOT use for personal data (name, email, role)!
+
+PRIORITY: 
+1. Explicit memory request ("remember", "jegyezd meg") → ALWAYS MEMORY_WRITE!
+2. Memory query ("what do you remember?", "mire emlékszel?") → ALWAYS MEMORY_READ!
+3. Personal data (name, email, role) → ALWAYS CHAT, NEVER SEARCH!
+4. Document content, characters, names, events → ALWAYS SEARCH!
+
+Answer with ONLY one word: MEMORY_READ, MEMORY_WRITE, LIST, SEARCH, or CHAT
+
+Answer:"""
+        }
+        
+        decision_prompt = decision_prompts.get(user_lang, decision_prompts["en"])
+        user_message = decision_prompt.format(
+            query=query,
+            user_firstname=user_firstname,
+            user_lastname=user_lastname,
+            user_email=user_email,
+            user_role=user_role
+        )
+        
+        # Call LLM
+        messages = [
+            SystemMessage(content="You are a routing assistant. Answer with exactly one word: MEMORY, LIST, SEARCH, or CHAT."),
+            HumanMessage(content=user_message)
+        ]
+        
+        try:
+            response = self.llm.invoke(messages)
+            decision_text = response.content.strip().upper()
+            
+            logger.info(f"[DECISION] LLM response: '{decision_text}'")
+            
+            # Parse decision
+            if "MEMORY_WRITE" in decision_text:
+                return "LTM_WRITE"
+            elif "MEMORY_READ" in decision_text:
+                return "LTM_READ"
+            elif "LIST" in decision_text:
+                return "LIST"
+            elif "SEARCH" in decision_text:
+                return "RAG"
+            else:  # CHAT
+                return "CHAT"
+        
+        except Exception as e:
+            logger.error(f"[DECISION] LLM call failed: {e}", exc_info=True)
+            # Default: CHAT (safest fallback)
+            return "CHAT"
+    
+    # ===== DEPRECATED NODES REMOVED =====
+    # ~775 lines of manual routing code archived in unified_chat_workflow_deprecated.py
+    # Removed during ToolNode refactoring (2026-01-16):
+    # - _route_from_agent_decide, _direct_chat_node, _tool_executor_node
+    # - _enrich_chunks_node, _generate_answer_node, _ltm_read_node, _ltm_write_node
+    # Pattern migration: Manual branching → LLM tool_calls → ToolNode execution
+    
+    # ===== FINALIZE NODE =====
+    # _enrich_chunks_node, _generate_answer_node, _ltm_read_node, _ltm_write_node
+    # and all helper functions. See deprecated file for reference.
+    
+    # ===== DEPRECATED NODES REMOVED =====
+    # All deprecated nodes archived in unified_chat_workflow_deprecated.py
+    # Removed ~800 lines of manual routing code
+    
+    # ===== FINALIZE NODE =====
+    
+   
+    def _agent_finalize_node(self, state: ChatState) -> ChatState:

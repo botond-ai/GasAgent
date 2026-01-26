@@ -1,0 +1,56 @@
+.workflow-graph-container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+/* React Flow base overrides for dark theme */
+.react-flow {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.react-flow__background {
+  background-color: transparent;
+}
+
+.react-flow__background-pattern {
+  fill: rgba(255, 255, 255, 0.05);
+}
+
+.react-flow__controls {
+  background: rgba(30, 41, 59, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+}
+
+.react-flow__controls-button {
+  background: transparent;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  color: #94a3b8;
+}
+
+.react-flow__controls-button:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #e2e8f0;
+}
+
+.react-flow__minimap {
+  background: rgba(30, 41, 59, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+}
+
+.react-flow__edge-path {
+  stroke-width: 2;
+}
+
+.react-flow__edge.animated path {
+  stroke-dasharray: 5;
+  animation: dashdraw 0.5s linear infinite;
+}
+
+@keyframes dashdraw {
+  to {
+    stroke-dashoffset: -10;
+  }
+}

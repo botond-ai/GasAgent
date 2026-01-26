@@ -1,9 +1,11 @@
 # Meeting Minutes Embedding CLI (Homework.02)
 
-CLI app 1.0 that creates OpenAI embeddings for company meeting minutes (or any text files), stores them in a local ChromaDB vector store, performs nearest-neighbor retrieval, and optionally generates LLM-augmented responses using a RAG (Retrieval-Augmented Generation) pattern. The project supports two modes of operation:
+AI Meeting Assistant app 1.0 that creates OpenAI embeddings for company meeting minutes (or any text files), stores them in a local ChromaDB vector store, performs nearest-neighbor retrieval, and optionally generates LLM-augmented responses using a RAG (Retrieval-Augmented Generation) pattern. The project supports two modes of operation:
 
 - Batch mode (default when a `data/` directory exists): reads `.md`/`.txt` files from `./data`, embeds and indexes them, and prints nearest neighbors (and optionally generated responses) for each file.
 - Interactive mode: when no `data/` folder is present, the app starts an interactive prompt where you can enter free-text queries which are embedded, stored, searched and optionally augmented with LLM responses.
+
+App integrates the Google Calendar API for sending meeting invites to appropriate participaants.
 
 Quick overview
 - Language: Python 3.11+

@@ -11,6 +11,7 @@ const debugCitations = document.getElementById('debugCitations');
 const debugChunkCount = document.getElementById('debugChunkCount');
 const debugMaxScore = document.getElementById('debugMaxScore');
 const debugLatency = document.getElementById('debugLatency');
+const debugRequestCost = document.getElementById('debugRequestCost');
 const debugWorkflow = document.getElementById('debugWorkflow');
 const debugNextStep = document.getElementById('debugNextStep');
 const debugRequestJson = document.getElementById('debugRequestJson');
@@ -84,19 +85,49 @@ function addMessage(content, type = 'info', citations = null, originalQuery = nu
             html += `<h4 class="citations-title">📚 Felhasznált források (${citationObjects.length})</h4>`;
             html += `</div>`;
             
-            // List all source documents
-            html += `<ul class="citations-list">`;
+            // Display citations as enhanced cards with score and metadata
             citationObjects.forEach((citation, index) => {
                 const title = citation.title || 'Ismeretlen dokumentum';
                 const url = citation.url || null;
+                const score = citation.score || 0;
+                const scorePercent = Math.round(score * 100);
+                const sectionId = citation.section_id || null;
+                const docId = citation.doc_id || null;
+                
+                html += `<div class="citation-card">`;
+                html += `  <div class="citation-header">`;
+                html += `    <div class="citation-title">`;
                 
                 if (url) {
-                    html += `<li><a href="${url}" target="_blank" class="citation-link">🔗 ${escapeHtml(title)}</a></li>`;
+                    html += `<a href="${url}" target="_blank">🔗 ${escapeHtml(title)}</a>`;
                 } else {
-                    html += `<li>📄 ${escapeHtml(title)}</li>`;
+                    html += `📄 ${escapeHtml(title)}`;
                 }
+                
+                html += `    </div>`;
+                html += `    <div class="citation-score">${scorePercent}%</div>`;
+                html += `  </div>`;
+                
+                // Display metadata (section_id, doc_id)
+                if (sectionId || docId) {
+                    html += `  <div class="citation-metadata">`;
+                    if (sectionId) {
+                        html += `    <span class="citation-meta-item">`;
+                        html += `      <span class="citation-meta-icon">🔖</span>`;
+                        html += `      <span>${escapeHtml(sectionId)}</span>`;
+                        html += `    </span>`;
+                    }
+                    if (docId) {
+                        html += `    <span class="citation-meta-item">`;
+                        html += `      <span class="citation-meta-icon">🆔</span>`;
+                        html += `      <span>${escapeHtml(docId)}</span>`;
+                        html += `    </span>`;
+                    }
+                    html += `  </div>`;
+                }
+                
+                html += `</div>`;
             });
-            html += `</ul>`;
         } else {
             // No citations - show info message
             html += `<div class="no-citations-container">`;
@@ -251,12 +282,22 @@ async function refreshQuery(question, useCache = true) {
         if (payload.telemetry) {
             debugMaxScore.textContent = payload.telemetry.max_similarity_score || '-';
             debugLatency.textContent = payload.telemetry.total_latency_ms ? `${payload.telemetry.total_latency_ms}ms` : '-';
+            
+            // Update Request Cost from LLM telemetry
+            if (payload.telemetry.llm && payload.telemetry.llm.total_cost_usd !== undefined) {
+                const cost = payload.telemetry.llm.total_cost_usd;
+                debugRequestCost.textContent = `$${cost.toFixed(6)}`;
+            } else {
+                debugRequestCost.textContent = '-';
+            }
         } else if (uniqueCitationObjects.length > 0) {
             const maxScore = Math.max(...uniqueCitationObjects.map(c => c.score || 0));
             debugMaxScore.textContent = maxScore.toFixed(3);
+            debugRequestCost.textContent = '-';
         } else {
             debugMaxScore.textContent = '-';
             debugLatency.textContent = '-';
+            debugRequestCost.textContent = '-';
         }
         
         if (payload.workflow) {
@@ -335,14 +376,34 @@ queryForm.addEventListener('submit', async (e) => {
 
     if (!query) return;
 
-    // Check if user is responding "igen" to Jira ticket offer
+    // Check if user is responding to Jira ticket offer (yes/no)
     const normalizedQuery = query.toLowerCase().trim();
+    const isJiraDecline = lastITContext && (
+        normalizedQuery === 'nem' ||
+        normalizedQuery === 'no' ||
+        normalizedQuery.includes('mégsem') ||
+        normalizedQuery.includes('nem kell') ||
+        normalizedQuery.includes('nem kérem') ||
+        (normalizedQuery.includes('nem') && query.split(' ').length <= 3)
+    );
     const isJiraConfirmation = lastITContext && 
         (normalizedQuery === 'igen' || 
          normalizedQuery === 'yes' ||
          normalizedQuery === 'ok' ||
          normalizedQuery === 'i' ||
          (normalizedQuery.includes('igen') && query.split(' ').length <= 3));
+    
+    if (isJiraDecline) {
+        addMessage(query, 'user');
+        if (lastITContext) {
+            addMessage('Köszönöm a visszajelzést, nem hozok létre Jira ticketet. Szólj, ha mégis szeretnéd, vagy írd le, miben segíthetek még.', 'bot');
+        } else {
+            addMessage('Rendben, nem hozok létre ticketet. Miben segíthetek helyette?', 'bot');
+        }
+        queryInput.value = '';
+        lastITContext = null;
+        return;
+    }
     
     if (isJiraConfirmation) {
         console.log('🎫 Jira confirmation detected, creating ticket...');
@@ -363,6 +424,10 @@ queryForm.addEventListener('submit', async (e) => {
     showTyping();
 
     try {
+        // Set 120 second timeout for complex workflow queries
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 120000);
+
         const response = await fetch('http://localhost:8001/api/query/', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -371,8 +436,11 @@ queryForm.addEventListener('submit', async (e) => {
                 session_id: sessionId,
                 query: query,
                 organisation: 'Demo Org'
-            })
+            }),
+            signal: controller.signal
         });
+
+        clearTimeout(timeoutId);
 
         if (!response.ok) {
             const error = await response.json();
@@ -407,12 +475,22 @@ queryForm.addEventListener('submit', async (e) => {
         if (payload.telemetry) {
             debugMaxScore.textContent = payload.telemetry.max_similarity_score || '-';
             debugLatency.textContent = payload.telemetry.total_latency_ms ? `${payload.telemetry.total_latency_ms}ms` : '-';
+            
+            // Update Request Cost from LLM telemetry
+            if (payload.telemetry.llm && payload.telemetry.llm.total_cost_usd !== undefined) {
+                const cost = payload.telemetry.llm.total_cost_usd;
+                debugRequestCost.textContent = `$${cost.toFixed(6)}`;
+            } else {
+                debugRequestCost.textContent = '-';
+            }
         } else if (uniqueCitationObjects.length > 0) {
             const maxScore = Math.max(...uniqueCitationObjects.map(c => c.score || 0));
             debugMaxScore.textContent = maxScore.toFixed(3);
+            debugRequestCost.textContent = '-';
         } else {
             debugMaxScore.textContent = '-';
             debugLatency.textContent = '-';
+            debugRequestCost.textContent = '-';
         }
         
         if (payload.workflow) {
@@ -463,20 +541,21 @@ queryForm.addEventListener('submit', async (e) => {
             sessionId  // Pass session ID
         );
         
-        // Store IT context for potential Jira ticket creation
-        if (payload.domain === 'it' && payload.answer) {
-            // Store context if response mentions Jira or contains typical IT offer keywords
-            const hasJiraOffer = payload.answer.toLowerCase().includes('jira') || 
-                                 payload.answer.toLowerCase().includes('ticket') ||
+        // Store context for potential Jira ticket creation (independent of domain)
+        if (payload.answer) {
+            const lowerAns = payload.answer.toLowerCase();
+            const hasJiraOffer = lowerAns.includes('jira') ||
+                                 lowerAns.includes('ticket') ||
                                  payload.answer.includes('📋') ||
-                                 payload.answer.toLowerCase().includes('szeretnéd');
-            
+                                 lowerAns.includes('szeretnéd') ||
+                                 lowerAns.includes('támogatási jegy') ||
+                                 lowerAns.includes('support ticket') ||
+                                 lowerAns.includes('hozzak létre') ||
+                                 lowerAns.includes('létrehozzak');
+
             if (hasJiraOffer) {
-                lastITContext = {
-                    query: query,
-                    answer: payload.answer
-                };
-                console.log('✅ IT context stored for Jira ticket:', lastITContext);
+                lastITContext = { query, answer: payload.answer };
+                console.log('✅ Jira context stored for ticket flow:', lastITContext);
             } else {
                 lastITContext = null;
             }
@@ -487,7 +566,12 @@ queryForm.addEventListener('submit', async (e) => {
     } catch (error) {
         console.error('Fetch error:', error);
         hideTyping();
-        addMessage(`❌ Hálózati hiba: ${error.message}`, 'error');
+        
+        if (error.name === 'AbortError') {
+            addMessage('⏱️ A kérés túllépte a 120 másodperces időkorlátot. Próbáld meg újra vagy kapcsold be a gyors módot (USE_SIMPLE_PIPELINE=True).', 'error');
+        } else {
+            addMessage(`❌ Hálózati hiba: ${error.message}`, 'error');
+        }
     } finally {
         sendBtn.disabled = false;
         queryInput.focus();
@@ -620,6 +704,7 @@ if (resetBtn) {
         if (debugChunkCount) debugChunkCount.textContent = '0';
         if (debugMaxScore) debugMaxScore.textContent = '-';
         if (debugLatency) debugLatency.textContent = '-';
+        if (debugRequestCost) debugRequestCost.textContent = '-';
         if (debugWorkflow) debugWorkflow.textContent = 'none';
         if (debugNextStep) debugNextStep.textContent = '-';
         if (debugRequestJson) debugRequestJson.textContent = '-';
@@ -719,3 +804,116 @@ async function createJiraTicket(query, answer) {
         addMessage('❌ Hiba történt a ticket létrehozásakor.', 'error');
     }
 }
+
+/**
+ * Fetch and display monitoring statistics from Prometheus metrics.
+ * Parses Prometheus text format and extracts key metrics.
+ */
+async function fetchMonitoringStats() {
+    try {
+        const response = await fetch('http://localhost:8001/api/metrics/');
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const metricsText = await response.text();
+        
+        // Parse Prometheus metrics (simple text parsing)
+        const lines = metricsText.split('\n');
+        const metrics = {};
+        
+        lines.forEach(line => {
+            if (line.startsWith('#') || !line.trim()) return;
+            
+            // Extract metric name and value - improved regex for labels
+            const match = line.match(/^([a-z_]+)(?:\{[^}]+\})?\s+([0-9.eE+-]+)/);
+            if (match) {
+                const metricName = match[1];
+                const value = parseFloat(match[2]);
+                
+                if (!metrics[metricName]) {
+                    metrics[metricName] = [];
+                }
+                metrics[metricName].push(value);
+            }
+        });
+        
+        // Calculate stats
+        const totalRequests = metrics['knowledgerouter_requests_total'] 
+            ? metrics['knowledgerouter_requests_total'].reduce((a, b) => a + b, 0) 
+            : 0;
+        
+        const cacheHits = metrics['knowledgerouter_cache_hits_total']
+            ? metrics['knowledgerouter_cache_hits_total'].reduce((a, b) => a + b, 0)
+            : 0;
+        
+        const cacheMisses = metrics['knowledgerouter_cache_misses_total']
+            ? metrics['knowledgerouter_cache_misses_total'].reduce((a, b) => a + b, 0)
+            : 0;
+        
+        const cacheHitRate = (cacheHits + cacheMisses) > 0
+            ? ((cacheHits / (cacheHits + cacheMisses)) * 100).toFixed(1)
+            : '0.0';
+        
+        const llmCalls = metrics['knowledgerouter_llm_calls_total']
+            ? metrics['knowledgerouter_llm_calls_total'].reduce((a, b) => a + b, 0)
+            : 0;
+        
+        const activeRequests = metrics['knowledgerouter_active_requests']
+            ? Math.max(...metrics['knowledgerouter_active_requests'])
+            : 0;
+        
+        const errors = metrics['knowledgerouter_errors_total']
+            ? metrics['knowledgerouter_errors_total'].reduce((a, b) => a + b, 0)
+            : 0;
+        
+        // Latency calculation from histogram _count and _sum metrics
+        const latencyCount = metrics['knowledgerouter_latency_seconds_count']
+            ? metrics['knowledgerouter_latency_seconds_count'].reduce((a, b) => a + b, 0)
+            : 0;
+        
+        const latencySum = metrics['knowledgerouter_latency_seconds_sum']
+            ? metrics['knowledgerouter_latency_seconds_sum'].reduce((a, b) => a + b, 0)
+            : 0;
+        
+        const avgLatency = latencyCount > 0
+            ? ((latencySum / latencyCount) * 1000).toFixed(0) + 'ms'
+            : '-';
+        
+        // Cost calculation
+        const totalCost = metrics['knowledgerouter_llm_cost_total']
+            ? metrics['knowledgerouter_llm_cost_total'].reduce((a, b) => a + b, 0)
+            : 0;
+        
+        const avgCost = totalRequests > 0
+            ? (totalCost / totalRequests).toFixed(4)
+            : '0.0000';
+        
+        // Update UI
+        document.getElementById('monitorTotalRequests').textContent = totalRequests;
+        document.getElementById('monitorCacheHitRate').textContent = cacheHitRate + '%';
+        document.getElementById('monitorAvgLatency').textContent = avgLatency;
+        document.getElementById('monitorLlmCalls').textContent = llmCalls;
+        document.getElementById('monitorActiveRequests').textContent = activeRequests;
+        document.getElementById('monitorErrors').textContent = errors;
+        document.getElementById('monitorTotalCost').textContent = '$' + totalCost.toFixed(4);
+        document.getElementById('monitorAvgCost').textContent = '$' + avgCost;
+        
+    } catch (error) {
+        console.error('Failed to fetch monitoring stats:', error);
+        document.getElementById('monitorTotalRequests').textContent = 'Error';
+        document.getElementById('monitorCacheHitRate').textContent = 'Error';
+        document.getElementById('monitorAvgLatency').textContent = 'Error';
+        document.getElementById('monitorLlmCalls').textContent = 'Error';
+        document.getElementById('monitorActiveRequests').textContent = 'Error';
+        document.getElementById('monitorErrors').textContent = 'Error';
+        document.getElementById('monitorTotalCost').textContent = 'Error';
+        document.getElementById('monitorAvgCost').textContent = 'Error';
+    }
+}
+
+// Auto-fetch monitoring stats every 10 seconds
+setInterval(fetchMonitoringStats, 10000);
+// Initial fetch on page load
+setTimeout(fetchMonitoringStats, 1000);
+

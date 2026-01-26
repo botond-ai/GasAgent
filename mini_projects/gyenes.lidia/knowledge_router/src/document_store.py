@@ -1,75 +1,81 @@
 import json
-from typing import List, Dict, Optional
+import os
+from typing import List
 from dataclasses import dataclass
+from dotenv import load_dotenv
+
+from langchain_community.vectorstores import Chroma
+from langchain_openai import OpenAIEmbeddings
+from langchain_core.documents import Document as LangchainDocument
+
+load_dotenv()
 
 @dataclass
-class Document:
-    """Adatmodell egyetlen dokumentum reprezentálására."""
+class KnowledgeDoc:
     id: int
     title: str
     content: str
     category: str
-    tags: List[str]
 
-class KnowledgeBase:
-    """
-    Kezeli a dokumentumok betöltését és a keresést.
-    Szimulálja egy Vector Store működését egyszerű kulcsszavas kereséssel.
-    """
-
-    def __init__(self, db_path: str):
-        """
-        Inicializálja a tudásbázist.
-        
-        Args:
-            db_path (str): A JSON adatbázis fájl elérési útja.
-        """
+class VectorStore:
+    def __init__(self, db_path: str, vector_db_dir: str = "./chroma_db"):
         self.db_path = db_path
-        self.documents: List[Document] = []
-        self._load_data()
+        self.vector_db_dir = vector_db_dir
+        self.vector_db = None
+        self.embeddings = None
 
-    def _load_data(self) -> None:
-        """Betölti az adatokat a JSON fájlból a memóriába."""
+        # 1. Megpróbáljuk betölteni az OpenAI-t
+        try:
+            self.embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+        except Exception:
+            print("⚠️ Nincs OpenAI driver.")
+
+        # Csak akkor folytatjuk, ha van driver, de itt is elkapjuk a hibát
+        if self.embeddings:
+            try:
+                self._initialize_db()
+            except Exception as e:
+                print(f"\n⚠️ RAG HIBA: Nem sikerült elérni az OpenAI-t (Quota/Net hiba).")
+                print(f"   Részletek: {e}")
+                print("   ➡️ A program RAG nélkül, csak Weather módban indul tovább.\n")
+                self.vector_db = None # Kikapcsoljuk a RAG-ot
+
+    def _initialize_db(self):
+        if os.path.exists(self.vector_db_dir) and os.path.isdir(self.vector_db_dir):
+            try:
+                self.vector_db = Chroma(persist_directory=self.vector_db_dir, embedding_function=self.embeddings)
+                if self.vector_db._collection.count() > 0:
+                    print("✅ Meglévő vektor DB betöltve.")
+                    return
+            except:
+                pass 
+
+        print("🔄 Vektor adatbázis építése...")
         try:
             with open(self.db_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                for item in data:
-                    # Átalakítjuk a nyers dict-et Document objektummá
-                    doc = Document(
-                        id=item['id'],
-                        title=item['title'],
-                        content=item['content'],
-                        category=item['category'],
-                        tags=item['tags']
-                    )
-                    self.documents.append(doc)
-            print(f"✅ Tudásbázis betöltve: {len(self.documents)} dokumentum.")
+                raw_data = json.load(f)
         except FileNotFoundError:
-            print(f"❌ Hiba: A fájl nem található: {self.db_path}")
-            self.documents = []
+            return
 
-    def search(self, query: str) -> List[Document]:
-        """
-        Egyszerű keresést hajt végre a címben, tartalomban és a tagekben.
-        
-        Args:
-            query (str): A keresett kifejezés.
-            
-        Returns:
-            List[Document]: A találatok listája.
-        """
-        query = query.lower()
-        results = []
+        documents = []
+        for item in raw_data:
+            meta = {"id": item['id'], "title": item['title'], "category": item['category']}
+            doc = LangchainDocument(page_content=item['content'], metadata=meta)
+            documents.append(doc)
 
-        for doc in self.documents:
-            # Keresés a címben, tartalomban és a címkék között
-            if (query in doc.title.lower() or 
-                query in doc.content.lower() or 
-                any(query in tag.lower() for tag in doc.tags)):
-                results.append(doc)
-        
-        return results
+        # ITT SZÁLLT EL EDDIG -> Most elkapjuk a hibát a __init__-ben
+        self.vector_db = Chroma.from_documents(
+            documents=documents,
+            embedding=self.embeddings,
+            persist_directory=self.vector_db_dir
+        )
+        print(f"✅ Vektor DB kész! ({len(documents)} doksi)")
 
-    def get_by_category(self, category: str) -> List[Document]:
-        """Visszaadja egy adott kategória összes dokumentumát (Routing előkészítés)."""
-        return [doc for doc in self.documents if doc.category.lower() == category.lower()]
+    def similarity_search(self, query: str, k: int = 2) -> List[KnowledgeDoc]:
+        if not self.vector_db:
+            return []
+        try:
+            results = self.vector_db.similarity_search(query, k=k)
+            return [KnowledgeDoc(res.metadata['id'], res.metadata['title'], res.metadata['category'], res.page_content) for res in results]
+        except:
+            return []

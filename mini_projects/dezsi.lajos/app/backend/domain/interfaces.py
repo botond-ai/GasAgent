@@ -11,6 +11,10 @@ class ILLMClient(ABC):
     async def generate_structured(self, prompt: str, response_model: Any) -> Any:
         pass
 
+    @abstractmethod
+    def bind_tools(self, tools: List[Any]):
+        pass
+
 class IVectorDBClient(ABC):
     @abstractmethod
     async def search(self, query: str, limit: int = 3) -> List[Dict[str, Any]]:

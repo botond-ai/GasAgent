@@ -1,0 +1,29 @@
+[run]
+source = .
+omit =
+    */tests/*
+    */debug/*
+    */__pycache__/*
+    */venv/*
+    */env/*
+    */migrations/*
+    */conftest.py
+    main.py
+
+[report]
+exclude_lines =
+    pragma: no cover
+    def __repr__
+    def __str__
+    raise AssertionError
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    if TYPE_CHECKING:
+    @abstractmethod
+    @overload
+
+[html]
+directory = htmlcov
+
+[xml]
+output = coverage.xml

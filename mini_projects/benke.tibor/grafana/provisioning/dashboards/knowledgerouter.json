@@ -1,0 +1,105 @@
+{
+  "uid": "knowledgerouter",
+  "title": "KnowledgeRouter Monitoring",
+  "tags": ["knowledgerouter"],
+  "timezone": "browser",
+  "schemaVersion": 16,
+  "version": 2,
+  "refresh": "10s",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Request Rate",
+      "type": "graph",
+      "gridPos": {"x": 0, "y": 0, "w": 12, "h": 8},
+      "targets": [{"expr": "rate(knowledgerouter_requests_total[5m])", "legendFormat": "{{domain}}"}]
+    },
+    {
+      "id": 2,
+      "title": "Active Requests",
+      "type": "graph",
+      "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8},
+      "targets": [{"expr": "knowledgerouter_active_requests"}]
+    },
+    {
+      "id": 3,
+      "title": "Latency Percentiles",
+      "type": "graph",
+      "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8},
+      "targets": [
+        {"expr": "histogram_quantile(0.50, rate(knowledgerouter_latency_seconds_bucket[5m]))", "legendFormat": "p50"},
+        {"expr": "histogram_quantile(0.95, rate(knowledgerouter_latency_seconds_bucket[5m]))", "legendFormat": "p95"},
+        {"expr": "histogram_quantile(0.99, rate(knowledgerouter_latency_seconds_bucket[5m]))", "legendFormat": "p99"}
+      ]
+    },
+    {
+      "id": 4,
+      "title": "LLM Call Rate",
+      "type": "graph",
+      "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8},
+      "targets": [{"expr": "rate(knowledgerouter_llm_calls_total[5m])", "legendFormat": "{{model}} - {{purpose}}"}]
+    },
+    {
+      "id": 5,
+      "title": "Cache Hit Rate",
+      "type": "graph",
+      "gridPos": {"x": 0, "y": 16, "w": 8, "h": 8},
+      "targets": [{"expr": "rate(knowledgerouter_cache_hits_total[5m]) / (rate(knowledgerouter_cache_hits_total[5m]) + rate(knowledgerouter_cache_misses_total[5m]))", "legendFormat": "Hit Rate"}]
+    },
+    {
+      "id": 6,
+      "title": "Error Rate",
+      "type": "graph",
+      "gridPos": {"x": 8, "y": 16, "w": 8, "h": 8},
+      "targets": [{"expr": "rate(knowledgerouter_errors_total[5m])", "legendFormat": "{{error_type}}"}]
+    },
+    {
+      "id": 7,
+      "title": "Total LLM Cost (USD)",
+      "type": "stat",
+      "gridPos": {"x": 16, "y": 16, "w": 4, "h": 4},
+      "targets": [{"expr": "sum(knowledgerouter_llm_cost_total)"}],
+      "options": {
+        "graphMode": "none",
+        "colorMode": "value",
+        "textMode": "value_and_name"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 4
+        }
+      }
+    },
+    {
+      "id": 8,
+      "title": "Cost per Request (USD)",
+      "type": "stat",
+      "gridPos": {"x": 20, "y": 16, "w": 4, "h": 4},
+      "targets": [{"expr": "sum(knowledgerouter_llm_cost_total) / sum(knowledgerouter_requests_total)"}],
+      "options": {
+        "graphMode": "none",
+        "colorMode": "value",
+        "textMode": "value_and_name"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 4
+        }
+      }
+    },
+    {
+      "id": 9,
+      "title": "LLM Cost Over Time",
+      "type": "graph",
+      "gridPos": {"x": 16, "y": 20, "w": 8, "h": 8},
+      "targets": [{"expr": "rate(knowledgerouter_llm_cost_total[5m])", "legendFormat": "{{model}} - {{purpose}}"}],
+      "yaxes": [
+        {"format": "currencyUSD", "label": "Cost/sec"},
+        {"format": "short"}
+      ]
+    }
+  ],
+  "time": {"from": "now-1h", "to": "now"}
+}

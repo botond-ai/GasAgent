@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "jira-supportai": {
+      "command": "python",
+      "args": ["backend/run_jira_mcp.py"],
+      "env": {
+        "JIRA_URL": "${JIRA_URL}",
+        "JIRA_USER_EMAIL": "${JIRA_USER_EMAIL}",
+        "JIRA_API_TOKEN": "${JIRA_API_TOKEN}",
+        "OPENAI_API_KEY": "${OPENAI_API_KEY}"
+      },
+      "description": "Jira integration for SupportAI - ticket analysis, commenting, and management"
+    }
+  }
+}

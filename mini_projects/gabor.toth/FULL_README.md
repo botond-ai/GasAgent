@@ -1,6 +1,6 @@
 # RAG Agent - Dokumentum-Alapú AI Asszisztens
 
-Teljes körű magyar nyelvű alkalmazás dokumentumok feltöltéséhez, kategorizálásához és AI-alapú kérdezéshez (RAG - Retrieval Augmented Generation) valós idejű aktivitás-naplózással.
+Teljes körű magyar nyelvű alkalmazás dokumentumok feltöltéséhez, kategorizálásához és AI-alapú kérdezéshez (RAG - Retrieval Augmented Generation) valós idejű aktivitás-naplózással és **LangGraph-alapú gráf-orkestrálással**.
 
 ## 🎯 Funkciók
 
@@ -13,6 +13,7 @@ Teljes körű magyar nyelvű alkalmazás dokumentumok feltöltéséhez, kategori
 - **🔄 Kontextus Törlés**: `reset context` paranccsal tisztázza a beszélgetést
 - **💾 Perzisztens Tárolás**: JSON-alapú felhasználói profilok és beszélgetési előzmények
 - **🌐 Fallback Keresés**: Ha a routed kategóriában nincs találat, az összes kategóriában keres
+- **🧵 LangGraph Workflow**: 9 csomópontos gráf-alapú munkafolyamat-orkestrálás
 
 ## 🏗️ Architektúra
 
@@ -33,7 +34,8 @@ Backend (Python FastAPI): backend/
 │
 ├── services/                    # Üzleti logika
 │   ├── upload_service.py       # Dokumentum feltöltés & indexelés
-│   ├── rag_agent.py            # LangGraph agent
+│   ├── rag_agent.py            # LangGraph agent (régi)
+│   ├── langgraph_workflow.py   # LangGraph workflow (ÚJ - 9 csomópont)
 │   └── chat_service.py         # Chat koordináció
 │
 └── main.py                     # FastAPI, QueuedActivityCallback
@@ -57,6 +59,80 @@ Data:
 ├── derived/                    # chunks.json
 └── chroma_db/                  # ChromaDB vektortárolás
 ```
+
+## 🧵 LangGraph Workflow (ÚJ)
+
+Az alkalmazás egy **9 csomópontos LangGraph-alapú munkafolyamatot** implementál:
+
+```
+┌─────────────────┐
+│ validate_input  │ (Input validálás)
+└────────┬────────┘
+         ↓
+┌──────────────────┐
+│ category_routing │ (LLM kategória döntés)
+└────────┬─────────┘
+         ↓
+┌──────────────────┐
+│ embed_question   │ (Vektor beágyazás)
+└────────┬─────────┘
+         ↓
+┌──────────────────┐
+│ search_category  │ (ChromaDB keresés)
+└────────┬─────────┘
+         ↓
+┌──────────────────┐
+│ evaluate_search  │ (Minőség értékelés)
+└────────┬─────────┘
+         ↓
+┌──────────────────┐
+│ fallback_search  │ (Fallback keresés)
+└────────┬─────────┘
+         ↓
+┌──────────────────┐
+│ dedup_chunks     │ (Duplikálódás eltávolítás)
+└────────┬─────────┘
+         ↓
+┌──────────────────┐
+│ generate_answer  │ (OpenAI LLM)
+└────────┬─────────┘
+         ↓
+┌──────────────────┐
+│ format_response  │ (Citációk formázása)
+└────────┬─────────┘
+         ↓
+      [END]
+```
+
+### LangGraph Csomópontok
+
+1. **validate_input** - Input adatok validálása
+2. **category_routing** - LLM-alapú kategória kiválasztás
+3. **embed_question** - Kérdés vektorizálása
+4. **search_category** - Keresés a kiválasztott kategóriában
+5. **evaluate_search** - Keresési minőség értékelése
+6. **fallback_search** - Fallback keresés az összes kategóriában (ha szükséges)
+7. **dedup_chunks** - Duplikálódások eltávolítása
+8. **generate_answer** - Válasz generálás OpenAI LLM-mel
+9. **format_response** - Válasz formázása citációkkal
+
+### Előnyök
+
+| Szempont | Régi | Új |
+|----------|------|-----|
+| **Csomópontok** | 3 | 9 |
+| **Fallback stratégia** | ❌ Nincs | ✅ Intelligens |
+| **Monitoring** | ❌ Nincs | ✅ Teljes |
+| **Citations** | ❌ Nyers | ✅ Strukturált |
+| **Error handling** | 🟡 Alapvető | ✅ Komprehenzív |
+| **Bővíthetőség** | 🟡 Mérsékelt | ✅ Magas |
+
+## 📚 LangGraph Dokumentáció
+
+- **[LangGraph Quickstart](./LANGGRAPH_QUICKSTART.md)** - 5 perces gyors útmutató
+- **[LangGraph Implementation](./LANGGRAPH_IMPLEMENTATION.md)** - Technikai részletek
+- **[LangGraph Integration Guide](./LANGGRAPH_INTEGRATION_GUIDE.md)** - Integrálási útmutató
+- **[LangGraph Diagrams](./LANGGRAPH_WORKFLOW_DIAGRAMS.md)** - Workflow diagramok
 
 ## 🚀 Gyors Indítás
 
@@ -131,6 +207,100 @@ Az összes event időrendben jelenik meg (legfrissebb felül).
 - `GET /api/desc-get` - Kategória leírása
 - `POST /api/desc-save` - Kategória leírás mentése
 - `POST /api/cat-match` - Kategória felismerés
+
+### POST /api/chat - Response Formátum
+
+**Request:**
+```bash
+curl -X POST http://localhost:8000/api/chat \
+  -F "user_id=user123" \
+  -F "session_id=sess_456" \
+  -F "message=Milyen fő elemeket szokás munkaszerződésben rögzíteni?"
+```
+
+**Response (200 OK):**
+```json
+{
+  "final_answer": "A munkaszerződésben általában rögzítik a munkaköt...",
+  "tools_used": [],
+  "fallback_search": false,
+  "memory_snapshot": {
+    "routed_category": "hr",
+    "available_categories": ["ai", "book", "hr"]
+  },
+  "rag_debug": {
+    "retrieved": [
+      {
+        "chunk_id": 1,
+        "content": "# Teljes szöveg a dokumentumból...",
+        "source_file": "Munka_Törvénykönyve.md",
+        "section_title": "Munkaszerződés elemei",
+        "distance": 0.45,
+        "snippet": "A munkaszerződésben általában...",
+        "metadata": { "page": 1, "author": "HR Dpt" }
+      },
+      {
+        "chunk_id": 2,
+        "content": "...",
+        "source_file": "Munka_Törvénykönyve.md",
+        "section_title": "Írásban rögzítendő feltételek",
+        "distance": 0.52,
+        "snippet": "...",
+        "metadata": {}
+      }
+    ]
+  },
+  "debug_steps": [
+    {
+      "node": "validate_input",
+      "status": "success",
+      "timestamp": "2026-01-21T20:09:19.502720"
+    },
+    {
+      "node": "tools_executor",
+      "step": "category_routing",
+      "routed_category": "hr",
+      "timestamp": "2026-01-21T20:09:20.804510"
+    },
+    {
+      "node": "tools_executor",
+      "step": "vector_search",
+      "collection": "cat_hr",
+      "chunks_found": 3,
+      "timestamp": "2026-01-21T20:09:21.431354"
+    },
+    {
+      "node": "tools_executor",
+      "step": "answer_generation",
+      "answer_length": 446,
+      "timestamp": "2026-01-21T20:09:25.079639"
+    }
+  ],
+  "api_info": {
+    "endpoint": "/api/chat",
+    "method": "POST",
+    "status_code": 200,
+    "response_time_ms": 5234.56
+  }
+}
+```
+
+**Response mezők:**
+- `final_answer` - Az LLM által generált válasz (idézésekkel: `[1. forrás]`, `[2. forrás]`)
+- `tools_used` - A munkafolyamatban felhasznált eszközök listája
+- `fallback_search` - Igaz, ha fallback keresésre volt szükség (kategória üres)
+- `memory_snapshot.routed_category` - Az LLM által választott kategória
+- `memory_snapshot.available_categories` - Az összes elérhető kategória
+- `rag_debug.retrieved` - A keresésből visszakapott chunkok teljes adataikkal
+  - `chunk_id` - Chunk azonosító
+  - `content` - A chunk teljes szövege (kattintható hivatkozásban megjelenik)
+  - `source_file` - Forrás dokumentum neve
+  - `section_title` - A dokumentumban szereplő szakasz/fejezet
+  - `distance` - Hasonlósági érték (0.0 = tökéletes, 1.0 = egyáltalán nem hasonló)
+  - `snippet` - Rövid előnézet szöveg
+  - `metadata` - Egyéb metaadatok
+- `debug_steps` - Munkafolyamat lépések lista (kategória-routing, embedding, keresés, válasz-generálás)
+- `api_info` - API call metaadatok (végpont, HTTP status, válaszidő milliszekundumban)
 
 ## 🔧 Fejlesztés
 

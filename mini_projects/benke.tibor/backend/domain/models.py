@@ -91,6 +91,15 @@ class ToolCall(BaseModel):
     error: Optional[str] = None
 
 
+class ProcessingStatus(str, Enum):
+    """LangGraph processing status for HTTP status code determination."""
+    SUCCESS = "success"  # HTTP 200 - All nodes completed successfully
+    PARTIAL_SUCCESS = "partial_success"  # HTTP 206 - Guardrail retry occurred but completed
+    RAG_UNAVAILABLE = "rag_unavailable"  # HTTP 503 - RAG failed, fallback to summary-only
+    GENERATION_FAILED = "generation_failed"  # HTTP 500 - LLM generation error
+    VALIDATION_FAILED = "validation_failed"  # HTTP 422 - Persistent validation errors after max retries
+
+
 class QueryResponse(BaseModel):
     """Structured agent response."""
     domain: DomainType
@@ -99,10 +108,17 @@ class QueryResponse(BaseModel):
     tools_used: List[ToolCall] = Field(default_factory=list)
     workflow: Optional[Dict[str, Any]] = None
     confidence: float = 1.0
+    # LangGraph state tracking
+    processing_status: ProcessingStatus = ProcessingStatus.SUCCESS
+    validation_errors: List[str] = Field(default_factory=list)
+    retry_count: int = 0
     # Telemetry fields (optional, for debug)
     rag_context: Optional[str] = None
     llm_prompt: Optional[str] = None
     llm_response: Optional[str] = None
+    llm_input_tokens: Optional[int] = 0
+    llm_output_tokens: Optional[int] = 0
+    llm_total_cost: Optional[float] = 0.0
 
     class Config:
         json_schema_extra = {

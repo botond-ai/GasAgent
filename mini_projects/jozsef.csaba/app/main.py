@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.routes import router
 from app.core.config import get_settings
 from app.core.dependencies import initialize_knowledge_base
+from app.services.scheduler import start_jira_polling, stop_jira_polling
 
 
 @asynccontextmanager
@@ -34,10 +35,17 @@ async def lifespan(app: FastAPI):
         print(f"Warning: Failed to initialize knowledge base: {e}")
         print("The application will start but may not function correctly")
 
+    # Start Jira polling if enabled
+    settings = get_settings()
+    if settings.jira_enabled:
+        print("Starting Jira polling scheduler...")
+        await start_jira_polling()
+
     yield
 
     # Shutdown
     print("Shutting down Customer Service Triage Agent...")
+    stop_jira_polling()
 
 
 def create_app() -> FastAPI:

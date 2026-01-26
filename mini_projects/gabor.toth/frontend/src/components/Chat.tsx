@@ -75,6 +75,31 @@ export const Chat: React.FC<ChatProps> = ({ userId, sessionId, onDebugInfo }) =>
       
       const response = await chatAPI.sendMessage(userId, sessionId, userMessage) as ChatResponse;
 
+      // Add API info (endpoint, status, response time)
+      if ((response as any).api_info) {
+        const apiInfo = (response as any).api_info;
+        addActivity(
+          `📡 API: ${apiInfo.endpoint} | Status: ${apiInfo.status_code} | ⏱️ ${apiInfo.response_time_ms}ms`,
+          'info'
+        );
+      }
+
+      // Add debug steps from workflow
+      if ((response as any).debug_steps && Array.isArray((response as any).debug_steps)) {
+        const debugSteps = (response as any).debug_steps;
+        for (const step of debugSteps) {
+          if (step.step === 'category_routing' && step.routed_category) {
+            addActivity(`✅ Kategória felismerés: ${step.routed_category}`, 'success');
+          } else if (step.step === 'embedding') {
+            addActivity(`✅ Kérdés embeddeolása`, 'success');
+          } else if (step.step === 'vector_search' && step.chunks_found !== undefined) {
+            addActivity(`✅ ${step.chunks_found} relevás dokumentum találva`, 'success');
+          } else if (step.step === 'answer_generation') {
+            addActivity(`✅ Válasz generálása`, 'success');
+          }
+        }
+      }
+
       // Build citation map for quick lookup
       const newCitationMap: Record<string, Citation> = {};
       if (response.rag_debug?.retrieved) {

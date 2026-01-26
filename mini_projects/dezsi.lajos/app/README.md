@@ -61,6 +61,13 @@ Run the entire application (frontend + backend) with a single command:
    uvicorn main:app --reload
    ```
 
+6. **Running Tests**:
+   We use `pytest` for unit testing. Mocks are used for Gemini API calls to avoid costs.
+   ```bash
+   # Make sure you are in the backend directory and venv is active
+   python -m pytest tests/
+   ```
+
 #### 2. Frontend Setup
 1. Navigate to `frontend`:
    ```bash

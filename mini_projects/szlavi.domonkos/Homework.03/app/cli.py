@@ -14,6 +14,7 @@ from .embeddings import EmbeddingService
 from .vector_store import VectorStore
 from .rag_agent import RAGAgent
 from .google_calendar import CalendarService
+from .tool_clients import GeolocationClient, WeatherClient, CryptoClient, ForexClient
 
 
 @dataclass
@@ -63,10 +64,18 @@ class CLI:
         vector_store: VectorStore,
         rag_agent: Optional[RAGAgent] = None,
         calendar_service: Optional[CalendarService] = None,
+        geolocation_client: Optional[GeolocationClient] = None,
+        weather_client: Optional[WeatherClient] = None,
+        crypto_client: Optional[CryptoClient] = None,
+        forex_client: Optional[ForexClient] = None,
     ) -> None:
         self.app = EmbeddingApp(emb_service, vector_store)
         self.rag_agent = rag_agent
         self.calendar_service = calendar_service
+        self.geolocation_client = geolocation_client
+        self.weather_client = weather_client
+        self.crypto_client = crypto_client
+        self.forex_client = forex_client
 
     def _print_intro(self) -> None:
         intro = (
@@ -75,7 +84,15 @@ class CLI:
             "Commands: '/mode hybrid|semantic|bm25', '/k N', '/alpha X', '/rag on|off'"
         )
         if self.calendar_service:
-            intro += "\nCalendar commands: '/calendar events', '/calendar today', '/calendar range START END'"
+            intro += "\nCalendar: '/calendar events', '/calendar today', '/calendar range START END'"
+        if self.geolocation_client:
+            intro += "\nGeo: '/geo IP_ADDRESS' (e.g., '/geo 8.8.8.8')"
+        if self.weather_client:
+            intro += "\nWeather: '/weather CITY'"
+        if self.crypto_client:
+            intro += "\nCrypto: '/crypto SYMBOL' (e.g., '/crypto bitcoin')"
+        if self.forex_client:
+            intro += "\nForex: '/forex BASE TARGET' (e.g., '/forex USD EUR')"
         print(textwrap.dedent(intro))
 
     def _print_results(self, uid: str, neighbors: List[Neighbor]) -> None:
@@ -120,6 +137,65 @@ class CLI:
             if event.get('description'):
                 desc = event.get('description')[:100]
                 print(f"    Description: {desc}...")
+
+    def _print_geolocation(self, location_data: dict) -> None:
+        """Print geolocation information."""
+        if not location_data:
+            print("Geolocation lookup failed.")
+            return
+
+        print(f"\n--- IP Geolocation ---")
+        print(f"IP Address: {location_data.get('ip')}")
+        print(f"Country: {location_data.get('country')}")
+        print(f"Region: {location_data.get('region')}")
+        print(f"City: {location_data.get('city')}")
+        print(f"Coordinates: {location_data.get('latitude')}, {location_data.get('longitude')}")
+        print(f"Timezone: {location_data.get('timezone')}")
+        if location_data.get('isp'):
+            print(f"ISP: {location_data.get('isp')}")
+        if location_data.get('organization'):
+            print(f"Organization: {location_data.get('organization')}")
+
+    def _print_weather(self, weather_data: dict) -> None:
+        """Print weather information."""
+        if not weather_data:
+            print("Weather lookup failed.")
+            return
+
+        print(f"\n--- Weather ---")
+        print(f"City: {weather_data.get('city')}, {weather_data.get('country')}")
+        print(f"Temperature: {weather_data.get('temperature')}°C")
+        print(f"Feels Like: {weather_data.get('feels_like')}°C")
+        print(f"Condition: {weather_data.get('description', 'N/A')}")
+        print(f"Humidity: {weather_data.get('humidity')}%")
+        print(f"Wind Speed: {weather_data.get('wind_speed')} m/s")
+        print(f"Clouds: {weather_data.get('clouds')}%")
+        print(f"Timestamp: {weather_data.get('timestamp')}")
+
+    def _print_crypto_price(self, crypto_data: dict) -> None:
+        """Print cryptocurrency price information."""
+        if not crypto_data:
+            print("Crypto price lookup failed.")
+            return
+
+        print(f"\n--- {crypto_data.get('symbol').upper()} Price ---")
+        print(f"Price: {crypto_data.get('price')} {crypto_data.get('currency').upper()}")
+        print(f"24h Change: {crypto_data.get('change_24h')}%")
+        print(f"Market Cap: {crypto_data.get('market_cap')} {crypto_data.get('currency').upper()}")
+        print(f"24h Volume: {crypto_data.get('volume_24h')} {crypto_data.get('currency').upper()}")
+        print(f"Updated: {crypto_data.get('timestamp')}")
+
+    def _print_forex_rate(self, forex_data: dict) -> None:
+        """Print exchange rate information."""
+        if not forex_data:
+            print("Exchange rate lookup failed.")
+            return
+
+        print(f"\n--- Exchange Rate ---")
+        print(f"{forex_data.get('base')} → {forex_data.get('target')}")
+        print(f"Rate: 1 {forex_data.get('base')} = {forex_data.get('rate')} {forex_data.get('target')}")
+        print(f"Date: {forex_data.get('timestamp')}")
+
 
     def run(self) -> None:
         self._print_intro()
@@ -211,6 +287,63 @@ class CLI:
                         print("Calendar commands: /calendar events, /calendar today, /calendar range START END")
                 except Exception as exc:
                     print(f"Calendar error: {exc}")
+                continue
+
+            if text.startswith("/geo "):
+                if not self.geolocation_client:
+                    print("Geolocation service not available")
+                    continue
+
+                try:
+                    ip_address = text.split(maxsplit=1)[1].strip()
+                    location_data = self.geolocation_client.get_location_from_ip(ip_address)
+                    self._print_geolocation(location_data)
+                except Exception as exc:
+                    print(f"Geolocation error: {exc}")
+                continue
+
+            if text.startswith("/weather "):
+                if not self.weather_client:
+                    print("Weather service not available")
+                    continue
+
+                try:
+                    city = text.split(maxsplit=1)[1].strip()
+                    weather_data = self.weather_client.get_weather(city)
+                    self._print_weather(weather_data)
+                except Exception as exc:
+                    print(f"Weather error: {exc}")
+                continue
+
+            if text.startswith("/crypto "):
+                if not self.crypto_client:
+                    print("Crypto service not available")
+                    continue
+
+                try:
+                    symbol = text.split(maxsplit=1)[1].strip()
+                    crypto_data = self.crypto_client.get_crypto_price(symbol)
+                    self._print_crypto_price(crypto_data)
+                except Exception as exc:
+                    print(f"Crypto error: {exc}")
+                continue
+
+            if text.startswith("/forex "):
+                if not self.forex_client:
+                    print("Forex service not available")
+                    continue
+
+                try:
+                    parts = text.split(maxsplit=2)
+                    if len(parts) >= 3:
+                        base = parts[1].strip()
+                        target = parts[2].strip()
+                        forex_data = self.forex_client.get_exchange_rate(base, target)
+                        self._print_forex_rate(forex_data)
+                    else:
+                        print("Usage: /forex BASE TARGET (e.g., /forex USD EUR)")
+                except Exception as exc:
+                    print(f"Forex error: {exc}")
                 continue
 
             uid, neighbors = self.app.process_query(text, k=k, mode=mode, alpha=alpha)
