@@ -136,6 +136,32 @@ services:
       - ./grafana/provisioning:/etc/grafana/provisioning
     depends_on:
       - prometheus
+      - loki
+    networks:
+      - knowledge_network
+
+  loki:
+    image: grafana/loki:latest
+    container_name: knowledgerouter_loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki-config.yml:/etc/loki/local-config.yaml
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - knowledge_network
+
+  promtail:
+    image: grafana/promtail:latest
+    container_name: knowledgerouter_promtail
+    volumes:
+      - ./promtail-config.yml:/etc/promtail/config.yml
+      - /var/log:/var/log
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
     networks:
       - knowledge_network
 
@@ -145,6 +171,7 @@ volumes:
   postgres_data:
   prometheus_data:
   grafana_data:
+  loki_data:
 
 networks:
   knowledge_network:
