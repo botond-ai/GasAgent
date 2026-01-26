@@ -6,14 +6,18 @@ implementation that persists embeddings on disk.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, TYPE_CHECKING
 import uuid
 import logging
+import time
 
 import chromadb
 from chromadb.config import Settings
 from rank_bm25 import BM25Okapi
 import math
+
+if TYPE_CHECKING:
+    from .metrics import MetricsMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -37,10 +41,16 @@ class VectorStore(ABC):
 
 
 class ChromaVectorStore(VectorStore):
-    def __init__(self, persist_dir: str = "./chroma_db", collection_name: str = "prompts") -> None:
+    def __init__(
+        self,
+        persist_dir: str = "./chroma_db",
+        collection_name: str = "prompts",
+        metrics_middleware: Optional[MetricsMiddleware] = None,
+    ) -> None:
         settings = Settings(chroma_db_impl="duckdb+parquet", persist_directory=persist_dir)
         self.client = chromadb.Client(settings)
         self.collection = self.client.get_or_create_collection(name=collection_name)
+        self.metrics_middleware = metrics_middleware
         # Load existing documents for BM25 and keep tokenized docs for incremental updates
         self._ids: List[str] = []
         self._docs: List[str] = []
@@ -90,6 +100,8 @@ class ChromaVectorStore(VectorStore):
     def similarity_search(self, embedding: List[float], k: int = 3) -> List[Tuple[str, float, str]]:
         if not embedding:
             return []
+        
+        start_time = time.time()
         try:
             result = self.collection.query(query_embeddings=[embedding], n_results=k, include=["documents", "distances", "ids"])
             docs = result.get("documents", [[]])[0]
@@ -100,9 +112,29 @@ class ChromaVectorStore(VectorStore):
             for ident, dist, doc in zip(ids, distances, docs):
                 hits.append((ident, float(dist), doc))
 
+            # Record vector DB load metric
+            if self.metrics_middleware:
+                latency_ms = (time.time() - start_time) * 1000
+                self.metrics_middleware.record_vector_db_load(
+                    documents_loaded=len(hits),
+                    latency_ms=latency_ms,
+                    success=True,
+                )
+
             return hits
         except Exception as exc:
             logger.error("Chroma similarity search failed: %s", exc)
+            
+            # Record failed vector DB load metric
+            if self.metrics_middleware:
+                latency_ms = (time.time() - start_time) * 1000
+                self.metrics_middleware.record_vector_db_load(
+                    documents_loaded=0,
+                    latency_ms=latency_ms,
+                    success=False,
+                    error_message=str(exc),
+                )
+            
             return []
 
     def hybrid_search(self, embedding: List[float], query_text: str, k: int = 3, alpha: float = 0.5) -> List[Tuple[str, float, str]]:
@@ -115,6 +147,7 @@ class ChromaVectorStore(VectorStore):
         if not self._docs:
             return []
 
+        start_time = time.time()
         try:
             # Get semantic distances for all docs
             total_docs = len(self._ids)
@@ -160,7 +193,29 @@ class ChromaVectorStore(VectorStore):
 
             # Sort by combined score descending
             combined_list.sort(key=lambda x: x[1], reverse=True)
-            return combined_list[:k]
+            result = combined_list[:k]
+            
+            # Record vector DB load metric
+            if self.metrics_middleware:
+                latency_ms = (time.time() - start_time) * 1000
+                self.metrics_middleware.record_vector_db_load(
+                    documents_loaded=len(result),
+                    latency_ms=latency_ms,
+                    success=True,
+                )
+            
+            return result
         except Exception as exc:
             logger.error("Hybrid search failed: %s", exc)
+            
+            # Record failed vector DB load metric
+            if self.metrics_middleware:
+                latency_ms = (time.time() - start_time) * 1000
+                self.metrics_middleware.record_vector_db_load(
+                    documents_loaded=0,
+                    latency_ms=latency_ms,
+                    success=False,
+                    error_message=str(exc),
+                )
+            
             return []

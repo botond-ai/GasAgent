@@ -5,7 +5,10 @@ AI Meeting Assistant app 2.0 that creates OpenAI embeddings for company meeting 
 - Batch mode (default when a `data/` directory exists): reads `.md`/`.txt` files from `./data`, embeds and indexes them, and prints nearest neighbors (and optionally generated responses) for each file.
 - Interactive mode: when no `data/` folder is present, the app starts an interactive prompt where you can enter free-text queries which are embedded, stored, searched and optionally augmented with LLM responses.
 
-**NEW in Homework.04:** Multi-step agent orchestration using **LangGraph** with intelligent tool routing, RAG-informed planning, and automated meeting summarization. The app integrates the Google Calendar API, IP Geolocation service, and Vector Database for comprehensive multi-tool workflows.
+**NEW in Homework.04:** 
+- Multi-step agent orchestration using **LangGraph** with intelligent tool routing, RAG-informed planning, and automated meeting summarization
+- **AI Metrics Monitoring** — tracks inference count, tokens (in/out), cost in USD, and latency (p95/p50/mean) following SOLID principles
+- Integration with Google Calendar API, IP Geolocation service, and Vector Database for comprehensive multi-tool workflows
 
 Quick overview
 - Language: Python 3.11+
@@ -14,18 +17,21 @@ Quick overview
 - CLI: interactive terminal loop and batch `data/` processing
 - **NEW:** LangGraph multi-step agent orchestration with tool routing
 - **NEW:** RAG-informed execution planning and meeting summarization
+- **NEW:** AI Metrics Monitoring with comprehensive tracking
 - **NEW:** Integration with Google Calendar and IP Geolocation services
 
 Files
 - `app/config.py` — loads `.env` and exposes typed configuration
-- `app/embeddings.py` — `EmbeddingService` abstraction and `OpenAIEmbeddingService` implementation
+- `app/embeddings.py` — `EmbeddingService` abstraction and `OpenAIEmbeddingService` implementation with metrics integration
 - `app/vector_store.py` — `VectorStore` abstraction and `ChromaVectorStore` implementation (semantic + hybrid search)
-- `app/rag_agent.py` — `RAGAgent` LLM response generation using retrieved documents
+- `app/rag_agent.py` — `RAGAgent` LLM response generation using retrieved documents with metrics integration
 - `app/langgraph_workflow.py` — **NEW** `MeetingAssistantWorkflow` with 7-node LangGraph orchestration
-- `app/cli.py` — `EmbeddingApp` orchestration, interactive CLI and `process_directory` for batch processing, integrated with RAG and LangGraph
+- `app/metrics.py` — **NEW** AI Metrics Monitoring module with SOLID principles (pricing calculator, collectors, middleware)
+- `app/cli.py` — `EmbeddingApp` orchestration, interactive CLI and `process_directory` for batch processing, integrated with RAG, LangGraph, and Metrics
 - `app/main.py` — application entrypoint wiring dependencies and auto-detecting `data/` folder
 - `requirements.txt` — Python dependencies
 - `.env.example` — example environment variables
+- `docs/METRICS.md` — **NEW** comprehensive metrics monitoring documentation
 
 
 Getting started
@@ -297,6 +303,407 @@ IP_GEOLOCATION_TIMEOUT=10                # Request timeout in seconds
 - Private/internal IP addresses (10.x.x.x, 192.168.x.x, 172.16.x.x) may not resolve
 - Accuracy varies depending on the geolocation data provider
 - Consider caching results locally to reduce API usage and improve response times
+
+AI Metrics Monitoring (Homework.04 NEW)
+---------------------------------------
+
+**NEW FEATURE:** Comprehensive AI metrics monitoring system that tracks API usage, costs, and performance metrics following SOLID design principles.
+
+### Overview
+
+The Metrics Monitoring module automatically tracks:
+- **Inference Count**: Total number of API calls
+- **Tokens In/Out**: Total input and output tokens
+- **Cost in USD**: Total cost based on real OpenAI pricing
+- **Latency p95/p50/mean**: Request latency percentiles
+
+### Architecture
+
+The metrics system follows SOLID principles:
+
+**Components:**
+- `MetricCollector` (ABC) — Interface for metric collection
+- `InMemoryMetricsCollector` — In-memory storage with JSON export/import
+- `OpenAIPricingCalculator` — Accurate cost calculation for all OpenAI models
+- `MetricsMiddleware` — Wrapper for automatic metric recording
+- `APICallMetric` — Dataclass for individual metric data
+
+**Supported Models:**
+
+*Embeddings:*
+- `text-embedding-3-small`: $0.02 per 1M tokens
+- `text-embedding-3-large`: $0.13 per 1M tokens
+
+*LLMs:*
+- `gpt-4o-mini`: $0.15 in / $0.60 out per 1M tokens
+- `gpt-4o`: $2.5 in / $10.0 out per 1M tokens
+- `gpt-4-turbo`: $10.0 in / $30.0 out per 1M tokens
+- `gpt-3.5-turbo`: $0.50 in / $1.50 out per 1M tokens
+
+*Vector Database:*
+- `vector_db_load`: Free (no per-operation cost)
+  - Tracks: Documents retrieved, latency, search operation type (semantic/BM25/hybrid)
+
+### Interactive Usage
+
+Use these commands in interactive mode:
+
+```bash
+# Display metrics summary
+/metrics
+
+# Export metrics to JSON file (./metrics_export.json)
+/metrics export
+```
+
+### Example Output
+
+```
+--- AI Metrics Summary ---
+Total Inferences: 52
+Total Tokens In: 15,234
+Total Tokens Out: 8,567
+Total Cost: $0.024700
+
+Latency Statistics (milliseconds):
+  p95: 125.30ms
+  p50 (median): 68.50ms
+  Mean: 72.10ms
+
+Breakdown by Operation:
+  embedding:
+    Calls: 32
+    Tokens In: 12,500
+    Tokens Out: 0
+    Cost: $0.000250
+    Latency p95: 52.10ms
+
+  llm_completion:
+    Calls: 10
+    Tokens In: 2,734
+    Tokens Out: 8,567
+    Cost: $0.024450
+    Latency p95: 98.50ms
+
+  vector_db_load:
+    Calls: 10
+    Documents Retrieved: 127
+    Cost: $0.000000
+    Latency p95: 35.20ms
+
+Breakdown by Model:
+  text-embedding-3-small:
+    Calls: 32
+    Cost: $0.000250
+    Latency p95: 52.10ms
+
+  gpt-4o-mini:
+    Calls: 10
+    Cost: $0.024450
+    Latency p95: 98.50ms
+
+  vector_db:
+    Calls: 10
+    Latency p95: 35.20ms
+```
+
+### JSON Export Format
+
+Exported metrics include:
+- Individual call records with all metrics
+- Aggregated summary statistics
+- Breakdown by operation type and model
+- Complete audit trail for cost analysis
+
+**Example:**
+```json
+{
+  "timestamp": "2026-01-25T13:45:00",
+  "total_calls": 42,
+  "calls": [
+    {
+      "timestamp": "2026-01-25T13:40:15",
+      "model": "text-embedding-3-small",
+      "tokens_in": 250,
+      "tokens_out": 0,
+      "latency_ms": 45.3,
+      "cost_usd": 0.0000063,
+      "operation_type": "embedding",
+      "success": true
+    },
+    ...
+  ],
+  "summary": {
+    "total_inferences": 42,
+    "total_tokens_in": 15234,
+    "total_tokens_out": 8567,
+    "total_cost_usd": 0.024700,
+    "latency_p95_ms": 125.30,
+    "latency_p50_ms": 68.50,
+    "latency_mean_ms": 72.10,
+    "by_operation": {...},
+    "by_model": {...}
+  }
+}
+```
+
+### Testing
+
+Comprehensive test suite with 29 tests covering:
+- Metric collection and aggregation
+- Cost calculation for all supported models
+- Latency percentile calculations (p95, p50, mean)
+- Error rate tracking across all operation types
+- Agent execution latency measurement
+- JSON export/import functionality
+- Vector DB load metrics tracking
+- Integration with embedding and LLM services
+
+```bash
+# Run all metrics tests
+pytest tests/test_metrics.py -v
+
+# Run specific test class
+pytest tests/test_metrics.py::TestErrorRateMetrics -v
+
+# Run agent execution tests
+pytest tests/test_metrics.py::TestMetricsMiddleware::test_record_agent_execution -v
+
+# With coverage
+pytest tests/test_metrics.py --cov=app.metrics
+```
+
+### Error Rate Metric
+
+**NEW FEATURE:** Automatic tracking of operation success/failure rates.
+
+The error rate metric monitors the percentage of failed API calls and operations:
+- **Formula**: `(failed_calls / total_calls) × 100`
+- **Range**: 0-100%
+- **Tracked For**: All operation types (embedding, LLM, vector DB, agent execution)
+
+**Example:**
+```python
+# Record successful operation
+middleware.record_embedding_call(
+    model="text-embedding-3-small",
+    tokens_in=100,
+    latency_ms=50.0,
+    success=True  # Mark as successful
+)
+
+# Record failed operation
+middleware.record_embedding_call(
+    model="text-embedding-3-small",
+    tokens_in=100,
+    latency_ms=102.5,
+    success=False,  # Mark as failed
+    error_message="API rate limit exceeded"
+)
+
+# View error metrics
+summary = collector.get_summary()
+print(f"Error Rate: {summary.error_rate:.2f}%")  # e.g., 50.0%
+print(f"Total Errors: {summary.total_errors}")    # e.g., 1
+```
+
+**Use Cases:**
+- System reliability monitoring and alerting
+- Detecting API degradation or service issues
+- Tracking failure patterns by operation type
+- SLA compliance verification
+
+### Agent Execution Latency Metric
+
+**NEW FEATURE:** Automatic tracking of complete agent workflow execution time.
+
+Agent execution latency measures the time from agent start to completion:
+- **Statistics**: p95, p50 (median), mean
+- **Unit**: Milliseconds
+- **Granularity**: Per workflow execution
+- **Includes**: Both successful and failed executions
+
+**Example:**
+```python
+import time
+
+# Measure agent execution
+start_time = time.time()
+result = agent.execute(request)
+latency_ms = (time.time() - start_time) * 1000
+
+# Record the execution
+middleware.record_agent_execution(
+    latency_ms=latency_ms,
+    success=True,  # or False if execution failed
+    error_message=None  # Include if failed
+)
+
+# View agent latency metrics
+summary = collector.get_summary()
+print(f"Agent p95 Latency: {summary.agent_execution_latency_p95_ms:.0f}ms")
+print(f"Agent Mean Latency: {summary.agent_execution_latency_mean_ms:.0f}ms")
+
+# Detailed breakdown
+if "agent_execution" in summary.by_operation:
+    agent_stats = summary.by_operation["agent_execution"]
+    print(f"Total Executions: {agent_stats['count']}")
+    print(f"p95 Latency: {agent_stats['latency_p95_ms']:.0f}ms")
+```
+
+**Use Cases:**
+- Workflow performance monitoring
+- Identifying performance bottlenecks
+- SLA tracking and compliance
+- Workflow optimization insights
+
+### Complete Metrics Example Output
+
+```
+--- AI Metrics Summary ---
+Total Inferences: 52
+Total Tokens In: 15,234
+Total Tokens Out: 8,567
+Total Cost: $0.024700
+
+Error Rate: 3.85% (2 errors)
+
+Latency Statistics (milliseconds):
+  p95: 125.30ms
+  p50 (median): 68.50ms
+  Mean: 72.10ms
+
+Agent Execution Latency (milliseconds):
+  p95: 1500.00ms
+  Mean: 1200.00ms
+
+Breakdown by Operation:
+  embedding:
+    Calls: 32
+    Tokens In: 12,500
+    Tokens Out: 0
+    Cost: $0.000250
+    Latency p95: 52.10ms
+
+  llm_completion:
+    Calls: 10
+    Tokens In: 2,734
+    Tokens Out: 8,567
+    Cost: $0.024450
+    Latency p95: 98.50ms
+
+  vector_db_load:
+    Calls: 10
+    Documents Retrieved: 127
+    Cost: $0.000000
+    Latency p95: 35.20ms
+
+  agent_execution:
+    Calls: 5
+    Latency p95: 1500.00ms
+
+Breakdown by Model:
+  text-embedding-3-small:
+    Calls: 32
+    Cost: $0.000250
+    Latency p95: 52.10ms
+
+  gpt-4o-mini:
+    Calls: 10
+    Cost: $0.024450
+    Latency p95: 98.50ms
+
+  vector_db:
+    Calls: 10
+    Latency p95: 35.20ms
+
+  agent:
+    Calls: 5
+    Latency p95: 1500.00ms
+```
+
+### JSON Export Format
+
+Exported metrics include:
+- Individual call records with success/failure status and error messages
+- Error rate and count across all operations
+- Agent execution latency statistics
+- Aggregated summary statistics
+- Breakdown by operation type and model
+- Complete audit trail for cost analysis and troubleshooting
+
+**Example:**
+```json
+{
+  "timestamp": "2026-01-25T13:45:00",
+  "total_calls": 52,
+  "calls": [
+    {
+      "timestamp": "2026-01-25T13:40:15",
+      "model": "text-embedding-3-small",
+      "tokens_in": 250,
+      "tokens_out": 0,
+      "latency_ms": 45.3,
+      "cost_usd": 0.0000063,
+      "operation_type": "embedding",
+      "success": true
+    },
+    {
+      "timestamp": "2026-01-25T13:40:30",
+      "model": "text-embedding-3-small",
+      "tokens_in": 150,
+      "tokens_out": 0,
+      "latency_ms": 102.5,
+      "cost_usd": 0.0000038,
+      "operation_type": "embedding",
+      "success": false,
+      "error_message": "API rate limit exceeded"
+    },
+    {
+      "timestamp": "2026-01-25T13:42:00",
+      "model": "agent",
+      "tokens_in": 0,
+      "tokens_out": 0,
+      "latency_ms": 1500.0,
+      "cost_usd": 0.0,
+      "operation_type": "agent_execution",
+      "success": true
+    }
+  ],
+  "summary": {
+    "total_inferences": 52,
+    "total_tokens_in": 15234,
+    "total_tokens_out": 8567,
+    "total_cost_usd": 0.024700,
+    "latency_p95_ms": 125.30,
+    "latency_p50_ms": 68.50,
+    "latency_mean_ms": 72.10,
+    "error_rate": 3.85,
+    "total_errors": 2,
+    "agent_execution_latency_p95_ms": 1500.0,
+    "agent_execution_latency_mean_ms": 1200.0,
+    "by_operation": {...},
+    "by_model": {...}
+  }
+}
+```
+
+### Documentation
+
+For detailed metrics documentation, see:
+
+- **[docs/METRICS.md](docs/METRICS.md)** — Complete metrics architecture and reference
+- **[ERROR_RATE_AND_AGENT_LATENCY_METRICS.md](ERROR_RATE_AND_AGENT_LATENCY_METRICS.md)** — Error rate and agent latency detailed guide
+- **[QUICK_REFERENCE.md](QUICK_REFERENCE.md)** — Quick start and common patterns
+- **[ENHANCEMENT_SUMMARY.md](ENHANCEMENT_SUMMARY.md)** — Implementation summary
+
+**Documentation covers:**
+- Architecture and SOLID principles
+- API reference with code examples
+- Integration patterns and usage
+- Performance benchmarks
+- Monitoring and alerting strategies
+- Troubleshooting and error handling
 
 LangGraph Multi-Step Agent Workflow
 ------------------------------------
