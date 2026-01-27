@@ -15,16 +15,26 @@ SupportAI is a production-grade customer support platform that automatically:
 ## 🏗️ Architecture
 
 ```
-┌─────────────┐     ┌──────────────┐     ┌─────────────┐
-│   React UI  │────▶│  FastAPI     │────▶│  LangGraph  │
-│  (Vite)     │◀────│  Backend     │◀────│  Workflow   │
-└─────────────┘     └──────────────┘     └─────────────┘
-                           │                      │
-                           ▼                      ▼
-                    ┌─────────────┐        ┌──────────┐
-                    │   Qdrant    │        │  Redis   │
-                    │  (Vectors)  │        │ (Cache)  │
-                    └─────────────┘        └──────────┘
+┌─────────────────────┐     ┌──────────────┐     ┌────────────────────────────────┐
+│   React UI          │────▶│  FastAPI     │────▶│  LangGraph State Machine        │
+│  (Vite)             │◀────│  Backend     │◀────│  (Async LLM Nodes)             │
+└─────────────────────┘     └──────────────┘     └────────────────────────────────┘
+                                   │                           │
+                                   ▼                           ▼
+                           ┌──────────────────┐      ┌──────────────────────┐
+                           │  Services Layer  │      │  External APIs       │
+                           ├──────────────────┤      ├──────────────────────┤
+                           │ RAG Service      │      │ OpenAI (Embeddings,  │
+                           │ Cohere API       │      │ LLM)                 │
+                           │ FleetDM API      │      │ Cohere (Reranker)    │
+                           └──────────────────┘      │ FleetDM Device Info  │
+                                   │                 └──────────────────────┘
+        ┌────────────────────────┬─┴────────────────────────┐
+        ▼                        ▼                          ▼
+   ┌─────────────┐          ┌─────────────┐          ┌──────────┐
+   │   Qdrant    │          │    Redis    │          │ OpenAI   │
+   │  (Vectors)  │          │   (Cache)   │          │   API    │
+   └─────────────┘          └─────────────┘          └──────────┘
 ```
 
 ## 🚀 Quick Start
@@ -75,36 +85,50 @@ curl http://localhost:8000/health
 ## 📦 Project Structure
 
 ```
-supai4/
+supai5/
 ├── backend/
 │   ├── app/
-│   │   ├── api/              # FastAPI routers
+│   │   ├── api/              # FastAPI routers (/api/tickets, /health)
 │   │   ├── core/             # Configuration & logging
-│   │   ├── models/           # Pydantic schemas
-│   │   ├── services/         # Qdrant, Redis, RAG
-│   │   ├── workflows/        # LangGraph nodes & graph
+│   │   ├── infrastructure/    # External API clients (Cohere, FleetDM)
+│   │   ├── models/           # Pydantic schemas & response models
+│   │   ├── prompts/          # LLM prompt templates
+│   │   ├── services/         # RAG, Qdrant, Redis services
+│   │   ├── workflows/        # LangGraph nodes & state graph
+│   │   │   ├── graph.py      # Workflow definition & routing
+│   │   │   └── nodes.py      # LLM nodes & service nodes
 │   │   └── main.py           # Application entry point
-│   ├── tests/                # pytest tests
+│   ├── tests/                # pytest test suite
+│   ├── data/                 # Runtime data (logs, caches)
+│   ├── pytest.ini            # Pytest configuration
 │   └── requirements.txt      # Python dependencies
 │
 ├── frontend/
 │   ├── src/
-│   │   ├── api/              # API client
-│   │   ├── components/       # React components
+│   │   ├── api/              # API client hooks
+│   │   ├── components/       # React components (Chat, Ticket, etc)
 │   │   ├── hooks/            # Custom React hooks
+│   │   ├── pages/            # Page components
 │   │   ├── styles/           # CSS stylesheets
-│   │   ├── types/            # TypeScript types
-│   │   ├── App.tsx           # Main component
-│   │   └── main.tsx          # Entry point
+│   │   ├── types/            # TypeScript types & interfaces
+│   │   ├── App.tsx           # Main app component
+│   │   └── main.tsx          # React entry point
+│   ├── index.html            # HTML template
 │   ├── package.json          # Node dependencies
-│   └── vite.config.ts        # Vite configuration
+│   ├── tsconfig.json         # TypeScript configuration
+│   ├── vite.config.ts        # Vite build configuration
+│   └── vite-env.d.ts         # Vite type definitions
 │
 ├── docker/
-│   ├── Dockerfile.backend    # Backend container
-│   └── Dockerfile.frontend   # Frontend container
+│   ├── Dockerfile.backend    # Backend container image
+│   └── Dockerfile.frontend   # Frontend container image
 │
+├── fleetapi/                 # FleetDM integration utilities
 ├── docker-compose.yml        # Service orchestration
-└── .env.example              # Environment template
+├── .env.example              # Environment template
+└── data/                     # Persistent data storage
+    ├── sessions/             # Conversation history (JSON)
+    └── files/                # Agent-generated files
 ```
 
 ## 🔧 Technology Stack
@@ -133,39 +157,95 @@ supai4/
 
 ## 🔄 LangGraph Workflow
 
+The workflow processes support tickets through 11 nodes with conditional routing:
+
 ```
-┌──────────────┐
-│ detect_intent│
-└──────┬───────┘
-       ▼
-┌──────────────────┐
-│ triage_classify  │
-└──────┬───────────┘
-       ▼
-┌──────────────────┐
-│ expand_queries   │
-└──────┬───────────┘
-       ▼
-┌──────────────────┐
-│ search_rag       │
-└──────┬───────────┘
-       ▼
-┌──────────────────┐
-│ rerank_docs      │
-└──────┬───────────┘
-       ▼
-┌──────────────────┐
-│ draft_answer     │
-└──────┬───────────┘
-       ▼
-┌──────────────────┐
-│ check_policy     │
-└──────┬───────────┘
-       ▼
-┌──────────────────┐
-│ validate_output  │
-└──────────────────┘
+                    ┌──────────────────────────┐
+                    │ detect_intent            │  (Intent & sentiment)
+                    └──────────────┬───────────┘
+                                   ▼
+                    ┌──────────────────────────┐
+                    │ triage_classify          │  (Category, priority, SLA)
+                    └──────────────┬───────────┘
+                                   ▼
+                    ┌──────────────────────────────────────┐
+                    │ should_lookup_device? (conditional)  │
+                    └─────────┬──────────────────────┬─────┘
+              Yes (technical) │                      │ No
+                              ▼                      ▼
+                   ┌────────────────────┐  ┌──────────────────┐
+                   │ fleet_lookup       │  │ expand_queries   │
+                   │ (FleetDM Device)   │  │ (Generate search)│
+                   └──────────┬─────────┘  └────────┬─────────┘
+                              │                     │
+                              └──────────┬──────────┘
+                                         ▼
+                    ┌──────────────────────────┐
+                    │ expand_queries           │  (Generate queries)
+                    └──────────────┬───────────┘
+                                   ▼
+                    ┌──────────────────────────┐
+                    │ search_rag               │  (Vector + BM25 search)
+                    └──────────────┬───────────┘
+                                   ▼
+                    ┌──────────────────────────┐
+                    │ rerank_docs              │  (Cohere reranker)
+                    └──────────────┬───────────┘
+                                   ▼
+                    ┌──────────────────────────────┐
+                    │ check_rag_results? (cond.)  │
+                    └─────────┬──────────────┬─────┘
+                   Has docs  │              │ No docs
+                             ▼              ▼
+                   ┌──────────────────┐  ┌────────────────────┐
+                   │ draft_answer     │  │ fallback_answer    │
+                   │ (RAG-based)      │  │ (Generic response) │
+                   └────────┬─────────┘  └──────────┬─────────┘
+                            │                       │
+                            └──────────┬────────────┘
+                                       ▼
+                    ┌──────────────────────────┐
+                    │ check_policy             │  (Compliance validation)
+                    └──────────────┬───────────┘
+                                   ▼
+                    ┌──────────────────────────┐
+                    │ validate_output          │  (Schema validation)
+                    └──────────────┬───────────┘
+                                   ▼
+                                ┌──────┐
+                                │ END  │
+                                └──────┘
+
+                    ┌──────────────────────────┐
+                    │ handle_error (error path)│  (Error recovery)
+                    └──────────────┬───────────┘
+                                   ▼
+                                ┌──────┐
+                                │ END  │
+                                └──────┘
 ```
+
+### Node Implementation Details
+
+| Node | Type | LLM Call | Purpose |
+|------|------|----------|---------|
+| `detect_intent` | LLM Node | ✓ | Structured output (problem_type, sentiment) |
+| `triage_classify` | LLM Node | ✓ | Structured output (category, priority, SLA, team) |
+| `fleet_lookup` | Service Node | - | Call FleetDM API for device context |
+| `expand_queries` | LLM Node | ✓ | Generate 3-5 search queries |
+| `search_rag` | Service Node | - | Qdrant vector + BM25 hybrid search |
+| `rerank_docs` | Service Node | - | Cohere reranking of retrieved documents |
+| `draft_answer` | LLM Node | ✓ | RAG-based answer with citations |
+| `fallback_answer` | LLM Node | ✓ | Generic response when no RAG results |
+| `check_policy` | LLM Node | ✓ | Policy compliance validation (structured output) |
+| `validate_output` | Service Node | - | JSON schema validation |
+| `handle_error` | Service Node | - | Generate error response |
+
+**Key Features:**
+- **Conditional Routing:** FleetDM lookup only for technical issues
+- **RAG Fallback:** If no documents found, uses fallback answer generator
+- **Error Handling:** Separate error path with recovery mechanism
+- **Structured Outputs:** LLM nodes use Pydantic models for consistent responses
 
 ## 🔑 API Endpoints
 
@@ -310,4 +390,4 @@ This is an internal project. For questions or issues, contact the development te
 ---
 
 **Version:** 2.0.0
-**Last Updated:** 2026-01-22
+**Last Updated:** 2026-01-27
