@@ -20,6 +20,8 @@ from typing import Dict, Any, List
 from fastapi import FastAPI, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic_settings import BaseSettings
+from prometheus_client import make_asgi_app
+from observability.metrics import registry, init_metrics
 
 from domain.models import ChatRequest, ChatResponse, ProfileUpdateRequest
 from domain.interfaces import IUserRepository, IConversationRepository
@@ -111,6 +113,9 @@ async def lifespan(app: FastAPI):
     logger.info("Application shutting down...")
 
 
+# Initialize metrics with environment and version
+init_metrics(environment=os.environ.get("ENVIRONMENT", "dev"), version=os.environ.get("APP_VERSION", "1.1.0"))
+
 # Create FastAPI app
 app = FastAPI(
     title="AI Agent Demo (Regulation RAG + Radio tools)",
@@ -118,6 +123,10 @@ app = FastAPI(
     version="1.1.0",
     lifespan=lifespan
 )
+
+# Mount Prometheus metrics endpoint
+metrics_app = make_asgi_app(registry=registry)
+app.mount("/metrics", metrics_app)
 
 # Configure CORS
 app.add_middleware(

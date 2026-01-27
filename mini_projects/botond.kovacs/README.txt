@@ -1,6 +1,7 @@
 
 # AI Agent Demo - LangGraph + FastAPI + React + MCP
 
+A complete working example demonstrating an AI Agent workflow with a Python backend (FastAPI + LangGraph), React frontend, and MCP (Model Context Protocol) server integration.
 
 ## 🔥 Key Capabilities
 
@@ -40,17 +41,7 @@ The agent uses **LangGraph** for orchestration, **OpenAI GPT-4** for reasoning, 
 
 ## ✨ Key Features
 
-### Advanced Orchestration
-
-- **Plan-and-Execute Workflow**: The agent now uses a planner-executor architecture:
-  - **PlannerNode**: Generates structured execution plans in JSON format.
-  - **ExecutorLoop**: Iterates over planned steps, routes tasks, and handles retries.
-- **Parallel Execution**: Supports fan-out and fan-in patterns for concurrent task execution.
-- **Dynamic Routing**: Decides at runtime which nodes/tools to execute, with explainable decisions.
-- **Aggregation and Reducers**: Safely merges results from parallel nodes using reusable reducers.
-
 ### Agent Capabilities
-
 - **LangGraph-based orchestration**: StateGraph with conditional edges for agent reasoning and tool execution
 - **Regulation RAG**: Query the 2008. évi LX. Gáztörvény using FAISS vectorstore with OpenAI embeddings
 - **Gas Export Tool**: Query exported gas quantities from Transparency.host (ENTSOG) API
@@ -60,7 +51,6 @@ The agent uses **LangGraph** for orchestration, **OpenAI GPT-4** for reasoning, 
 - **Iteration control**: MAX_ITERATIONS limit prevents infinite loops in multi-step workflows
 
 ### Persistence
-
 - ✅ **All conversation messages** persisted to JSON files in `data/sessions/`
 - ✅ **User profiles** stored separately in `data/users/` (never deleted)
 - ✅ **Reset context** command: Clears conversation but preserves profile
@@ -68,7 +58,6 @@ The agent uses **LangGraph** for orchestration, **OpenAI GPT-4** for reasoning, 
 - ✅ **Pydantic validation**: All data models validated on read/write
 
 ### Architecture
-
 - 🏗️ **SOLID principles** applied throughout
 - 📦 **Clean architecture**: Domain → Services → Infrastructure → API layers
 - 🔌 **Dependency Inversion**: Abstract interfaces for all external dependencies
@@ -129,65 +118,6 @@ The agent uses a **StateGraph** with the following structure:
 - **Tool execution loop**: Agent can call multiple tools sequentially
 - **Iteration limit**: MAX_ITERATIONS = 10 prevents infinite loops
 - **State management**: AgentState tracks messages, memory, tools_called, and iteration_count
-
-## 🛠️ Examples and Demonstrations
-
-### Full Workflow Example
-
-1. **Plan Generation**:
-   - The `PlannerNode` generates a structured plan in JSON format.
-   - Example Plan:
-     ```json
-     [
-       {"step": 1, "action": "fetch_data", "params": {"source": "api1"}},
-       {"step": 2, "action": "process_data", "params": {"method": "aggregation"}},
-       {"step": 3, "action": "store_results", "params": {"destination": "db"}}
-     ]
-     ```
-
-2. **Dynamic Routing**:
-   - The `DynamicRouter` selects nodes/tools to execute based on the plan.
-   - Example Routing Decision:
-     ```json
-     {
-       "next_nodes": ["node_a", "node_b"],
-       "execution_mode": "parallel"
-     }
-     ```
-
-3. **Parallel Execution**:
-   - The `FanOutNode` triggers multiple tasks simultaneously.
-   - Example Tasks:
-     ```json
-     [
-       {"task": "Task 1", "status": "completed"},
-       {"task": "Task 2", "status": "completed"}
-     ]
-     ```
-
-4. **Aggregation**:
-   - The `FanInNode` aggregates results deterministically.
-   - Example Aggregated Results:
-     ```json
-     {
-       "aggregated_key": ["value1", "value2"]
-     }
-     ```
-
-5. **Execution**:
-   - The `ExecutorLoop` executes each step, updating state dynamically.
-
----
-
-### Key Features Recap
-
-- **Retries and Failure Handling**: Ensures robustness in the `ExecutorLoop`.
-- **Explainable Decisions**: Logs all routing and execution decisions.
-- **Dynamic State Updates**: State is updated after each step.
-- **Parallel Execution**: Fan-out and fan-in patterns enable concurrent task execution.
-- **Robust Aggregation**: Reducers merge results safely, supporting lists, maps, and typed states.
-
-For more details, see the `backend/advanced_agents/` folder.
 
 ## 🛠️ Tool Implementations
 
@@ -1182,62 +1112,3 @@ Use when conversations are long, user preferences must persist, or answers depen
 ---
 
 **Built with ❤️ for regulatory compliance team**
-
-
-## 📊 Monitoring: Prometheus & Grafana
-
-### Telepítés és használat
-
-- A projekt tartalmazza a Prometheus és Grafana integrációt a backend metrikák monitorozásához.
-- A `docker-compose.yml` automatikusan elindítja a Prometheus-t (port: 9090) és a Grafanát (port: 3001).
-- A Prometheus konfigurációja: `backend/observability/prometheus.yml` (alapértelmezett target: `backend:8000/metrics`).
-- A Grafana alapértelmezett bejelentkezés: **admin / admin**
-
-#### Indítás
-```sh
-docker-compose up --build
-```
-
-#### Elérés
-- Prometheus UI: [http://localhost:9090](http://localhost:9090)
-- Grafana UI: [http://localhost:3001](http://localhost:3001)
-
-#### Prometheus metrikák
-A backend számos egyedi metrikát exportál a `/metrics` végponton keresztül. Ezek közül néhány:
-
-| Metrika név                    | Leírás                                      | Label(ek)         |
-|-------------------------------|---------------------------------------------|-------------------|
-| llm_inference_count           | Összes LLM inferencia hívás                 | model             |
-| llm_inference_latency_seconds | LLM hívások késleltetése (hisztogram)       | model             |
-| llm_inference_token_input_total| Összes bemeneti token                       | model             |
-| llm_inference_token_output_total| Összes kimeneti token                      | model             |
-| llm_cost_total_usd            | LLM költség USD-ben                         | model             |
-| agent_execution_count         | Agent végrehajtások száma                   | -                 |
-| tool_invocation_count         | Eszköz hívások száma                        | tool              |
-| agent_errors_total            | Agent hibák száma                           | error_type, node, environment |
-| agent_rag_retrievals_total    | RAG lekérések száma                         | status, environment|
-
-#### Példa Grafana lekérdezések
-
-- Összes LLM hívás modellek szerint:
-  ```
-  sum(llm_inference_count) by (model)
-  ```
-- Eszköz hívások száma eszközönként:
-  ```
-  sum(tool_invocation_count) by (tool)
-  ```
-- 95. percentilis LLM válaszidő:
-  ```
-  histogram_quantile(0.95, sum(rate(llm_inference_latency_seconds_bucket[5m])) by (le, model))
-  ```
-
-#### Új metrikák hozzáadása
-Új metrikát a `backend/observability/metrics.py` fájlban lehet definiálni, és a megfelelő helyen `.inc()`, `.observe()` vagy `.set()` hívással növelni.
-
-#### Hibakeresés
-- Ha a metrikák nem jelennek meg, ellenőrizd a `/metrics` végpontot (http://localhost:8000/metrics) és a Prometheus targeteket.
-- A metrikák csak akkor jelennek meg, ha legalább egyszer növelve lettek.
-
-
-A complete working example demonstrating an AI Agent workflow with a Python backend (FastAPI + LangGraph), React frontend, and MCP (Model Context Protocol) server integration.

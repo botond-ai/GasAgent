@@ -11,6 +11,7 @@ import json
 import logging
 from datetime import datetime
 
+
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage, SystemMessage
 from langchain_openai import ChatOpenAI
 from langgraph.graph import StateGraph, END
@@ -20,6 +21,7 @@ from services.tools import (
     RegulationTool,
     GasExportTool
 )
+from observability.metrics import record_llm_usage
 
 logger = logging.getLogger(__name__)
 
@@ -34,8 +36,9 @@ class AgentState(TypedDict, total=False):
     tools_called: List[ToolCall]
     current_user_id: str
     next_action: str
-    tool_decision: Dict[str, Any]
     iteration_count: int  # Track iterations to prevent infinite loops
+    tool_decision: Dict[str, Any]  # Store the tool decision structure
+   
 
 
 class AIAgent:
@@ -53,12 +56,16 @@ class AIAgent:
         gas_export_tool: GasExportTool = None,
         mcp_enabled: bool = True
     ):
+        # Initialize Plan-and-Execute components first
+        self.planner = PlannerNode()
+        self.executor = ExecutorLoop()
+
+        # Initialize other attributes
         self.llm = ChatOpenAI(
             model="gpt-4-turbo-preview",
             temperature=0.7,
             openai_api_key=openai_api_key
         )
-        # Store tools
         self.tools = {}
         if regulation_tool:
             self.tools["regulation"] = regulation_tool
@@ -69,10 +76,14 @@ class AIAgent:
         self.eia_tools: list[MCPTool] = []
         # Build LangGraph workflow
         self.workflow = self._build_graph()
+        
+        # Initialize Plan-and-Execute components
+        self.planner = PlannerNode()
+        self.executor = ExecutorLoop()
     
     def _build_graph(self) -> StateGraph:
         """
-        Build the LangGraph workflow graph.
+        Build the LangGraph workflow graph with Plan-and-Execute pattern.
         
         Nodes:
         - agent_decide: LLM reasoning and decision-making (can loop multiple times)
@@ -84,7 +95,9 @@ class AIAgent:
         workflow = StateGraph(AgentState)
         
         # Add nodes
-        workflow.add_node("agent_decide", self._agent_decide_node)
+        workflow.add_node("planner", self.planner.run)
+        workflow.add_node("executor", self.executor.run)
+        workflow.add_node("agent_decide", self._agent_decide_node)  # Ensure agent_decide is added
         workflow.add_node("agent_finalize", self._agent_finalize_node)
         
         # Add tool nodes
@@ -92,7 +105,11 @@ class AIAgent:
             workflow.add_node(f"tool_{tool_name}", self._create_tool_node(tool_name))
         
         # Set entry point
-        workflow.set_entry_point("agent_decide")
+        workflow.set_entry_point("planner")
+        
+        # Add edges
+        workflow.add_edge("planner", "executor")  # Connect planner to executor
+        workflow.add_edge("executor", "agent_decide")  # Connect executor to agent_decide
         
         # Add conditional edges from agent_decide
         workflow.add_conditional_edges(
@@ -142,34 +159,62 @@ class AIAgent:
         Agent decision node: Analyzes user request and decides next action.
         """
         logger.info("Agent decision node executing")
-        
+
+        # Debugging: Log the structure and types of messages before processing
+        logger.debug("Raw state['messages'] before processing: %s", [type(msg) for msg in state.get('messages', [])])
+
+        # Process messages and handle different types gracefully
+        state["messages"] = [
+            {"content": msg["content"]} if isinstance(msg, dict) and "content" in msg
+            else {"content": getattr(msg, "content", str(msg))}
+            for msg in state.get("messages", [])
+        ]
+
+        # Debugging: Log the filtered messages
+        logger.debug("Filtered and validated messages: %s", state["messages"])
+
+        # Deserialize memory back into a Memory object
+        if not isinstance(state["memory"], Memory):
+            try:
+                memory = Memory(**state["memory"])
+            except Exception as e:
+                logger.error("Failed to deserialize memory: %s", e)
+                raise ValueError("Invalid memory structure")
+        else:
+            memory = state["memory"]
+
+        # Debugging: Log the deserialized memory
+        logger.debug("Deserialized memory: %s", memory)
+
         # Build context for LLM
-        system_prompt = self._build_system_prompt(state["memory"])
+        system_prompt = self._build_system_prompt(memory)
+
         # Add explicit tool descriptions for the agent
         tool_descriptions = """
     Available tools:
     - regulation: Ask questions about the regulation '2008. évi LX. Gáztörvény'. Actions: 'query' (ask a question about the regulation), 'info' (get regulation information). Params: action, question, top_k (number of sources to retrieve)
     - gas_exported_quantity: Get exported gas quantity (kWh) for a given point and date range using Transparency.host. Use this tool for any request about gas flow, export, or quantity between countries (e.g. HU>UA) for any historical or recent period. Params: pointLabel (e.g. 'VIP Bereg'), from (YYYY-MM-DD), to (YYYY-MM-DD)
     """
+        system_prompt = self._build_system_prompt(memory)
         system_prompt += "\n" + tool_descriptions
-        
+
         # Get last user message
         last_user_msg = None
         for msg in reversed(state["messages"]):
-            if isinstance(msg, HumanMessage):
-                last_user_msg = msg.content
+            if isinstance(msg, dict) and "content" in msg:
+                last_user_msg = msg["content"]
                 break
-        
+
         # Build conversation context for decision
-        recent_history = state["memory"].chat_history[-5:] if state["memory"].chat_history else []
+        recent_history = memory.chat_history[-5:] if memory.chat_history else []
         history_context = "\n".join([f"{msg.role}: {msg.content[:100]}" for msg in recent_history]) if recent_history else "No previous conversation"
-        
+
         # Build list of already called tools with their arguments to prevent duplicates
         tools_called_info = [
             f"{tc.tool_name}({tc.arguments})"
             for tc in state["tools_called"]
         ]
-        
+
         # Create decision prompt - MUST return ONLY JSON, nothing else
         decision_prompt = f"""
 You must analyze the user's request and respond with ONLY a valid JSON object, nothing else.
@@ -204,41 +249,54 @@ Examples:
 
 IMPORTANT: The "action" field must ALWAYS be either "call_tool" or "final_answer" - NEVER use a tool name as the action!
 """
-        
+
         messages = [
             SystemMessage(content=system_prompt),
             HumanMessage(content=decision_prompt)
         ]
-        
+
         response = await self.llm.ainvoke(messages)
-        
+        # Record LLM usage metric
+        # TODO: Extract real token counts and duration if available
+        record_llm_usage(
+            model=getattr(self.llm, 'model', 'unknown'),
+            prompt_tokens=0,  # Replace with actual value if available
+            completion_tokens=0,  # Replace with actual value if available
+            duration_seconds=0.0  # Replace with actual value if available
+        )
+
         # Parse decision
         try:
             # Try to extract JSON from the response
             content = response.content.strip()
-            
+
             # If response contains markdown code blocks, extract JSON
             if "```json" in content:
                 content = content.split("```json")[1].split("```")[0].strip()
             elif "```" in content:
                 content = content.split("```")[1].split("```")[0].strip()
-            
+
             decision = json.loads(content)
             logger.info(f"Agent decision: {decision}")
-            
+
             state["next_action"] = decision.get("action", "final_answer")
-            
-            # Store decision for tool execution
+
+            # Validate tool_decision structure
             if decision.get("action") == "call_tool":
+                if not isinstance(decision, dict) or not all(k in decision for k in ["tool_name", "arguments", "reasoning"]):
+                    raise ValueError("Invalid tool_decision structure")
                 state["tool_decision"] = decision
                 # Increment iteration count when calling a tool
                 state["iteration_count"] = state.get("iteration_count", 0) + 1
-            
-        except (json.JSONDecodeError, IndexError, AttributeError) as e:
+
+        except (json.JSONDecodeError, IndexError, AttributeError, ValueError) as e:
             logger.error(f"Failed to parse agent decision: {e}, defaulting to final_answer")
             logger.error(f"Response content: {response.content[:200]}")
             state["next_action"] = "final_answer"
-        
+
+        # Debugging: Log the state before returning
+        logger.debug("State at the end of agent_decide_node: %s", state)
+
         return state
     
     def _route_decision(self, state: AgentState) -> str:
@@ -347,7 +405,7 @@ IMPORTANT: The "action" field must ALWAYS be either "call_tool" or "final_answer
         
         # Get conversation context
         conversation_history = "\n".join([
-            f"{msg.__class__.__name__}: {msg.content}"
+            f"{msg.__class__.__name__}: {msg['content']}" if isinstance(msg, dict) else f"{msg.__class__.__name__}: {msg.content}"
             for msg in state["messages"][-10:]  # Last 10 messages
         ])
         
@@ -373,7 +431,16 @@ Important:
         ]
         
         response = await self.llm.ainvoke(messages)
-        
+
+        # Record LLM usage metric
+        # TODO: Extract real token counts and duration if available
+        record_llm_usage(
+            model=getattr(self.llm, 'model', 'unknown'),
+            prompt_tokens=0,  # Replace with actual value if available
+            completion_tokens=0,  # Replace with actual value if available
+            duration_seconds=0.0  # Replace with actual value if available
+        )
+
         # Add assistant message
         state["messages"].append(AIMessage(content=response.content))
         
@@ -381,46 +448,33 @@ Important:
         
         return state
     
-    def _build_system_prompt(self, memory: Memory) -> str:
+    def _build_system_prompt(self, memory: dict) -> str:
         """Build system prompt with memory context."""
+        # Deserialize memory back into a Memory object
+        if not isinstance(memory, Memory):
+            memory = Memory(**memory)
+
         preferences = memory.preferences
         workflow = memory.workflow_state
-        
+
         # Build user info section
         user_info = []
         if preferences.get('name'):
             user_info.append(f"- Name: {preferences['name']}")
         user_info.append(f"- Language: {preferences.get('language', 'hu')}")
         user_info.append(f"- Default city: {preferences.get('default_city', 'Budapest')}")
-        
+
         # Add any other preferences
         for key, value in preferences.items():
             if key not in ['name', 'language', 'default_city']:
                 user_info.append(f"- {key.replace('_', ' ').title()}: {value}")
-        
+
         prompt = f"""You are a helpful AI assistant with access to various tools.
 
 User preferences:
 {chr(10).join(user_info)}
 
 """
-        
-        # Add recent conversation history for context
-        if memory.chat_history:
-            recent_history = memory.chat_history[-10:]  # Last 10 messages
-            history_text = "\n".join([
-                f"{msg.role}: {msg.content[:150]}"  # Truncate long messages
-                for msg in recent_history
-            ])
-            prompt += f"\nRecent conversation history:\n{history_text}\n\n"
-        
-        if workflow.flow:
-            prompt += f"\nCurrent workflow: {workflow.flow} (step {workflow.step}/{workflow.total_steps})\n"
-        
-        # Add personalization instruction
-        if preferences.get('name'):
-            prompt += f"\nAddress the user by their name ({preferences['name']}) when appropriate.\n"
-        
         return prompt
     
     async def run(
@@ -467,6 +521,47 @@ User preferences:
         
         logger.info("Agent run completed")
         
+        # Serialize HumanMessage objects in messages
+        final_state["messages"] = [
+            {"content": msg.content} if isinstance(msg, HumanMessage) else msg
+            for msg in final_state["messages"]
+        ]
+
+        # Debugging: Log the state at the start of the node
+        logger.debug("State at agent_decide_node: %s", final_state)
+
+        # Deserialize memory back into a Memory object
+        if not isinstance(final_state["memory"], Memory):
+            try:
+                memory = Memory(**final_state["memory"])
+            except Exception as e:
+                logger.error("Failed to deserialize memory: %s", e)
+                raise ValueError("Invalid memory structure")
+        else:
+            memory = final_state["memory"]
+
+        # Debugging: Log the deserialized memory
+        logger.debug("Deserialized memory: %s", memory)
+
+        # Validate state structure before returning
+        required_keys = ["messages", "memory", "tools_called", "current_user_id", "next_action", "iteration_count"]
+        for key in required_keys:
+            if key not in final_state:
+                raise ValueError(f"Invalid state structure: Missing key '{key}'")
+
+        # Ensure messages are serialized correctly
+        final_state["messages"] = [
+            {"content": msg.content} if isinstance(msg, BaseMessage) else msg
+            for msg in final_state["messages"]
+        ]
+
+        # Ensure memory is serialized correctly
+        if isinstance(final_state["memory"], Memory):
+            final_state["memory"] = final_state["memory"].__dict__
+
+        # Debugging: Log the validated state
+        logger.debug("Validated state before returning: %s", final_state)
+
         return {
             "final_answer": final_answer,
             "tools_called": final_state["tools_called"],
@@ -476,3 +571,6 @@ User preferences:
 
 # --- MCP/EIA integráció ---
 from infrastructure.tool_clients import MCPClient
+
+from advanced_agents.planning.planner_node import PlannerNode
+from advanced_agents.planning.executor_loop import ExecutorLoop
