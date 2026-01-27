@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  fleet-api-client:
+    build: .
+    container_name: fleet-api-client
+    ports:
+      - "8000:8000"
+    environment:
+      - FLEET_API_BASE_URL=${FLEET_API_BASE_URL}
+      - FLEET_API_TOKEN=${FLEET_API_TOKEN}
+      - DEBUG=${DEBUG:-False}
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    env_file:
+      - .env
+    volumes:
+      - ./:/app
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    restart: unless-stopped
+    networks:
+      - fleet-network
+
+networks:
+  fleet-network:
+    driver: bridge
