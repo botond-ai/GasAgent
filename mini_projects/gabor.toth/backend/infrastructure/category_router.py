@@ -77,16 +77,34 @@ Return ONLY the new description text (no JSON, no quotes, plain text, 1-2 senten
             return f"Dokumentumok a '{category}' kategóriához"
 
     async def decide_category(
-        self, question: str, available_categories: List[str]
+        self, question: str, available_categories: List[str],
+        conversation_context: Optional[str] = None
     ) -> CategoryDecision:
-        """Decide which category to search based on question."""
+        """Decide which category to search based on question.
+        
+        Args:
+            question: Current question
+            available_categories: Available categories
+            conversation_context: Optional previous conversation context
+        """
         categories_str = ", ".join(available_categories) if available_categories else "none"
+
+        # Build prompt with optional conversation context
+        context_section = ""
+        if conversation_context:
+            context_section = f"""
+
+ELŐZŐ BESZÉLGETÉS KONTEXTUSA:
+{conversation_context}
+
+Vegyük figyelembe az előző beszélgetést a kategória-döntéshez!
+"""
 
         prompt = f"""Te egy magyar dokumentum-kategorizáló asszisztens vagy.
 
 A felhasználó kérdése: "{question}"
 
-Elérhető kategóriák: {categories_str}
+Elérhető kategóriák: {categories_str}{context_section}
 
 SZABÁLYOK:
 1. Analizáld, hogy a kérdés kapcsolódik-e VALAMELYIK kategóriához

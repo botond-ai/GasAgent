@@ -1714,7 +1714,11 @@ Respond with:
         it_keywords = [
             "vpn", "jelszó", "password", "wifi", "hálózat", "network",
             "laptop", "számítógép", "computer", "szoftver", "software",
-            "helpdesk", "support", "ticket"
+            "helpdesk", "support", "ticket",
+            # Security & Antivirus
+            "vírus", "virus", "antivirus", "vírusirtó", "vírusírt", "malware",
+            "eset", "ransomware", "trojan", "tűzfal", "firewall", "biztonsági",
+            "security", "támadás", "attack", "védelmi", "protection"
         ]
         if any(kw in query_lower for kw in it_keywords):
             return "it"

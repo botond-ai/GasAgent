@@ -2,13 +2,24 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useActivity, LogEntry } from '../contexts/ActivityContext';
 import '../styles/activity-logger.css';
 
+interface DevLog {
+  timestamp: number;
+  feature: string;
+  event: string;
+  status: string;
+  description: string;
+  details?: Record<string, any>;
+}
+
 const ActivityLogger: React.FC = () => {
   const { entries, clearActivities, addActivity } = useActivity();
   const [isOpen, setIsOpen] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [apiActivities, setApiActivities] = useState<any[]>([]);
+  const [devLogs, setDevLogs] = useState<DevLog[]>([]);
+  const [featureFilter, setFeatureFilter] = useState<string | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
-  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Fetch activities from backend API
   const fetchActivities = async () => {
@@ -23,11 +34,29 @@ const ActivityLogger: React.FC = () => {
     }
   };
 
+  // Fetch development logs from backend API (NEW)
+  const fetchDevLogs = async () => {
+    try {
+      const response = await fetch('http://localhost:8000/api/dev-logs?limit=100');
+      if (response.ok) {
+        const data = await response.json();
+        setDevLogs(data.logs || []);
+        console.log('📊 Dev logs fetched:', data.logs?.length || 0, 'logs');
+      }
+    } catch (error) {
+      console.error('Failed to fetch dev logs:', error);
+    }
+  };
+
   // Start polling when panel is open
   useEffect(() => {
     if (isOpen) {
       fetchActivities(); // Fetch immediately
-      pollingIntervalRef.current = setInterval(fetchActivities, 1000); // Poll every 1 second
+      fetchDevLogs(); // Fetch dev logs immediately
+      pollingIntervalRef.current = setInterval(() => {
+        fetchActivities();
+        fetchDevLogs();
+      }, 500); // Poll every 500ms for both
     } else {
       if (pollingIntervalRef.current) {
         clearInterval(pollingIntervalRef.current);
@@ -94,12 +123,66 @@ const ActivityLogger: React.FC = () => {
     }
   };
 
-  // Combine local entries with API activities and sort by timestamp
-  const allActivities = [...apiActivities, ...entries].sort((a, b) => {
+  // Combine local entries, API activities, and dev logs - sorted by timestamp
+  const combinedLogs = [
+    // Local entries
+    ...entries.map(e => ({
+      id: e.id,
+      type: 'activity',
+      timestamp: e.timestamp,
+      message: e.message,
+      feature: null
+    })),
+    // API activities
+    ...apiActivities.map(a => ({
+      id: a.id,
+      type: 'activity',
+      timestamp: a.timestamp,
+      message: a.message,
+      feature: null
+    })),
+    // Dev logs
+    ...devLogs.map(log => ({
+      id: `${log.feature}-${log.timestamp}`,
+      type: 'dev-log',
+      timestamp: log.timestamp,
+      feature: log.feature,
+      event: log.event,
+      description: log.description,
+      status: log.status,
+      details: log.details
+    }))
+  ].sort((a, b) => {
     const timeA = new Date(a.timestamp).getTime();
     const timeB = new Date(b.timestamp).getTime();
     return timeB - timeA; // Newest first
   });
+
+  // Filter logs by selected feature
+  const filteredLogs = featureFilter
+    ? combinedLogs.filter(log => {
+        if (log.type === 'activity') return featureFilter === 'activities';
+        return log.feature === featureFilter;
+      })
+    : combinedLogs;
+
+  const getFeatureEmoji = (feature: string | null): string => {
+    if (!feature) return '📋';
+    switch (feature) {
+      case 'conversation_history':
+        return '#1️⃣';
+      case 'retrieval_check':
+        return '#2️⃣';
+      case 'checkpointing':
+        return '#3️⃣';
+      case 'reranking':
+        return '#4️⃣';
+      case 'hybrid_search':
+        return '#5️⃣';
+      default:
+        return '📌';
+    }
+  };
 
   return (
     <div className="activity-logger">
@@ -108,7 +191,7 @@ const ActivityLogger: React.FC = () => {
         onClick={() => setIsOpen(!isOpen)}
         title={isOpen ? 'Bezárás' : 'Megnyitás'}
       >
-        📋 Tevékenység ({allActivities.length})
+        📋 Tevékenység ({combinedLogs.length})
       </button>
 
       {isOpen && (
@@ -129,6 +212,7 @@ const ActivityLogger: React.FC = () => {
                   onClick={() => {
                     clearActivities();
                     setApiActivities([]);
+                    setDevLogs([]);
                   }} 
                   title="Törlés"
                 >
@@ -140,33 +224,100 @@ const ActivityLogger: React.FC = () => {
               </div>
             </div>
 
+            {/* Feature filter buttons */}
+            <div className="feature-filters">
+              <button
+                className={`filter-btn ${featureFilter === null ? 'active' : ''}`}
+                onClick={() => setFeatureFilter(null)}
+              >
+                Összes ({combinedLogs.length})
+              </button>
+              <button
+                className={`filter-btn ${featureFilter === 'activities' ? 'active' : ''}`}
+                onClick={() => setFeatureFilter('activities')}
+              >
+                📋 Tevékenységek
+              </button>
+              <button
+                className={`filter-btn ${featureFilter === 'conversation_history' ? 'active' : ''}`}
+                onClick={() => setFeatureFilter('conversation_history')}
+              >
+                #1️⃣ Beszélgetés
+              </button>
+              <button
+                className={`filter-btn ${featureFilter === 'retrieval_check' ? 'active' : ''}`}
+                onClick={() => setFeatureFilter('retrieval_check')}
+              >
+                #2️⃣ Keresés
+              </button>
+              <button
+                className={`filter-btn ${featureFilter === 'checkpointing' ? 'active' : ''}`}
+                onClick={() => setFeatureFilter('checkpointing')}
+              >
+                #3️⃣ Mentés
+              </button>
+              <button
+                className={`filter-btn ${featureFilter === 'reranking' ? 'active' : ''}`}
+                onClick={() => setFeatureFilter('reranking')}
+              >
+                #4️⃣ Rangsorolás
+              </button>
+            </div>
+
             <div className="activity-panel-content" ref={contentRef}>
-              {allActivities.length === 0 ? (
+              {filteredLogs.length === 0 ? (
                 <div className="empty-state">
-                  <p>Nincsenek folyamatok...</p>
+                  <p>Nincsenek tevékenységek a szűrőhöz...</p>
                 </div>
               ) : (
                 <ul className="activity-list">
-                  {allActivities.map(entry => (
-                    <li
-                      key={entry.id}
-                      className={`activity-item activity-${entry.type}`}
-                    >
-                      <div className="activity-icon">{getTypeIcon(entry.type)}</div>
-                      <div className="activity-content">
-                        <div className="activity-message">{entry.message}</div>
-                        <div className="activity-time">
-                          {formatTime(entry.timestamp)}
+                  {filteredLogs.map((item) => {
+                    // Activity log item
+                    if (item.type === 'activity') {
+                      return (
+                        <li key={item.id} className={`activity-item activity-info`}>
+                          <div className="activity-icon">📋</div>
+                          <div className="activity-content">
+                            <div className="activity-message">{item.message}</div>
+                            <div className="activity-time">
+                              {formatTime(item.timestamp)}
+                            </div>
+                          </div>
+                        </li>
+                      );
+                    }
+
+                    // Dev log item
+                    return (
+                      <li key={item.id} className={`dev-log-inline dev-log-${item.status}`}>
+                        <div className="dev-log-inline-header">
+                          <span className="dev-log-feature-badge">
+                            {getFeatureEmoji(item.feature)} {item.feature?.replace(/_/g, ' ').toUpperCase()}
+                          </span>
+                          <span className="dev-log-event-badge">{item.event}</span>
+                          <span className="dev-log-status-icon">
+                            {item.status === 'success' ? '✅' : item.status === 'error' ? '❌' : item.status === 'processing' ? '🔄' : 'ℹ️'}
+                          </span>
+                          <span className="dev-log-time">
+                            {new Date(item.timestamp).toLocaleTimeString('hu-HU')}
+                          </span>
                         </div>
-                      </div>
-                    </li>
-                  ))}
+                        <div className="dev-log-description">{item.description}</div>
+                        {item.details && Object.keys(item.details).length > 0 && (
+                          <details className="dev-log-details">
+                            <summary>Részletek</summary>
+                            <pre>{JSON.stringify(item.details, null, 2)}</pre>
+                          </details>
+                        )}
+                      </li>
+                    );
+                  })}
                 </ul>
               )}
             </div>
 
             <div className="activity-panel-footer">
-              Összesen: {allActivities.length} esemény
+              Összesen: {combinedLogs.length} esemény
             </div>
           </div>
         </>

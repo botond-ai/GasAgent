@@ -1,0 +1,85 @@
+Sprint 24 Retrospective - Platform Team
+Date: January 21, 2026, 4:00 PM
+Facilitator: Alex Martinez (Scrum Master)
+Team: Backend (4), Frontend (3), QA (2), DevOps (1)
+
+=== RETROSPECTIVE FORMAT ===
+Start-Stop-Continue exercise + Team health check
+
+=== WHAT WENT WELL (Start/Continue) ===
+
+🎉 Successes:
+- Deployed the new authentication service without incidents - smooth release!
+- Code review turnaround improved from 48h to 24h average
+- QA caught 3 critical bugs before production (saved us from a potential outage)
+- Documentation sprint was productive - Wiki is much more useful now
+- Team collaboration felt stronger this sprint
+- Pair programming sessions helped with knowledge sharing
+
+Continue doing:
+- Daily standups at 9:30 AM (good timing for everyone)
+- Friday "show and tell" demos of work in progress
+- Rotating the on-call duties weekly (less burnout)
+- Having architecture discussions before implementation
+- Using feature flags for gradual rollouts
+
+=== WHAT DIDN'T GO WELL (Stop/Change) ===
+
+⚠️ Issues:
+- Too many meetings (team spent 12+ hours in meetings this sprint)
+- Sprint planning took 4 hours - way too long
+- Unclear requirements on the payment gateway integration caused rework
+- Testing environment was unstable for 3 days (blocked QA work)
+- Some team members working overtime frequently (burnout risk)
+- Code deployment process still manual and error-prone
+- Dependencies on the data team caused delays
+
+Stop/Change:
+- Stop scheduling meetings after 4 PM (people need focus time)
+- Stop accepting unclear user stories into the sprint
+- Change: Make sprint planning more focused (max 2 hours)
+- Change: Automate deployment pipeline (currently 60% manual)
+
+=== KEY METRICS ===
+- Velocity: 42 story points (target was 45 - close!)
+- Bugs in production: 2 minor (acceptable)
+- Sprint goal achievement: 85% (good but could be better)
+- Team happiness score: 7.2/10 (up from 6.8 last sprint)
+
+=== TEAM HEALTH CHECK ===
+Anonymous survey results:
+- 8/10 team members feel workload is manageable
+- 2/10 feel slightly overwhelmed (need to address)
+- 9/10 satisfied with team collaboration
+- 6/10 feel they have enough focus time (need improvement)
+
+=== AGREED ACTION ITEMS ===
+
+1. Alex: Create "no meeting Tuesday/Thursday afternoons" policy - start next week
+2. Alex + PO: Restructure sprint planning - use pre-refinement sessions
+3. DevOps (Carlos): Automate deployment pipeline - target completion by mid-February
+4. Tech Lead: Schedule 1-on-1s with the two team members feeling overwhelmed
+5. Everyone: Be more disciplined about declining non-essential meetings
+6. QA Lead: Work with DevOps to stabilize test environment (top priority)
+7. Team: Commit to clearer acceptance criteria in user stories
+
+=== EXPERIMENTS FOR NEXT SPRINT ===
+- Try "no meeting" blocks on calendar for deep work
+- Limit WIP (work in progress) to 2 items per person
+- Start code reviews within 4 hours of PR creation
+- Use async communication (Slack/docs) instead of meetings when possible
+
+=== SHOUT-OUTS ===
+- Thanks to Maria for staying late to fix the critical auth bug 🏆
+- Carlos did an amazing job with the infrastructure upgrade 💪
+- Great job to the whole team on the documentation push 📚
+
+=== PARKING LOT (for later discussion) ===
+- Should we adopt TypeScript for new frontend code?
+- Team offsite planning for Q2
+- Hiring plans - do we need another backend engineer?
+
+No specific follow-up meeting scheduled - we'll continue these discussions in our regular 
+planning sessions and team syncs. Action items to be tracked in Jira.
+
+Next retrospective: End of Sprint 25 (approximately February 11th)

@@ -1,0 +1,57 @@
+Tech Design Review - Database Migration Strategy
+Date: January 21, 2026
+Participants: Sarah Chen (Tech Lead), Mike Rodriguez (Backend), Lisa Wang (DBA), Tom Anderson (DevOps)
+
+=== MEETING AGENDA ===
+1. Review current database performance issues
+2. Evaluate migration options
+3. Decide on approach and timeline
+4. Assign responsibilities
+
+=== DISCUSSION SUMMARY ===
+
+Sarah opened the meeting by presenting metrics showing our PostgreSQL database is hitting capacity limits. 
+Query performance has degraded 40% over the last quarter, and we're approaching storage limits.
+
+Mike proposed three options:
+A) Vertical scaling - upgrade to larger instance
+B) Horizontal sharding - split database across multiple instances  
+C) Hybrid approach - upgrade + read replicas
+
+Lisa analyzed each option:
+- Option A: Quick fix but expensive and temporary (cost: $5K/month, timeline: 1 week)
+- Option B: Sustainable long-term but complex migration (cost: $15K one-time, timeline: 6 weeks)
+- Option C: Balanced approach (cost: $8K setup + $3K/month, timeline: 3 weeks)
+
+Tom raised concerns about downtime during migration. We need zero-downtime deployment strategy.
+
+=== KEY DECISIONS ===
+1. APPROVED: Proceed with Option C (Hybrid approach)
+2. APPROVED: Budget request for $8,000 setup + $3,000/month operational costs
+3. APPROVED: Zero-downtime migration requirement - use blue/green deployment
+4. REJECTED: Option B (too risky for current timeline)
+
+=== ACTION ITEMS ===
+- Sarah: Prepare detailed technical proposal and present to VP Engineering by Jan 25
+- Mike: Create migration scripts and testing plan by Jan 28
+- Lisa: Set up read replicas in staging environment by Jan 24
+- Tom: Design blue/green deployment strategy by Jan 27
+- Sarah: Schedule sync with security team about data encryption during migration
+
+=== RISKS & OPEN QUESTIONS ===
+- What happens if read replica lag exceeds acceptable thresholds?
+- Do we need to inform customers about potential brief service degradation?
+- Should we hire a consultant for the migration or handle in-house?
+- Data consistency concerns during the transition period
+
+=== NEXT STEPS ===
+Implementation kickoff meeting scheduled for:
+- Date: Monday, January 27, 2026
+- Time: 2:00 PM - 3:30 PM (90 minutes)
+- Location: Conference Room 3A
+- Video: https://zoom.us/j/9876543210
+- Attendees: sarah.chen@techcorp.com, mike.rodriguez@techcorp.com, lisa.wang@techcorp.com, 
+  tom.anderson@techcorp.com, james.kim@techcorp.com (VP Engineering)
+- Agenda: Review technical proposal, finalize migration plan, assign sprint tasks
+
+Please review all documentation in Confluence before the meeting.

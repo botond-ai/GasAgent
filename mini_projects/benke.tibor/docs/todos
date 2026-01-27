@@ -3,8 +3,6 @@
 ### High Priority (🎯 Immediate - 1-2 hét)
 - [ ] **Citation-level feedback UI**: 👍👎 gombok citation-ökön (response-level már kész, citation-level még nincs)
   - Implementáció: Minden forrás mellett dedikált feedback gombok, külön API endpoint citation-szintű feedback mentésre, qdrant metadata frissítés (score boost/penalty).
-- [ ] **Citation display enhancement**: Források részletes megjelenítése (title, score, URL)
-  - Implementáció: Frontend card komponens forrásokhoz (document title, relevance score, clickable URL), metadata extraction a Qdrant payload-ból.
 - [ ] **Rerank implementation**: Citation re-ranking feedback-weighted semantic relevancia alapján
   - Implementáció: Qdrant keresési score kombinálása feedback score-ral (weighted average), pozitív feedback → score boost, negatív → penalty.
 - [ ] **Integration tesztek**: Multi-domain RAG + feedback + external APIs end-to-end

@@ -88,7 +88,10 @@
 
 ---
 
-### 📊 Prometheus + Grafana Monitoring (NEW in v2.11)
+### 📊 Prometheus + Grafana Monitoring & Loki Logging
+
+**Monitoring (v2.11):** Prometheus + Grafana metrics  
+**Logging (v2.12):** Loki + Promtail structured JSON logs
 
 #### Real-Time Metrics Collection
 - **11 Metric Types**:
@@ -118,7 +121,9 @@
   - Active Requests (real-time)
   - Error Rate (by type)
 - **Access**: http://localhost:3001 (admin/admin)
-- **Auto-provisioned**: Datasource + dashboard on startup
+- **Datasources**: Prometheus (metrics) + Loki (logs)
+- **Auto-provisioned**: Datasources + dashboard on startup
+- **Log Exploration**: Explore → Loki → `{container="knowledgerouter_backend"}`
 
 #### Debug Panel Integration
 - **📊 Monitoring Stats** section in debug panel
@@ -149,19 +154,27 @@
 
 #### Configuration
 - **prometheus.yml**: Scrape config (15s interval)
+- **loki-config.yml**: Loki server config (storage, retention)
+- **promtail-config.yml**: Log scraping config (Docker containers)
 - **grafana/provisioning/**:
-  - `datasources/prometheus.yml` - Auto-configured datasource
+  - `datasources/datasources.yml` - Prometheus + Loki datasources
   - `dashboards/dashboard.yml` - Dashboard provider
   - `dashboards/knowledgerouter.json` - Dashboard definition
 
 #### Docs
-- **docs/MONITORING.md**: Complete monitoring guide
+- **docs/MONITORING.md**: Complete monitoring guide (Prometheus + Grafana)
   - Quick Start
   - Metric definitions
   - Dashboard panels
   - Key queries
   - Testing
   - Production recommendations
+  - Troubleshooting
+- **docs/LOKI_LOGGING.md**: Complete logging guide (Loki + Promtail)
+  - Structured JSON logging
+  - LogQL query examples
+  - Integration guide
+  - Grafana Explore usage
   - Troubleshooting
 
 ---
@@ -511,7 +524,11 @@ environment:
 #### RAG Pipeline
 - **Semantic Search**: OpenAI `text-embedding-3-small` (1536 dims)
 - **Top-K Retrieval**: Configurable number of relevant documents
-- **Citation Support**: Document references with source links
+- **Citation Support**: Enhanced card display with:
+  - **Relevance Score**: Percentage-based similarity score (0-100%)
+  - **Document Metadata**: Section ID (IT-KB-xxx), Doc ID tracking
+  - **Interactive Cards**: Hover effects, clickable URLs, emoji icons
+  - **Visual Hierarchy**: Card layout with header/metadata sections
 - **Context Window Management**: Auto-truncate to fit model limits (128k tokens)
 
 ---

@@ -1690,10 +1690,21 @@ curl http://localhost:9090/api/v1/query?query=histogram_quantile(0.95,rate(knowl
 - **Target**: http://backend:8000/api/metrics/
 - **Retention**: 15 days (default)
 
+### Loki (Logging)
+- **URL**: http://localhost:3100
+- **Purpose**: Log aggregation (structured JSON logs)
+- **Shipper**: Promtail (scrapes Docker container logs)
+- **Query Language**: LogQL
+- **Query Example**: `{container="knowledgerouter_backend"} | json | level="ERROR"`
+- **Documentation**: [LOKI_LOGGING.md](LOKI_LOGGING.md)
+
 ### Grafana
 - **URL**: http://localhost:3001
 - **Login**: admin / admin
 - **Dashboard**: KnowledgeRouter Monitoring
+- **Datasources**:
+  - Prometheus (metrics, isDefault: true)
+  - Loki (logs, isDefault: false)
 - **Panels**:
   - Request Rate (by domain)
   - Latency percentiles (p50/p95/p99)
@@ -1701,6 +1712,7 @@ curl http://localhost:9090/api/v1/query?query=histogram_quantile(0.95,rate(knowl
   - Cache Hit Rate
   - Active Requests
   - Error Rate
+- **Log Exploration**: Explore → Loki datasource → `{container="knowledgerouter_backend"}`
 
 ### Debug Panel
 - **Location**: Bottom-right corner of app UI
