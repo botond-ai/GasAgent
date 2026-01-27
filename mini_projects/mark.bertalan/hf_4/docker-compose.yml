@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  robotdreams-hf3:
+    build: .
+    image: robotdreams-hf4
+    container_name: robotdreams-hf4
+    stdin_open: true
+    tty: true
+    env_file:
+      - .env
+    volumes:
+      - ./chroma_db:/app/chroma_db
+      - ./embedding_sources:/app/embedding_sources
