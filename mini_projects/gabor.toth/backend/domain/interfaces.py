@@ -65,6 +65,13 @@ class VectorStore(ABC):
         pass
 
     @abstractmethod
+    async def keyword_search(
+        self, collection_name: str, query_text: str, top_k: int = 5
+    ) -> List[RetrievedChunk]:
+        """Keyword-based search (BM25) for chunks. ✅ SUGGESTION #5: HYBRID SEARCH"""
+        pass
+
+    @abstractmethod
     async def delete_chunks(
         self, collection_name: str, chunk_ids: List[str]
     ) -> None:
@@ -103,9 +110,16 @@ class CategoryRouter(ABC):
 
     @abstractmethod
     async def decide_category(
-        self, question: str, available_categories: List[str]
+        self, question: str, available_categories: List[str],
+        conversation_context: Optional[str] = None
     ) -> CategoryDecision:
-        """Decide which category to search based on question."""
+        """Decide which category to search based on question.
+        
+        Args:
+            question: Current question
+            available_categories: Available categories
+            conversation_context: Optional previous conversation context for better routing
+        """
         pass
 
 

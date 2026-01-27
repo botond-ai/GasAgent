@@ -1,20 +1,25 @@
-"""ChromaDB vector store implementation."""
+"""ChromaDB vector store implementation with BM25 keyword search."""
 
 import os
-from typing import List
+from typing import List, Dict
 import chromadb
+from rank_bm25 import BM25Okapi
 
 from domain.models import Chunk, RetrievedChunk
 from domain.interfaces import VectorStore
 
 
 class ChromaVectorStore(VectorStore):
-    """Vector store using ChromaDB persistent storage."""
+    """Vector store using ChromaDB persistent storage with BM25 hybrid search."""
 
     def __init__(self, persist_directory: str = "data/chroma_db"):
         os.makedirs(persist_directory, exist_ok=True)
         # Use the new Chroma client API
         self.client = chromadb.PersistentClient(path=persist_directory)
+        # Cache for BM25 indexes per collection
+        self._bm25_indexes: Dict[str, BM25Okapi] = {}
+        self._collection_docs: Dict[str, List[str]] = {}
+
 
     async def create_collection(self, collection_name: str) -> None:
         """Create or get a collection."""
@@ -103,12 +108,78 @@ class ChromaVectorStore(VectorStore):
 
         return retrieved
 
+    async def keyword_search(
+        self, collection_name: str, query_text: str, top_k: int = 5
+    ) -> List[RetrievedChunk]:
+        """Keyword-based search using BM25 algorithm. ✅ SUGGESTION #5: HYBRID SEARCH"""
+        collection = self.client.get_collection(collection_name)
+        
+        # Get all documents if index doesn't exist yet
+        if collection_name not in self._bm25_indexes:
+            # Retrieve all documents from collection
+            results = collection.get()
+            
+            if not results["ids"]:
+                return []
+            
+            # Build BM25 index from documents
+            documents = results["documents"]
+            tokenized_docs = [doc.lower().split() for doc in documents]
+            self._bm25_indexes[collection_name] = BM25Okapi(tokenized_docs)
+            self._collection_docs[collection_name] = documents
+            # Also store metadata for retrieval
+            self._collection_metadata = {
+                cid: results["metadatas"][i] 
+                for i, cid in enumerate(results["ids"])
+            }
+            self._collection_ids = results["ids"]
+        
+        # Get BM25 scores for query
+        tokenized_query = query_text.lower().split()
+        bm25 = self._bm25_indexes[collection_name]
+        scores = bm25.get_scores(tokenized_query)
+        
+        # Get top-k results by BM25 score
+        top_indices = sorted(
+            range(len(scores)), 
+            key=lambda i: scores[i], 
+            reverse=True
+        )[:top_k]
+        
+        retrieved = []
+        for idx in top_indices:
+            if scores[idx] > 0:  # Only include positive scores
+                doc = self._collection_docs[collection_name][idx]
+                chunk_id = self._collection_ids[idx]
+                metadata = self._collection_metadata[chunk_id]
+                
+                snippet = doc[:200] + "..." if len(doc) > 200 else doc
+                
+                # Normalize BM25 score to 0-1 range (approximate)
+                normalized_distance = 1.0 - min(scores[idx] / 10.0, 1.0)
+                
+                retrieved.append(
+                    RetrievedChunk(
+                        chunk_id=chunk_id,
+                        content=doc,
+                        distance=normalized_distance,
+                        metadata=metadata,
+                        snippet=snippet,
+                    )
+                )
+        
+        return retrieved
+
     async def delete_chunks(
         self, collection_name: str, chunk_ids: List[str]
     ) -> None:
         """Delete chunks by IDs."""
         collection = self.client.get_collection(collection_name)
         collection.delete(ids=chunk_ids)
+        # Invalidate BM25 index for this collection
+        if collection_name in self._bm25_indexes:
+            del self._bm25_indexes[collection_name]
+            del self._collection_docs[collection_name]
 
     async def delete_collection(self, collection_name: str) -> None:
         """Delete an entire collection."""
