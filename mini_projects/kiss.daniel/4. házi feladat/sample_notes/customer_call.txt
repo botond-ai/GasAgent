@@ -1,0 +1,70 @@
+CUSTOMER CALL NOTES - Acme Industries Contract Renewal
+January 21, 2026
+Call participants: Jennifer Lee (Account Manager - us), Robert Chang (Solutions Engineer - us), 
+David Miller (CTO - Acme), Patricia Brown (Procurement - Acme)
+
+=== CALL OVERVIEW ===
+Quarterly business review and 2026 contract renewal discussion with Acme Industries, 
+one of our top 5 enterprise customers ($250K ARR).
+
+=== CUSTOMER FEEDBACK ===
+
+Positive:
+- Very happy with platform stability (99.8% uptime last quarter)
+- Customer support response times have improved significantly
+- New analytics dashboard is "game-changing" according to their data team
+- Integration with their Salesforce instance working perfectly
+
+Concerns:
+- Pricing increase of 15% for renewal is higher than expected
+- Want additional API rate limits without extra cost
+- Need better documentation for the REST API
+- Requesting dedicated customer success manager
+
+=== OUR RESPONSES ===
+
+Jennifer explained the pricing:
+- Industry standard increase due to infrastructure costs
+- Willing to offer 10% discount if they commit to 2-year contract
+- Can include 20% higher API limits at current pricing tier
+
+Robert committed to:
+- Comprehensive API documentation update by end of Q1
+- Two training sessions for their development team
+- Quarterly technical check-ins
+
+=== BUSINESS DECISIONS ===
+1. Approved: 2-year contract offer with 10% discount = $225K/year
+2. Approved: Increase API rate limits by 20% at no additional charge
+3. Approved: Assign dedicated CSM (Jane Wilson) to Acme account
+4. Pending: Legal review of updated SLA terms (compliance requirement from their end)
+
+=== ACTION ITEMS ===
+- Jennifer: Send updated contract proposal with discount by EOD Jan 22
+- Jennifer: Coordinate with Jane Wilson for CSM onboarding
+- Robert: Schedule API training sessions for their dev team (late February)
+- Robert: Share updated API documentation roadmap
+- Legal: Review their requested SLA modifications by Jan 24
+
+=== FOLLOW-UP MEETING ===
+
+David (Acme CTO) mentioned they need to review the proposal internally with their finance 
+and legal teams. They suggested several possible times for our follow-up call to finalize 
+the agreement:
+
+Option 1: Thursday, January 30th at 10:00 AM PST
+Option 2: Friday, January 31st at 2:00 PM PST  
+Option 3: Monday, February 3rd at 11:00 AM PST
+
+David said Option 2 (Friday Jan 31 at 2 PM) works best for their team but needs to confirm 
+with their CFO. He'll confirm by end of week.
+
+Tentatively scheduling for January 31, 2:00 PM Pacific Time (that's 11:00 PM Budapest time).
+Expected duration: 60 minutes
+Meeting format: Video call (we'll send Zoom link once confirmed)
+Attendees from our side: Jennifer, Robert, + possibly Sarah (VP Sales)
+Attendees from Acme: David Miller, Patricia Brown, and their CFO Michael Torres
+
+Purpose: Final contract review, answer any remaining questions, get verbal commitment
+
+Note: This is a critical deal - if we lose Acme it impacts Q1 revenue targets significantly.

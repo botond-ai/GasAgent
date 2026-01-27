@@ -1,7 +1,7 @@
 # KnowledgeRouter - Vállalati Tudásirányító & Workflow-Automata
 
-**Version:** 2.11.0 (Monitoring Upgrade)  
-**Status:** ✅ Stable (Prometheus + Grafana added 2026-01-21)
+**Version:** 2.12.0 (STRICT_RAG_MODE Feature)  
+**Status:** ✅ Stable (Configurable RAG strictness 2026-01-23)
 
 Multi-domain AI agent rendszer Python Django backenddel, LangGraph orchestrációval és modern Tailwind CSS frontenddel (ChatGPT-style UI).
 
@@ -40,6 +40,7 @@ KnowledgeRouter egy vállalati belső tudásbázis rendszer, amely:
 ✅ **Feedback-weighted ranking** tiered boost system (>70%: +30%, <40%: -20%)  
 ✅ **Workflow-okat** futtat (HR szabadság igénylés, IT ticket, stb.) - LangGraph workflow node  
 ✅ **Citációkkal** ellátott válaszokat ad (section ID format: IT-KB-234)  
+✅ **Enhanced citation display** - Card layout relevancia score-ral (%), section ID, hover effect  
 ✅ **Konverzáció előzményt** mentesít JSON-ban  
 ✅ **Docker Compose** multi-container (backend, frontend, qdrant, redis, postgres)  
 🆕 **SOLID architektúra** ABC interfészekkel  
@@ -56,6 +57,7 @@ KnowledgeRouter egy vállalati belső tudásbázis rendszer, amely:
 🆕 **Observation Node + Replan Loop (v2.8)** - LLM-based evaluation: sufficient info? → generate OR replan (max 2x), gap detection, automatic replanning
 🔧 **Production Hardened (v2.9)** - Manual JSON parsing, state management fixes, 50 recursion limit, IT domain UX guarantee
 🚀 **Dual Pipeline Modes (v2.10)** - USE_SIMPLE_PIPELINE feature flag: Simple (15 sec, RAG-only) vs Complex (30-50 sec, full LangGraph with replan/tools/workflows)
+🆕 **STRICT_RAG_MODE Feature Flag (v2.12)** - Configurable RAG behavior: `true` = refuse without context (original), `false` = allow LLM general knowledge with ⚠️ warning prefix
 
 ## 📋 Tech Stack
 
@@ -65,9 +67,10 @@ KnowledgeRouter egy vállalati belső tudásbázis rendszer, amely:
 - **Vector DB**: Qdrant (self-hosted)
 - **Cache**: Redis 7 (embedding + query result cache)
 - **Database**: PostgreSQL 15 (feedback & analytics)
-- **Monitoring**: Prometheus + Grafana (metrics & dashboards)
+- **Monitoring**: Prometheus + Grafana (metrics, dashboards, cost tracking)
+- **Logging**: Loki + Promtail (structured JSON logs, LogQL queries, log aggregation)
 - **Frontend**: Tailwind CSS + Vanilla JavaScript (ChatGPT-style UI)
-- **Deployment**: Docker Compose (6 services)
+- **Deployment**: Docker Compose (7 services: backend, frontend, qdrant, redis, postgres, prometheus, grafana, loki, promtail)
 - **Testing**: pytest (200+ tests, 54% coverage)
   - **RAG Optimization**: 27 tests (deduplication, IT overlap boost, integration)
   - **Feedback Ranking**: 15 tests (boost calculation, batch ops)
@@ -76,9 +79,11 @@ KnowledgeRouter egy vállalati belső tudásbázis rendszer, amely:
   - **Observation + Replan**: 6 tests (LLM evaluation, replan routing, max limit)
   - **Integration E2E**: 7 tests (complete workflow, replan loop)
   - **Monitoring**: 22 tests (metrics API, collection, edge cases)
+  - **Logging**: 16 tests (structured logging, JSON format, LogContext, Loki integration)
   - **Coverage Highlights**:
     - `openai_clients.py`: **100%** ✅
     - `tool_registry.py`: **100%** ✅
+    - `structured_logging.py`: **91%** ✅
     - `prometheus_metrics.py`: **86%** ✅
     - `qdrant_rag_client.py`: **70%** (up from 18%)
     - `atlassian_client.py`: **87%**

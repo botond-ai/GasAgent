@@ -1,7 +1,7 @@
 # KnowledgeRouter - Feature List
 
-**Version:** 2.11.0 (Monitoring Upgrade)  
-**Last Updated:** 2026-01-21  
+**Version:** 2.12.0 (STRICT_RAG_MODE Feature)  
+**Last Updated:** 2026-01-23  
 **Breaking Changes:** 
 - Removed Anthropic/Claude support - OpenAI only
 - **LangChain with_structured_output() replaced with manual JSON parsing** (critical bugfix)
@@ -88,7 +88,10 @@
 
 ---
 
-### 📊 Prometheus + Grafana Monitoring (NEW in v2.11)
+### 📊 Prometheus + Grafana Monitoring & Loki Logging
+
+**Monitoring (v2.11):** Prometheus + Grafana metrics  
+**Logging (v2.12):** Loki + Promtail structured JSON logs
 
 #### Real-Time Metrics Collection
 - **11 Metric Types**:
@@ -118,7 +121,9 @@
   - Active Requests (real-time)
   - Error Rate (by type)
 - **Access**: http://localhost:3001 (admin/admin)
-- **Auto-provisioned**: Datasource + dashboard on startup
+- **Datasources**: Prometheus (metrics) + Loki (logs)
+- **Auto-provisioned**: Datasources + dashboard on startup
+- **Log Exploration**: Explore → Loki → `{container="knowledgerouter_backend"}`
 
 #### Debug Panel Integration
 - **📊 Monitoring Stats** section in debug panel
@@ -149,19 +154,27 @@
 
 #### Configuration
 - **prometheus.yml**: Scrape config (15s interval)
+- **loki-config.yml**: Loki server config (storage, retention)
+- **promtail-config.yml**: Log scraping config (Docker containers)
 - **grafana/provisioning/**:
-  - `datasources/prometheus.yml` - Auto-configured datasource
+  - `datasources/datasources.yml` - Prometheus + Loki datasources
   - `dashboards/dashboard.yml` - Dashboard provider
   - `dashboards/knowledgerouter.json` - Dashboard definition
 
 #### Docs
-- **docs/MONITORING.md**: Complete monitoring guide
+- **docs/MONITORING.md**: Complete monitoring guide (Prometheus + Grafana)
   - Quick Start
   - Metric definitions
   - Dashboard panels
   - Key queries
   - Testing
   - Production recommendations
+  - Troubleshooting
+- **docs/LOKI_LOGGING.md**: Complete logging guide (Loki + Promtail)
+  - Structured JSON logging
+  - LogQL query examples
+  - Integration guide
+  - Grafana Explore usage
   - Troubleshooting
 
 ---
@@ -248,6 +261,123 @@
 7. **Generation** (10-15 sec):
    - GPT-4o-mini generates final answer
    - IT domain: Auto-appends Jira ticket question
+   - **STRICT_RAG_MODE** controls fallback behavior (see below)
+
+---
+
+### 🛡️ STRICT_RAG_MODE Feature Flag (NEW in v2.12)
+
+#### Overview
+
+Configurable LLM fallback behavior when RAG (Retrieval-Augmented Generation) returns no relevant documents from the knowledge base.
+
+#### Feature Flag: STRICT_RAG_MODE
+
+**Environment Variable:**
+```bash
+# .env file
+STRICT_RAG_MODE=true   # Default: strict mode
+STRICT_RAG_MODE=false  # Relaxed mode
+```
+
+**Docker Compose:**
+```yaml
+services:
+  backend:
+    environment:
+      - STRICT_RAG_MODE=${STRICT_RAG_MODE:-true}  # Default to true
+```
+
+#### Behavior Modes
+
+**Strict Mode (STRICT_RAG_MODE=true) - Default:**
+- **Response**: Refuses to answer if RAG returns 0 documents
+- **Message**: "Sajnálom, nem találtam releváns információt ehhez a kérdéshez a rendelkezésre álló dokumentumokban..."
+- **LLM Prompt**: Contains `CRITICAL FAIL-SAFE INSTRUCTIONS` block
+- **Use Case**: Production environments, compliance-sensitive domains (Legal, Finance)
+- **Safety**: Prevents hallucination, ensures factual accuracy from known sources
+
+**Relaxed Mode (STRICT_RAG_MODE=false):**
+- **Response**: Allows LLM to use general knowledge with warning prefix
+- **Message Prefix**: "⚠️ A következő információ általános tudásomon alapul, nem pedig a szervezeti dokumentumokon:"
+- **LLM Prompt**: Contains `INSTRUCTIONS` block (less restrictive)
+- **Use Case**: Development, general knowledge queries (e.g., "What is an IP address?")
+- **Safety**: Clear warning to user that information is not from company docs
+
+#### Prompt Differences
+
+**Strict Mode Prompt:**
+```
+CRITICAL FAIL-SAFE INSTRUCTIONS:
+1. **Only use information from the retrieved documents above** - DO NOT invent facts
+2. **If no relevant documents were retrieved** (empty context):
+   - Respond with: "Sajnálom, nem találtam releváns információt..."
+```
+
+**Relaxed Mode Prompt:**
+```
+INSTRUCTIONS:
+1. **Prefer information from the retrieved documents above**, but you may use your general knowledge if documents are insufficient
+2. **If using general knowledge (not from documents):**
+   - Clearly state: "⚠️ A következő információ általános tudásomon alapul..."
+   - Suggest verifying with the relevant team for organization-specific details
+```
+
+#### Implementation Details
+
+**Code Location:** [backend/services/agent.py](../backend/services/agent.py#L963-L991)
+
+**Logic:**
+```python
+strict_rag_mode = os.getenv("STRICT_RAG_MODE", "true").lower() == "true"
+
+if not context.strip():  # No RAG results
+    if strict_rag_mode:
+        # Original behavior: refuse to answer
+        failsafe_instructions = "CRITICAL FAIL-SAFE..."
+    else:
+        # New behavior: allow general knowledge
+        failsafe_instructions = "INSTRUCTIONS: ...you may use your general knowledge..."
+```
+
+**Important Notes:**
+- Environment variable changes require `docker-compose up -d --force-recreate backend`
+- Simple `docker-compose restart` is **not sufficient** (Docker caches env vars)
+- Backend code is volume-mounted (`./backend:/app`) so code changes auto-reload via `uvicorn --reload`
+
+#### Test Coverage
+
+**Test File:** [tests/test_strict_rag_mode.py](../backend/tests/test_strict_rag_mode.py)
+
+**Tests:**
+- ✅ Strict mode detection (`STRICT_RAG_MODE=true`)
+- ✅ Relaxed mode detection (`STRICT_RAG_MODE=false`)
+- ✅ Default behavior (strict when env var not set)
+- ✅ Case-insensitive values (`True`, `TRUE`, `true`, `False`, `FALSE`, `false`)
+- ✅ Prompt contains strict instructions when enabled
+- ✅ Prompt contains relaxed instructions when disabled
+
+**Test Results:** 7/7 passed ✅
+
+#### Usage Recommendations
+
+**Use Strict Mode (true) when:**
+- ✅ Production environment
+- ✅ Legal/Finance/HR domains (compliance-critical)
+- ✅ Want to prevent LLM hallucination
+- ✅ Only trust company-approved documentation
+
+**Use Relaxed Mode (false) when:**
+- ✅ Development/testing environment
+- ✅ General knowledge queries ("What is an IP address?")
+- ✅ Allowing fallback to LLM training data is acceptable
+- ✅ User is aware of warning prefix
+
+#### Security Considerations
+
+- **Strict mode** prevents information leakage from LLM training data
+- **Relaxed mode** clearly marks non-company information with ⚠️ prefix
+- Both modes **never fabricate** organization-specific details (emails, policies, internal procedures)
 
 8. **Guardrail** (0.5 sec):
    - IT domain: Citation validation
@@ -394,7 +524,11 @@ environment:
 #### RAG Pipeline
 - **Semantic Search**: OpenAI `text-embedding-3-small` (1536 dims)
 - **Top-K Retrieval**: Configurable number of relevant documents
-- **Citation Support**: Document references with source links
+- **Citation Support**: Enhanced card display with:
+  - **Relevance Score**: Percentage-based similarity score (0-100%)
+  - **Document Metadata**: Section ID (IT-KB-xxx), Doc ID tracking
+  - **Interactive Cards**: Hover effects, clickable URLs, emoji icons
+  - **Visual Hierarchy**: Card layout with header/metadata sections
 - **Context Window Management**: Auto-truncate to fit model limits (128k tokens)
 
 ---

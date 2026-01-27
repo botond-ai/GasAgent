@@ -3,6 +3,7 @@ Services - LangGraph-based agent orchestration.
 """
 import asyncio
 import logging
+import os
 import re
 import time
 from typing import Dict, Any, Sequence
@@ -42,6 +43,9 @@ class AgentState(TypedDict, total=False):
     rag_context: str  # Full RAG context sent to LLM
     llm_prompt: str   # Complete prompt sent to LLM
     llm_response: str # Raw LLM response
+    llm_input_tokens: int  # LLM input tokens
+    llm_output_tokens: int  # LLM output tokens
+    llm_total_cost: float  # LLM cost in USD
     # Guardrail fields
     validation_errors: list  # List of validation error messages
     retry_count: int  # Number of retry attempts (max 2)
@@ -956,6 +960,40 @@ Format your offer like this:
 This question MUST appear at the end of EVERY IT domain response.
 """
 
+        # Check if strict RAG mode is enabled (feature flag)
+        strict_rag_mode = os.getenv("STRICT_RAG_MODE", "true").lower() == "true"
+        logger.info(f"🔧 STRICT_RAG_MODE: env={os.getenv('STRICT_RAG_MODE', 'NOT_SET')}, strict_rag_mode={strict_rag_mode}")
+        
+        # Build fail-safe instructions based on feature flag
+        if strict_rag_mode:
+            # STRICT MODE: Require RAG context, refuse to answer without it
+            failsafe_instructions = """
+CRITICAL FAIL-SAFE INSTRUCTIONS:
+1. **Only use information from the retrieved documents above** - DO NOT invent facts, policies, or procedures
+2. **If information is contradictory, unclear, or missing:**
+   - DO NOT hallucinate or make assumptions
+   - Instead, respond with: "Sajnálom, nem tudok pontos választ adni a rendelkezésre álló információk alapján. Kérlek, pontosítsd a kérdést vagy fordulj a [domain] csapathoz közvetlenül."
+   - For Hungarian queries: "Sajnálom, az elérhető dokumentumok nem tartalmaznak elegendő információt ehhez a kérdéshez. Kérlek, vedd fel a kapcsolatot a [HR/IT/Finance/Legal/Marketing] csapattal további segítségért."
+3. **If no relevant documents were retrieved** (empty context):
+   - Respond with: "Sajnálom, nem találtam releváns információt ehhez a kérdéshez a rendelkezésre álló dokumentumokban. Kérlek, próbáld meg átfogalmazni a kérdést vagy vedd fel a kapcsolatot a megfelelő csapattal."
+4. **Never fabricate:** email addresses, phone numbers, section IDs, policy details, dates, or procedures not explicitly stated in the retrieved documents
+5. **If uncertain about any detail:** acknowledge the uncertainty and suggest contacting the relevant team
+"""
+        else:
+            # RELAXED MODE: Allow LLM to use general knowledge if RAG context is empty
+            failsafe_instructions = """
+INSTRUCTIONS:
+1. **Prefer information from the retrieved documents above**, but you may use your general knowledge if documents are insufficient
+2. **If using general knowledge (not from documents):**
+   - Clearly state: "⚠️ A következő információ általános tudásomon alapul, nem pedig a szervezeti dokumentumokon:"
+   - Be conservative and factual - only provide widely accepted information
+   - Suggest verifying with the relevant team for organization-specific details
+3. **If information is contradictory or unclear in documents:**
+   - Note the discrepancy and suggest contacting the relevant team for clarification
+4. **Never fabricate organization-specific details:** email addresses, phone numbers, section IDs, policy details, dates, or internal procedures
+5. **If uncertain about any detail:** acknowledge the uncertainty and suggest contacting the relevant team
+"""
+
         prompt = f"""
 You are a helpful HR/IT/Finance/Legal/Marketing assistant.
 
@@ -969,16 +1007,7 @@ User query: "{state['query']}"
 
 {domain_instructions}
 
-CRITICAL FAIL-SAFE INSTRUCTIONS:
-1. **Only use information from the retrieved documents above** - DO NOT invent facts, policies, or procedures
-2. **If information is contradictory, unclear, or missing:**
-   - DO NOT hallucinate or make assumptions
-   - Instead, respond with: "Sajnálom, nem tudok pontos választ adni a rendelkezésre álló információk alapján. Kérlek, pontosítsd a kérdést vagy fordulj a [domain] csapathoz közvetlenül."
-   - For Hungarian queries: "Sajnálom, az elérhető dokumentumok nem tartalmaznak elegendő információt ehhez a kérdéshez. Kérlek, vedd fel a kapcsolatot a [HR/IT/Finance/Legal/Marketing] csapattal további segítségért."
-3. **If no relevant documents were retrieved** (empty context):
-   - Respond with: "Sajnálom, nem találtam releváns információt ehhez a kérdéshez a rendelkezésre álló dokumentumokban. Kérlek, próbáld meg átfogalmazni a kérdést vagy vedd fel a kapcsolatot a megfelelő csapattal."
-4. **Never fabricate:** email addresses, phone numbers, section IDs, policy details, dates, or procedures not explicitly stated in the retrieved documents
-5. **If uncertain about any detail:** acknowledge the uncertainty and suggest contacting the relevant team
+{failsafe_instructions}
 
 Provide a comprehensive answer based on the retrieved documents above.
 Combine information from multiple sources when they relate to the same topic.
@@ -1039,14 +1068,41 @@ Respond with:
             llm_latency_ms = llm_latency_sec * 1000
             logger.info(f"🤖 LLM generation latency: {llm_latency_ms:.0f}ms (domain={state.get('domain')})")
             
-            # Record LLM metrics
+            # Extract token usage from response
+            input_tokens = 0
+            output_tokens = 0
+            if hasattr(response, 'response_metadata'):
+                # OpenAI uses 'token_usage' key in response_metadata
+                usage = response.response_metadata.get('token_usage', {}) or response.response_metadata.get('usage', {})
+                input_tokens = usage.get('prompt_tokens', 0) or usage.get('input_tokens', 0)
+                output_tokens = usage.get('completion_tokens', 0) or usage.get('output_tokens', 0)
+                logger.info(f"💰 Token usage: input={input_tokens}, output={output_tokens}")
+            else:
+                logger.warning("⚠️ No response_metadata found in LLM response")
+            
+            # Record LLM metrics with token usage
             model_name = getattr(self.llm, 'model_name', 'gpt-4o-mini')
             MetricsCollector.record_llm_call(
                 model=model_name,
                 status='success',
                 purpose='generation',
-                latency_seconds=llm_latency_sec
+                latency_seconds=llm_latency_sec,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens
             )
+            
+            # Calculate cost for telemetry
+            from infrastructure.prometheus_metrics import LLM_COST_CONFIG
+            cost_config = LLM_COST_CONFIG.get(model_name, {'input': 0.0, 'output': 0.0})
+            input_cost = (input_tokens / 1_000_000) * cost_config['input']
+            output_cost = (output_tokens / 1_000_000) * cost_config['output']
+            total_cost = input_cost + output_cost
+            logger.info(f"💵 Request cost: ${total_cost:.6f} (model={model_name})")
+            
+            # Store token and cost info in state
+            state["llm_input_tokens"] = input_tokens
+            state["llm_output_tokens"] = output_tokens
+            state["llm_total_cost"] = total_cost
         except Exception as e:
             llm_latency_sec = time.time() - llm_start
             logger.error(f"❌ LLM generation failed: {e}")
@@ -1498,6 +1554,9 @@ Respond with:
             processing_status=processing_status,
             validation_errors=validation_errors,
             retry_count=retry_count,
+            llm_input_tokens=final_state.get("llm_input_tokens", 0),
+            llm_output_tokens=final_state.get("llm_output_tokens", 0),
+            llm_total_cost=final_state.get("llm_total_cost", 0.0),
         )
 
         logger.info(f"Agent run completed: status={processing_status.value}, retries={retry_count}")
@@ -1539,6 +1598,9 @@ Respond with:
             rag_context=final_state.get("rag_context"),
             llm_prompt=final_state.get("llm_prompt"),
             llm_response=final_state.get("llm_response"),
+            llm_input_tokens=final_state.get("llm_input_tokens", 0),
+            llm_output_tokens=final_state.get("llm_output_tokens", 0),
+            llm_total_cost=final_state.get("llm_total_cost", 0.0),
         )
 
         logger.info("Agent run completed")
@@ -1625,6 +1687,9 @@ Respond with:
                 rag_context=state.get("rag_context"),
                 llm_prompt=state.get("llm_prompt"),
                 llm_response=state.get("llm_response"),
+                llm_input_tokens=state.get("llm_input_tokens", 0),
+                llm_output_tokens=state.get("llm_output_tokens", 0),
+                llm_total_cost=state.get("llm_total_cost", 0.0),
             )
             
             return response
@@ -1649,7 +1714,11 @@ Respond with:
         it_keywords = [
             "vpn", "jelszó", "password", "wifi", "hálózat", "network",
             "laptop", "számítógép", "computer", "szoftver", "software",
-            "helpdesk", "support", "ticket"
+            "helpdesk", "support", "ticket",
+            # Security & Antivirus
+            "vírus", "virus", "antivirus", "vírusirtó", "vírusírt", "malware",
+            "eset", "ransomware", "trojan", "tűzfal", "firewall", "biztonsági",
+            "security", "támadás", "attack", "védelmi", "protection"
         ]
         if any(kw in query_lower for kw in it_keywords):
             return "it"

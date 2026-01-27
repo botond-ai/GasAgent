@@ -1,0 +1,14 @@
+{
+  "session_id": "session_1769010006543_0iexpfgtp",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Listázd, hogy mely paragrafusok foglalkoznak az egyetemes szolgáltatóval",
+      "timestamp": "2026-01-21T15:40:16.721878",
+      "metadata": null
+    }
+  ],
+  "summary": null,
+  "created_at": "2026-01-21T15:40:16.677999",
+  "updated_at": "2026-01-21T15:40:16.729336"
+}

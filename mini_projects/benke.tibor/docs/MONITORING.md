@@ -35,6 +35,28 @@ A KnowledgeRouter teljes Prometheus + Grafana monitoring rendszert használ a te
 - Labels: `model`, `purpose`
 - Buckets: 0.1s - 30s
 
+**knowledgerouter_llm_tokens_total** (Counter)
+- Total LLM tokens consumed
+- Labels: `model`, `token_type`, `purpose`
+- Token types: input, output
+
+**knowledgerouter_llm_cost_total** (Counter)
+- Total LLM API cost in USD
+- Labels: `model`, `purpose`
+- Tracks cumulative cost based on token usage
+
+**Cost Calculation:**
+- GPT-4o: $2.50/M input, $10.00/M output
+- GPT-4o-mini: $0.15/M input, $0.60/M output
+- Claude 3.5 Sonnet: $3.00/M input, $15.00/M output
+- o1-preview: $15.00/M input, $60.00/M output
+- o1-mini: $3.00/M input, $12.00/M output
+
+**Average Cost per Request:**
+```promql
+sum(knowledgerouter_llm_cost_total) / sum(knowledgerouter_requests_total)
+```
+
 ### Cache Metrics
 
 **knowledgerouter_cache_hits_total** (Counter)
@@ -116,6 +138,9 @@ knowledgerouter_requests_total{domain="it",status="success",pipeline_mode="compl
 ### LLM Metrics
 - **LLM Call Rate**: LLM API calls per second by model
 - **LLM Latency (p95)**: 95th percentile LLM call latency
+- **Total LLM Cost (USD)**: Cumulative API cost across all models
+- **Cost per Request (USD)**: Average cost per request
+- **LLM Cost Over Time**: Cost rate by model and purpose
 
 ### Cache Performance
 - **Cache Hit Rate (%)**: Cache efficiency by type

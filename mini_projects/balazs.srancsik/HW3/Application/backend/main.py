@@ -48,6 +48,50 @@ chat_service: ChatService = None
 user_repo: IUserRepository = None
 
 
+def _is_valid_image(content: bytes, file_ext: str) -> bool:
+    """
+    Validate image file by checking magic bytes.
+    Returns True if content matches expected image format.
+    """
+    if len(content) < 12:
+        return False
+    
+    # Check magic bytes for common image formats
+    magic_bytes = {
+        '.jpg': [b'\xFF\xD8\xFF'],
+        '.jpeg': [b'\xFF\xD8\xFF'],
+        '.png': [b'\x89PNG\r\n\x1a\n'],
+        '.gif': [b'GIF87a', b'GIF89a'],
+        '.bmp': [b'BM'],
+        '.webp': [b'RIFF'],
+        '.tiff': [b'II*\x00', b'MM\x00*'],
+        '.tif': [b'II*\x00', b'MM\x00*'],
+        '.heic': [b'ftyp'],
+        '.heif': [b'ftyp'],
+    }
+    
+    # SVG is XML-based, check for XML/SVG markers
+    if file_ext == '.svg':
+        try:
+            content_str = content[:1000].decode('utf-8', errors='ignore').lower()
+            return '<svg' in content_str or '<?xml' in content_str
+        except:
+            return False
+    
+    expected_signatures = magic_bytes.get(file_ext, [])
+    for signature in expected_signatures:
+        if content.startswith(signature):
+            return True
+        # For WEBP, check at offset 8
+        if file_ext == '.webp' and len(content) > 12 and content[8:12] == b'WEBP':
+            return True
+        # For HEIC/HEIF, check at offset 4
+        if file_ext in ['.heic', '.heif'] and len(content) > 12 and b'ftyp' in content[4:12]:
+            return True
+    
+    return len(expected_signatures) == 0  # Allow if no signature defined
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan manager - initialize services on startup."""
@@ -233,26 +277,99 @@ async def chat_with_files(
     - Chat messages with attached files
     - Files are saved temporarily and passed to the photo_upload tool
     - Supports multiple file uploads via drag-and-drop or file picker
+    - Validates file types, sizes, and content
     """
     temp_dir = None
+    
+    # File validation constants
+    MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB per file
+    MAX_TOTAL_SIZE = 200 * 1024 * 1024  # 200MB total
+    ALLOWED_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.heic', '.heif', '.tiff', '.tif', '.svg'}
+    ALLOWED_MIME_TYPES = {
+        'image/jpeg', 'image/png', 'image/gif', 'image/bmp', 'image/webp',
+        'image/heic', 'image/heif', 'image/tiff', 'image/svg+xml'
+    }
+    
     try:
         logger.info(f"Chat with files request from user {user_id}, {len(files)} files attached")
         
-        # Save uploaded files to temporary directory
+        # Validate number of files
+        if len(files) > 50:
+            raise HTTPException(status_code=400, detail="Too many files. Maximum 50 files per upload.")
+        
+        # Check available disk space
+        import shutil as shutil_disk
+        stat = shutil_disk.disk_usage(tempfile.gettempdir())
+        available_space = stat.free
+        if available_space < 500 * 1024 * 1024:  # Less than 500MB available
+            logger.error(f"Low disk space: {available_space / (1024*1024):.1f} MB available")
+            raise HTTPException(status_code=507, detail="Insufficient disk space on server")
+        
+        # Save uploaded files to temporary directory with validation
         file_paths = []
         file_names = []
+        total_size = 0
+        validation_errors = []
         
         if files:
             temp_dir = tempfile.mkdtemp()
-            for file in files:
-                if file.filename:
-                    file_path = os.path.join(temp_dir, file.filename)
-                    with open(file_path, "wb") as buffer:
-                        content = await file.read()
-                        buffer.write(content)
-                    file_paths.append(file_path)
-                    file_names.append(file.filename)
-                    logger.info(f"Saved uploaded file: {file.filename}")
+            for idx, file in enumerate(files):
+                if not file.filename:
+                    continue
+                
+                # Validate file extension
+                file_ext = os.path.splitext(file.filename)[1].lower()
+                if file_ext not in ALLOWED_EXTENSIONS:
+                    validation_errors.append(f"{file.filename}: Invalid file type. Allowed: {', '.join(ALLOWED_EXTENSIONS)}")
+                    continue
+                
+                # Validate MIME type
+                if file.content_type and file.content_type not in ALLOWED_MIME_TYPES:
+                    validation_errors.append(f"{file.filename}: Invalid MIME type '{file.content_type}'")
+                    continue
+                
+                # Read file content
+                content = await file.read()
+                file_size = len(content)
+                
+                # Validate file size
+                if file_size == 0:
+                    validation_errors.append(f"{file.filename}: File is empty")
+                    continue
+                
+                if file_size > MAX_FILE_SIZE:
+                    size_mb = file_size / (1024 * 1024)
+                    validation_errors.append(f"{file.filename}: File too large ({size_mb:.1f}MB). Maximum {MAX_FILE_SIZE/(1024*1024):.0f}MB per file")
+                    continue
+                
+                total_size += file_size
+                if total_size > MAX_TOTAL_SIZE:
+                    validation_errors.append(f"Total upload size exceeds {MAX_TOTAL_SIZE/(1024*1024):.0f}MB limit")
+                    break
+                
+                # Validate file magic bytes (basic image validation)
+                if not _is_valid_image(content, file_ext):
+                    validation_errors.append(f"{file.filename}: File content doesn't match image format")
+                    continue
+                
+                # Save file
+                file_path = os.path.join(temp_dir, file.filename)
+                with open(file_path, "wb") as buffer:
+                    buffer.write(content)
+                
+                file_paths.append(file_path)
+                file_names.append(file.filename)
+                logger.info(f"Saved and validated file: {file.filename} ({file_size/1024:.1f} KB)")
+        
+        # If all files failed validation, return error
+        if validation_errors and not file_paths:
+            error_msg = "All files failed validation:\n" + "\n".join(validation_errors)
+            logger.warning(f"File validation failed: {error_msg}")
+            raise HTTPException(status_code=400, detail=error_msg)
+        
+        # Log validation warnings if some files were rejected
+        if validation_errors:
+            logger.warning(f"Some files rejected: {validation_errors}")
         
         # Create chat request with file info in message
         file_info = ""
@@ -277,10 +394,12 @@ async def chat_with_files(
         )
         
         return response
-        
+    
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Chat with files error: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Upload failed: {str(e)}")
     finally:
         # Clean up temporary files
         if temp_dir and os.path.exists(temp_dir):

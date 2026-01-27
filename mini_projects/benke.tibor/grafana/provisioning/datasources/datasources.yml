@@ -1,0 +1,29 @@
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true
+    jsonData:
+      timeInterval: 15s
+
+  - name: Loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    isDefault: false
+    editable: true
+    jsonData:
+      maxLines: 1000
+      derivedFields:
+        # Extract user_id from logs and create link
+        - name: user_id
+          matcherRegex: '"user_id":"([^"]+)"'
+          url: '/explore?left=["now-1h","now","Loki",{"expr":"{job=\"backend\"} |= \"$${__value.raw}\""}]'
+        # Extract session_id from logs and create link
+        - name: session_id
+          matcherRegex: '"session_id":"([^"]+)"'
+          url: '/explore?left=["now-1h","now","Loki",{"expr":"{job=\"backend\"} |= \"$${__value.raw}\""}]'

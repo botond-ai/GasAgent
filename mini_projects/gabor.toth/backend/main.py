@@ -35,8 +35,9 @@ from infrastructure.repositories import (
     JSONUserProfileRepository, JSONSessionRepository, FileUploadRepository
 )
 from services.upload_service import UploadService
-from services.rag_agent import create_rag_agent, RAGAgent
+from services.langgraph_workflow import create_advanced_rag_workflow, AdvancedRAGAgent, ToolRegistry
 from services.chat_service import ChatService
+from services.development_logger import get_dev_logger, format_dev_logs_for_display
 
 
 # Activity callback implementation for logging to frontend
@@ -74,7 +75,9 @@ profile_repo: Optional[JSONUserProfileRepository] = None
 session_repo: Optional[JSONSessionRepository] = None
 upload_repo: Optional[FileUploadRepository] = None
 upload_service: Optional[UploadService] = None
-rag_agent: Optional[RAGAgent] = None
+compiled_graph: Optional[any] = None
+tool_registry: Optional[ToolRegistry] = None
+rag_agent: Optional[AdvancedRAGAgent] = None
 chat_service: Optional[ChatService] = None
 activity_callback: Optional[QueuedActivityCallback] = None
 
@@ -84,7 +87,7 @@ async def lifespan(app: FastAPI):
     """Initialize on startup, cleanup on shutdown."""
     global embedding_service, vector_store, chunker, category_router
     global rag_answerer, profile_repo, session_repo, upload_repo
-    global upload_service, rag_agent, chat_service, activity_callback
+    global upload_service, compiled_graph, tool_registry, rag_agent, chat_service, activity_callback
 
     # Check required env vars
     openai_api_key = os.getenv("OPENAI_API_KEY")
@@ -111,11 +114,11 @@ async def lifespan(app: FastAPI):
         upload_repo, profile_repo, activity_callback
     )
 
-    # Create LangGraph agent
-    compiled_graph = create_rag_agent(
+    # Create LangGraph agent with hybrid architecture
+    compiled_graph, tool_registry = create_advanced_rag_workflow(
         category_router, embedding_service, vector_store, rag_answerer
     )
-    rag_agent = RAGAgent(compiled_graph)
+    rag_agent = AdvancedRAGAgent(compiled_graph, tool_registry)
 
     chat_service = ChatService(rag_agent, profile_repo, session_repo, upload_repo, activity_callback)
 
@@ -147,6 +150,64 @@ async def get_activities(count: int = Query(50, ge=1, le=200)):
         return {"activities": []}
     activities = await activity_callback.get_activities(count)
     return {"activities": activities}
+
+
+@app.get("/api/dev-logs")
+async def get_dev_logs(
+    feature: Optional[str] = Query(None, description="Filter by feature"),
+    limit: int = Query(100, ge=1, le=500, description="Max logs to return")
+):
+    """Get development logs for today's features (5 Advanced RAG Suggestions).
+    
+    Features:
+    - conversation_history: #1 Conversation History
+    - retrieval_check: #2 Retrieval Before Tools
+    - checkpointing: #3 Workflow Checkpointing
+    - reranking: #4 Semantic Reranking
+    - hybrid_search: #5 Hybrid Search
+    """
+    dev_logger = get_dev_logger()
+    logs = dev_logger.get_logs(feature=feature, limit=limit)
+    summary = dev_logger.get_summary()
+    
+    return {
+        "logs": logs,
+        "summary": summary,
+        "total_logs": len(dev_logger.logs)
+    }
+
+
+@app.get("/api/dev-logs/summary")
+async def get_dev_logs_summary():
+    """Get summary of all development features."""
+    dev_logger = get_dev_logger()
+    summary = dev_logger.get_summary()
+    
+    return {
+        "summary": summary,
+        "total_logs": len(dev_logger.logs),
+        "features": {
+            "conversation_history": "#1: Conversation History",
+            "retrieval_check": "#2: Retrieval Before Tools",
+            "checkpointing": "#3: Workflow Checkpointing",
+            "reranking": "#4: Semantic Reranking",
+            "hybrid_search": "#5: Hybrid Search",
+        }
+    }
+
+
+@app.delete("/api/dev-logs")
+async def clear_dev_logs():
+    """Clear all development logs."""
+    dev_logger = get_dev_logger()
+    old_count = len(dev_logger.logs)
+    dev_logger.logs.clear()
+    
+    return {
+        "message": "Development logs cleared",
+        "cleared_count": old_count,
+        "remaining_count": len(dev_logger.logs)
+    }
 
 
 # ============================================================================

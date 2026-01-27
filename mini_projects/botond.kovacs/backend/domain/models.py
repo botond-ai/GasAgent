@@ -1,3 +1,4 @@
+
 """
 Domain models - Core business entities.
 Following SOLID: Single Responsibility Principle - each model has one clear purpose.
@@ -5,6 +6,13 @@ Following SOLID: Single Responsibility Principle - each model has one clear purp
 from typing import List, Dict, Any, Optional, Literal
 from datetime import datetime
 from pydantic import BaseModel, Field
+
+# MCP Tool model
+class MCPTool(BaseModel):
+    name: str
+    description: Optional[str] = None
+    input_schema: Optional[Dict[str, Any]] = None
+    output_schema: Optional[Dict[str, Any]] = None
 
 
 class Message(BaseModel):
@@ -63,6 +71,8 @@ class ChatRequest(BaseModel):
     user_id: str
     message: str
     session_id: Optional[str] = None
+    memory_mode: Optional[str] = None  # e.g. "hybrid"
+    pii_mode: Optional[str] = None  # e.g. "placeholder"
 
 
 class ChatResponse(BaseModel):

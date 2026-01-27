@@ -44,13 +44,16 @@ sudo apt-get install docker.io docker-compose
 ```
 
 **Docker Services:**
-A Docker Compose 6 szolgáltatást indít:
+A Docker Compose 9 szolgáltatást indít:
 - **Backend** (Django): http://localhost:8001
 - **Frontend** (Nginx): http://localhost:8000
 - **Qdrant** (Vector DB): http://localhost:6334
 - **Redis** (Cache): localhost:6380
+- **PostgreSQL** (Database): localhost:5432
 - **Prometheus** (Metrics): http://localhost:9090
 - **Grafana** (Dashboards): http://localhost:3001 (admin/admin)
+- **Loki** (Log Aggregation): http://localhost:3100
+- **Promtail** (Log Shipper): http://localhost:9080
 
 ### 2. Repository Klónozása
 
@@ -95,7 +98,9 @@ Nyisd meg a böngészőt:
 - **Cache Stats**: http://localhost:8001/api/cache-stats/
 - **Metrics API**: http://localhost:8001/api/metrics/ (Prometheus format)
 - **Prometheus**: http://localhost:9090 (metrics storage & queries)
-- **Grafana**: http://localhost:3001 (dashboards, login: admin/admin)
+- **Grafana**: http://localhost:3001 (dashboards + log exploration, login: admin/admin)
+- **Loki**: http://localhost:3100 (log aggregation, LogQL API)
+- **Promtail**: http://localhost:9080 (log shipper metrics)
 
 ---
 

@@ -58,6 +58,26 @@ class IConversationRepository(ABC):
 
 class IToolClient(ABC):
     """Base interface for external tool clients."""
+
+
+# --- MCP Client Interface ---
+class IMCPClient(ABC):
+    """Interface for Model Context Protocol (MCP) client."""
+    @abstractmethod
+    async def connect(self) -> None:
+        pass
+
+    @abstractmethod
+    async def initialize(self) -> str:
+        pass
+
+    @abstractmethod
+    async def list_tools(self) -> list:
+        pass
+
+    @abstractmethod
+    async def call_tool(self, name: str, arguments: dict) -> dict:
+        pass
     @abstractmethod
     async def execute(self, **kwargs) -> Dict[str, Any]:
         """Execute the tool with given parameters."""

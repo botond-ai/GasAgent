@@ -6,6 +6,8 @@ Metrics:
 - knowledgerouter_latency_seconds: Histogram for request latency
 - knowledgerouter_llm_calls_total: Counter for LLM API calls
 - knowledgerouter_llm_latency_seconds: Histogram for LLM call latency
+- knowledgerouter_llm_tokens_total: Counter for LLM tokens consumed
+- knowledgerouter_llm_cost_total: Counter for LLM API cost in USD
 - knowledgerouter_cache_hits_total: Counter for cache hits
 - knowledgerouter_cache_misses_total: Counter for cache misses
 - knowledgerouter_errors_total: Counter for errors by type
@@ -53,6 +55,20 @@ llm_latency = Histogram(
     'LLM API call latency in seconds',
     ['model', 'purpose'],
     buckets=(0.1, 0.5, 1.0, 2.0, 5.0, 10.0, 15.0, 20.0, 30.0),
+    registry=metrics_registry
+)
+
+llm_tokens_total = Counter(
+    'knowledgerouter_llm_tokens_total',
+    'Total number of LLM tokens consumed',
+    ['model', 'token_type', 'purpose'],
+    registry=metrics_registry
+)
+
+llm_cost_total = Counter(
+    'knowledgerouter_llm_cost_total',
+    'Total LLM API cost in USD',
+    ['model', 'purpose'],
     registry=metrics_registry
 )
 
@@ -112,6 +128,17 @@ replan_loops_total = Counter(
 )
 
 
+# LLM cost configuration (USD per million tokens)
+LLM_COST_CONFIG = {
+    'gpt-4o': {'input': 2.50, 'output': 10.00},
+    'gpt-4o-mini': {'input': 0.15, 'output': 0.60},
+    'claude-3-5-sonnet-20241022': {'input': 3.00, 'output': 15.00},
+    'claude-3-5-sonnet': {'input': 3.00, 'output': 15.00},
+    'o1-preview': {'input': 15.00, 'output': 60.00},
+    'o1-mini': {'input': 3.00, 'output': 12.00},
+}
+
+
 class MetricsCollector:
     """Helper class for collecting and recording metrics."""
     
@@ -122,11 +149,34 @@ class MetricsCollector:
         request_latency.labels(domain=domain, pipeline_mode=pipeline_mode).observe(latency_seconds)
     
     @staticmethod
-    def record_llm_call(model: str, status: str, purpose: str, latency_seconds: float = None):
-        """Record an LLM API call."""
+    def record_llm_call(
+        model: str, 
+        status: str, 
+        purpose: str, 
+        latency_seconds: float = None,
+        input_tokens: int = 0,
+        output_tokens: int = 0
+    ):
+        """Record an LLM API call with tokens and cost."""
         llm_calls_total.labels(model=model, status=status, purpose=purpose).inc()
         if latency_seconds is not None:
             llm_latency.labels(model=model, purpose=purpose).observe(latency_seconds)
+        
+        # Record token usage
+        if input_tokens > 0:
+            llm_tokens_total.labels(model=model, token_type='input', purpose=purpose).inc(input_tokens)
+        if output_tokens > 0:
+            llm_tokens_total.labels(model=model, token_type='output', purpose=purpose).inc(output_tokens)
+        
+        # Calculate and record cost
+        if status == 'success' and (input_tokens > 0 or output_tokens > 0):
+            cost_config = LLM_COST_CONFIG.get(model, {'input': 0.0, 'output': 0.0})
+            input_cost = (input_tokens / 1_000_000) * cost_config['input']
+            output_cost = (output_tokens / 1_000_000) * cost_config['output']
+            total_cost = input_cost + output_cost
+            
+            if total_cost > 0:
+                llm_cost_total.labels(model=model, purpose=purpose).inc(total_cost)
     
     @staticmethod
     def record_cache_hit(cache_type: str):

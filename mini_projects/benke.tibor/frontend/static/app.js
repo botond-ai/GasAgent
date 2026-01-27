@@ -11,6 +11,7 @@ const debugCitations = document.getElementById('debugCitations');
 const debugChunkCount = document.getElementById('debugChunkCount');
 const debugMaxScore = document.getElementById('debugMaxScore');
 const debugLatency = document.getElementById('debugLatency');
+const debugRequestCost = document.getElementById('debugRequestCost');
 const debugWorkflow = document.getElementById('debugWorkflow');
 const debugNextStep = document.getElementById('debugNextStep');
 const debugRequestJson = document.getElementById('debugRequestJson');
@@ -84,19 +85,49 @@ function addMessage(content, type = 'info', citations = null, originalQuery = nu
             html += `<h4 class="citations-title">📚 Felhasznált források (${citationObjects.length})</h4>`;
             html += `</div>`;
             
-            // List all source documents
-            html += `<ul class="citations-list">`;
+            // Display citations as enhanced cards with score and metadata
             citationObjects.forEach((citation, index) => {
                 const title = citation.title || 'Ismeretlen dokumentum';
                 const url = citation.url || null;
+                const score = citation.score || 0;
+                const scorePercent = Math.round(score * 100);
+                const sectionId = citation.section_id || null;
+                const docId = citation.doc_id || null;
+                
+                html += `<div class="citation-card">`;
+                html += `  <div class="citation-header">`;
+                html += `    <div class="citation-title">`;
                 
                 if (url) {
-                    html += `<li><a href="${url}" target="_blank" class="citation-link">🔗 ${escapeHtml(title)}</a></li>`;
+                    html += `<a href="${url}" target="_blank">🔗 ${escapeHtml(title)}</a>`;
                 } else {
-                    html += `<li>📄 ${escapeHtml(title)}</li>`;
+                    html += `📄 ${escapeHtml(title)}`;
                 }
+                
+                html += `    </div>`;
+                html += `    <div class="citation-score">${scorePercent}%</div>`;
+                html += `  </div>`;
+                
+                // Display metadata (section_id, doc_id)
+                if (sectionId || docId) {
+                    html += `  <div class="citation-metadata">`;
+                    if (sectionId) {
+                        html += `    <span class="citation-meta-item">`;
+                        html += `      <span class="citation-meta-icon">🔖</span>`;
+                        html += `      <span>${escapeHtml(sectionId)}</span>`;
+                        html += `    </span>`;
+                    }
+                    if (docId) {
+                        html += `    <span class="citation-meta-item">`;
+                        html += `      <span class="citation-meta-icon">🆔</span>`;
+                        html += `      <span>${escapeHtml(docId)}</span>`;
+                        html += `    </span>`;
+                    }
+                    html += `  </div>`;
+                }
+                
+                html += `</div>`;
             });
-            html += `</ul>`;
         } else {
             // No citations - show info message
             html += `<div class="no-citations-container">`;
@@ -251,12 +282,22 @@ async function refreshQuery(question, useCache = true) {
         if (payload.telemetry) {
             debugMaxScore.textContent = payload.telemetry.max_similarity_score || '-';
             debugLatency.textContent = payload.telemetry.total_latency_ms ? `${payload.telemetry.total_latency_ms}ms` : '-';
+            
+            // Update Request Cost from LLM telemetry
+            if (payload.telemetry.llm && payload.telemetry.llm.total_cost_usd !== undefined) {
+                const cost = payload.telemetry.llm.total_cost_usd;
+                debugRequestCost.textContent = `$${cost.toFixed(6)}`;
+            } else {
+                debugRequestCost.textContent = '-';
+            }
         } else if (uniqueCitationObjects.length > 0) {
             const maxScore = Math.max(...uniqueCitationObjects.map(c => c.score || 0));
             debugMaxScore.textContent = maxScore.toFixed(3);
+            debugRequestCost.textContent = '-';
         } else {
             debugMaxScore.textContent = '-';
             debugLatency.textContent = '-';
+            debugRequestCost.textContent = '-';
         }
         
         if (payload.workflow) {
@@ -434,12 +475,22 @@ queryForm.addEventListener('submit', async (e) => {
         if (payload.telemetry) {
             debugMaxScore.textContent = payload.telemetry.max_similarity_score || '-';
             debugLatency.textContent = payload.telemetry.total_latency_ms ? `${payload.telemetry.total_latency_ms}ms` : '-';
+            
+            // Update Request Cost from LLM telemetry
+            if (payload.telemetry.llm && payload.telemetry.llm.total_cost_usd !== undefined) {
+                const cost = payload.telemetry.llm.total_cost_usd;
+                debugRequestCost.textContent = `$${cost.toFixed(6)}`;
+            } else {
+                debugRequestCost.textContent = '-';
+            }
         } else if (uniqueCitationObjects.length > 0) {
             const maxScore = Math.max(...uniqueCitationObjects.map(c => c.score || 0));
             debugMaxScore.textContent = maxScore.toFixed(3);
+            debugRequestCost.textContent = '-';
         } else {
             debugMaxScore.textContent = '-';
             debugLatency.textContent = '-';
+            debugRequestCost.textContent = '-';
         }
         
         if (payload.workflow) {
@@ -653,6 +704,7 @@ if (resetBtn) {
         if (debugChunkCount) debugChunkCount.textContent = '0';
         if (debugMaxScore) debugMaxScore.textContent = '-';
         if (debugLatency) debugLatency.textContent = '-';
+        if (debugRequestCost) debugRequestCost.textContent = '-';
         if (debugWorkflow) debugWorkflow.textContent = 'none';
         if (debugNextStep) debugNextStep.textContent = '-';
         if (debugRequestJson) debugRequestJson.textContent = '-';
@@ -828,6 +880,15 @@ async function fetchMonitoringStats() {
             ? ((latencySum / latencyCount) * 1000).toFixed(0) + 'ms'
             : '-';
         
+        // Cost calculation
+        const totalCost = metrics['knowledgerouter_llm_cost_total']
+            ? metrics['knowledgerouter_llm_cost_total'].reduce((a, b) => a + b, 0)
+            : 0;
+        
+        const avgCost = totalRequests > 0
+            ? (totalCost / totalRequests).toFixed(4)
+            : '0.0000';
+        
         // Update UI
         document.getElementById('monitorTotalRequests').textContent = totalRequests;
         document.getElementById('monitorCacheHitRate').textContent = cacheHitRate + '%';
@@ -835,6 +896,8 @@ async function fetchMonitoringStats() {
         document.getElementById('monitorLlmCalls').textContent = llmCalls;
         document.getElementById('monitorActiveRequests').textContent = activeRequests;
         document.getElementById('monitorErrors').textContent = errors;
+        document.getElementById('monitorTotalCost').textContent = '$' + totalCost.toFixed(4);
+        document.getElementById('monitorAvgCost').textContent = '$' + avgCost;
         
     } catch (error) {
         console.error('Failed to fetch monitoring stats:', error);
@@ -844,6 +907,8 @@ async function fetchMonitoringStats() {
         document.getElementById('monitorLlmCalls').textContent = 'Error';
         document.getElementById('monitorActiveRequests').textContent = 'Error';
         document.getElementById('monitorErrors').textContent = 'Error';
+        document.getElementById('monitorTotalCost').textContent = 'Error';
+        document.getElementById('monitorAvgCost').textContent = 'Error';
     }
 }
 

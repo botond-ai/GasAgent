@@ -12,5 +12,7 @@ python-dotenv==1.0.0
 pyradios>=2.1.1
 # RAG pipeline dependencies for Regulation tool
 pypdf>=4.0.0
-faiss-cpu>=1.7.0
 langchain-community==0.0.16
+chromadb==0.3.26
+faiss-cpu>=1.7.4
+prometheus-client==0.19.0

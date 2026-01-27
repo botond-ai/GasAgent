@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unit Test Report - SupportAI</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #1a1a2e; color: #eee; padding: 2rem; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        h1 { color: #4ade80; margin-bottom: 1rem; }
+        .summary { display: flex; gap: 2rem; margin-bottom: 2rem; padding: 1.5rem; background: #16213e; border-radius: 8px; }
+        .summary-item { text-align: center; }
+        .summary-item .value { font-size: 2rem; font-weight: bold; }
+        .summary-item .label { color: #888; font-size: 0.875rem; }
+        .passed { color: #4ade80; }
+        .failed { color: #f87171; }
+        .skipped { color: #fbbf24; }
+        .test-table { width: 100%; border-collapse: collapse; background: #16213e; border-radius: 8px; overflow: hidden; }
+        .test-table th, .test-table td { padding: 1rem; text-align: left; border-bottom: 1px solid #2a2a4a; }
+        .test-table th { background: #0f3460; color: #4ade80; }
+        .test-table tr:hover { background: #1a1a3e; }
+        .status-badge { padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.75rem; font-weight: bold; }
+        .status-passed { background: #065f46; color: #4ade80; }
+        .status-failed { background: #7f1d1d; color: #f87171; }
+        .status-skipped { background: #78350f; color: #fbbf24; }
+        .meta { color: #888; font-size: 0.875rem; margin-bottom: 1rem; }
+        .category { background: #0f3460; padding: 0.5rem 1rem; margin: 1rem 0; border-radius: 4px; color: #FFD94F; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔬 Unit Test Report</h1>
+        <p class="meta">Generated: 2026-01-26 15:05:48 | Total Duration: 0.01s</p>
+        
+        <div class="summary">
+            <div class="summary-item">
+                <div class="value">14</div>
+                <div class="label">Total Tests</div>
+            </div>
+            <div class="summary-item">
+                <div class="value passed">14</div>
+                <div class="label">Passed</div>
+            </div>
+            <div class="summary-item">
+                <div class="value failed">0</div>
+                <div class="label">Failed</div>
+            </div>
+            <div class="summary-item">
+                <div class="value skipped">0</div>
+                <div class="label">Skipped</div>
+            </div>
+        </div>
+        
+        <table class="test-table">
+            <thead>
+                <tr>
+                    <th>Test Name</th>
+                    <th>Status</th>
+                    <th>Duration</th>
+                    <th>Message</th>
+                </tr>
+            </thead>
+            <tbody>
+
+                <tr>
+                    <td>Chat Request Model Creation</td>
+                    <td><span class="status-badge status-passed">PASSED</span></td>
+                    <td>0.000s</td>
+                    <td>Chat request model created successfully</td>
+                </tr>
+
+                <tr>
+                    <td>Chat Response Structure</td>
+                    <td><span class="status-badge status-passed">PASSED</span></td>
+                    <td>0.000s</td>
+                    <td>Chat response structure valid</td>
+                </tr>
+
+                <tr>
+                    <td>Crypto Tool Symbol Validation</td>
+                    <td><span class="status-badge status-passed">PASSED</span></td>
+                    <td>0.000s</td>
+                    <td>Validated 3 crypto symbols</td>
+                </tr>
+
+                <tr>
+                    <td>FX Rates Currency Format</td>
+                    <td><span class="status-badge status-passed">PASSED</span></td>
+                    <td>0.000s</td>
+                    <td>Validated 4 currency formats</td>
+                </tr>
+
+                <tr>
+                    <td>Weather Tool Input Validation</td>
+                    <td><span class="status-badge status-passed">PASSED</span></td>
+                    <td>0.000s</td>
+                    <td>Weather tool input validation works</td>
+                </tr>
+
+                <tr>
+                    <td>Sentiment Categories</td>
+                    <td><span class="status-badge status-passed">PASSED</span></td>
+                    <td>0.000s</td>
+                    <td>All 3 sentiment categories valid</td>
+                </tr>
+
+                <tr>
+                    <td>Sentiment Text Processing</td>
+                    <td><span class="status-badge status-passed">PASSED</span></td>
+                    <td>0.000s</td>
+                    <td>Processed 3 text samples</td>
+                </tr>
+
+                <tr>
+                    <td>Issue Types</td>
+                    <td><span class="status-badge status-passed">PASSED</span></td>
+                    <td>0.000s</td>
+                    <td>Validated 4 issue types</td>
+                </tr>
+
+                <tr>
+                    <td>Priority Levels</td>
+                    <td><span class="status-badge status-passed">PASSED</span></td>
+                    <td>0.000s</td>
+                    <td>All 3 priority levels valid</td>
+                </tr>
+
+                <tr>
+                    <td>Ticket Number Format</td>
+                    <td><span class="status-badge status-passed">PASSED</span></td>
+                    <td>0.000s</td>
+                    <td>Validated 3 ticket number formats</td>
+                </tr>
+
+                <tr>
+                    <td>Conversation History Structure</td>
+                    <td><span class="status-badge status-passed">PASSED</span></td>
+                    <td>0.000s</td>
+                    <td>Conversation history structure valid</td>
+                </tr>
+
+                <tr>
+                    <td>Session ID Generation</td>
+                    <td><span class="status-badge status-passed">PASSED</span></td>
+                    <td>0.000s</td>
+                    <td>Generated 5 unique session IDs</td>
+                </tr>
+
+                <tr>
+                    <td>Date Format Validation</td>
+                    <td><span class="status-badge status-passed">PASSED</span></td>
+                    <td>0.000s</td>
+                    <td>Date format validation working (YYYY.MM.DD)</td>
+                </tr>
+
+                <tr>
+                    <td>Email Format Validation</td>
+                    <td><span class="status-badge status-passed">PASSED</span></td>
+                    <td>0.000s</td>
+                    <td>Email validation working correctly</td>
+                </tr>
+
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>

@@ -75,15 +75,19 @@ class JSONSessionRepository(SessionRepository):
 
         messages = []
         for item in data:
-            messages.append(
-                Message(
-                    role=MessageRole(item["role"]),
-                    content=item["content"],
-                    timestamp=datetime.fromisoformat(item["timestamp"]),
-                    metadata=item.get("metadata", {}),
-                    user_id=item.get("user_id"),  # Load user_id from JSON
-                )
+            msg = Message(
+                role=MessageRole(item["role"]),
+                content=item.get("content", ""),  # DEBUG: Use get() to see if missing
+                timestamp=datetime.fromisoformat(item["timestamp"]),
+                metadata=item.get("metadata", {}),
+                user_id=item.get("user_id"),
             )
+            # DEBUG: Log if content is empty
+            if not msg.content:
+                import sys
+                print(f"[REPO] ⚠️ WARNING: Message with role={msg.role} has empty content!", file=sys.stderr, flush=True)
+            messages.append(msg)
+        
         return messages
 
     async def append_message(self, session_id: str, message: Message) -> None:
@@ -93,6 +97,11 @@ class JSONSessionRepository(SessionRepository):
 
         path = self._get_session_path(session_id)
         temp_path = path.with_suffix(".json.tmp")
+
+        # DEBUG: Log what we're saving
+        import sys
+        print(f"[REPO] Appending message to session {session_id}: role={message.role}, content_length={len(message.content)}", file=sys.stderr, flush=True)
+        print(f"[REPO] Total messages after append: {len(messages)}", file=sys.stderr, flush=True)
 
         with open(temp_path, "w", encoding="utf-8") as f:
             json.dump(

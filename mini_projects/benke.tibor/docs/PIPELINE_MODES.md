@@ -325,11 +325,29 @@ docker-compose restart backend
 ```bash
 # .env file
 USE_SIMPLE_PIPELINE=False  # default: complex workflow
+STRICT_RAG_MODE=true       # default: refuse answer without RAG context (NEW in v2.12)
 
 # Or Docker Compose
 environment:
   - USE_SIMPLE_PIPELINE=True  # override to simple
+  - STRICT_RAG_MODE=${STRICT_RAG_MODE:-true}  # default to strict mode
 ```
+
+**STRICT_RAG_MODE Feature (NEW in v2.12):**
+- **true** (default): Refuses to answer when RAG returns 0 documents
+  - Response: "Sajnálom, nem találtam releváns információt..."
+  - Use case: Production, compliance-critical domains (Legal, Finance, HR)
+  - Safety: Prevents LLM hallucination, ensures factual accuracy
+
+- **false**: Allows LLM general knowledge with ⚠️ warning prefix
+  - Response: "⚠️ A következő információ általános tudásomon alapul..."
+  - Use case: Development, general knowledge queries ("What is an IP address?")
+  - Safety: Clear warning that info is not from company docs
+
+**Important:**
+- Environment variable changes require: `docker-compose up -d --force-recreate backend`
+- Simple `restart` does NOT reload env vars (Docker caches them)
+- See [FEATURES.md](FEATURES.md#-strict_rag_mode-feature-flag-new-in-v212) for full details
 
 ### Runtime Switch (Django settings)
 
@@ -405,6 +423,6 @@ ab -n 100 -c 10 -p query.json \
 
 ---
 
-**Verzió:** v2.10.0  
-**Utoljára frissítve:** 2026-01-21  
-**Kapcsolódó:** [PERFORMANCE_ANALYSIS.md](archive/PERFORMANCE_ANALYSIS.md)
+**Verzió:** v2.12.0  
+**Utoljára frissítve:** 2026-01-23  
+**Kapcsolódó:** [PERFORMANCE_ANALYSIS.md](archive/PERFORMANCE_ANALYSIS.md), [FEATURES.md](FEATURES.md#-strict_rag_mode-feature-flag-new-in-v212)

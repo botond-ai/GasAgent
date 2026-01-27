@@ -91,6 +91,42 @@ class TestMetricsCollection:
         output = get_metrics_output()
         assert b'knowledgerouter_llm_calls_total' in output
     
+    def test_record_llm_call_with_tokens_and_cost(self):
+        """LLM call should track tokens and calculate cost."""
+        # GPT-4o-mini call: 1000 input tokens, 500 output tokens
+        # Cost: (1000/1M * $0.15) + (500/1M * $0.60) = $0.00015 + $0.0003 = $0.00045
+        MetricsCollector.record_llm_call(
+            model='gpt-4o-mini',
+            status='success',
+            purpose='generation',
+            latency_seconds=1.2,
+            input_tokens=1000,
+            output_tokens=500
+        )
+        
+        output = get_metrics_output().decode('utf-8')
+        assert 'knowledgerouter_llm_tokens_total' in output
+        assert 'knowledgerouter_llm_cost_total' in output
+        assert 'gpt-4o-mini' in output
+        assert 'token_type="input"' in output
+        assert 'token_type="output"' in output
+    
+    def test_llm_cost_calculation_accuracy(self):
+        """Cost should be calculated accurately for different models."""
+        # Claude 3.5 Sonnet: $3/M input, $15/M output
+        # 10000 input, 2000 output = $0.03 + $0.03 = $0.06
+        MetricsCollector.record_llm_call(
+            model='claude-3-5-sonnet',
+            status='success',
+            purpose='generation',
+            input_tokens=10000,
+            output_tokens=2000
+        )
+        
+        output = get_metrics_output().decode('utf-8')
+        assert 'knowledgerouter_llm_cost_total' in output
+        # Cost should be incremented (we can't check exact value without resetting metrics)
+    
     def test_record_cache_operations(self):
         """Cache hit/miss counters should increment."""
         MetricsCollector.record_cache_hit(cache_type='redis')

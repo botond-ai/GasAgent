@@ -31,7 +31,9 @@ services:
       - JIRA_API_TOKEN=${JIRA_API_TOKEN}
       - JIRA_EMAIL=${JIRA_EMAIL}
       - USE_SIMPLE_PIPELINE=True  # Enable simple fast pipeline
+      - STRICT_RAG_MODE=${STRICT_RAG_MODE:-true}  # Feature flag: true=refuse without RAG, false=allow general knowledge
     volumes:
+      - ./backend:/app  # Mount entire backend for hot-reload
       - ./backend/data:/app/data
       - ./backend/credentials:/app/credentials
     depends_on:
@@ -134,6 +136,32 @@ services:
       - ./grafana/provisioning:/etc/grafana/provisioning
     depends_on:
       - prometheus
+      - loki
+    networks:
+      - knowledge_network
+
+  loki:
+    image: grafana/loki:latest
+    container_name: knowledgerouter_loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./loki-config.yml:/etc/loki/local-config.yaml
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - knowledge_network
+
+  promtail:
+    image: grafana/promtail:latest
+    container_name: knowledgerouter_promtail
+    volumes:
+      - ./promtail-config.yml:/etc/promtail/config.yml
+      - /var/log:/var/log
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
     networks:
       - knowledge_network
 
@@ -143,6 +171,7 @@ volumes:
   postgres_data:
   prometheus_data:
   grafana_data:
+  loki_data:
 
 networks:
   knowledge_network:

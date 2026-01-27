@@ -1,0 +1,24 @@
+{
+  "title": "LLM Inferencia Szám (arány)",
+  "type": "timeseries",
+  "datasource": {
+    "type": "prometheus",
+    "uid": "PBFA97CFB590B2093"
+  },
+  "targets": [
+    {
+      "expr": "rate(llm_inference_count[5m])",
+      "legendFormat": "{{model}}",
+      "refId": "A"
+    }
+  ],
+  "fieldConfig": {
+    "defaults": {
+      "unit": "ops",
+      "custom": {
+        "lineWidth": 2,
+        "fillOpacity": 10
+      }
+    }
+  }
+}

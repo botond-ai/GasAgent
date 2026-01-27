@@ -32,6 +32,14 @@ class Settings(BaseSettings):
     api_host: str = "0.0.0.0"
     api_port: int = 8000
 
+    # Jira Cloud Settings
+    jira_url: str = ""  # e.g., https://yoursite.atlassian.net
+    jira_email: str = ""  # User email for authentication
+    jira_api_token: str = ""  # API token from Atlassian
+    jira_project_key: str = ""  # Optional: filter by project (e.g., "SUPPORT")
+    jira_poll_interval: int = 300  # Poll interval in seconds (default: 5 minutes)
+    jira_enabled: bool = False  # Feature flag to enable/disable
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

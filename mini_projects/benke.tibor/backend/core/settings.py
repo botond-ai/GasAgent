@@ -5,6 +5,9 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
+# Structured logging setup (import early to configure before Django)
+from infrastructure.structured_logging import setup_structured_logging  # noqa: E402
+
 load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -127,10 +130,25 @@ FILES_DIR = DATA_DIR / 'files'
 for directory in [USERS_DIR, SESSIONS_DIR, FILES_DIR]:
     directory.mkdir(parents=True, exist_ok=True)
 
-# Logging
+# ============================================================================
+# STRUCTURED LOGGING SETUP (Loki Integration)
+# ============================================================================
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
+JSON_LOGGING = os.getenv("JSON_LOGGING", "true").lower() == "true"
+
+# Setup structured logging (replaces Django's default logging)
+setup_structured_logging(
+    log_level=LOG_LEVEL,
+    log_file=None,  # stdout only for Docker
+    json_format=JSON_LOGGING
+)
+
+print(f"✅ Loki structured logging enabled: level={LOG_LEVEL}, json={JSON_LOGGING}")
+
+# Django LOGGING config (kept for compatibility, but overridden by structured_logging)
 LOGGING = {
     'version': 1,
-    'disable_existing_loggers': False,
+    'disable_existing_loggers': False,  # Keep this False so our setup works
     'formatters': {
         'verbose': {
             'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
@@ -145,6 +163,6 @@ LOGGING = {
     },
     'root': {
         'handlers': ['console'],
-        'level': 'DEBUG',  # Changed to DEBUG for detailed postgres pool debugging
+        'level': LOG_LEVEL,  # Use environment variable
     },
 }

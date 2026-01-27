@@ -1222,7 +1222,13 @@ class PCloudClient:
     Uses pCloud API with username/password or OAuth authentication.
     Requires PCLOUD_USERNAME and PCLOUD_PASSWORD environment variables,
     or PCLOUD_ACCESS_TOKEN for OAuth.
+    
+    Implements retry logic with exponential backoff for transient failures.
     """
+    
+    MAX_RETRIES = 3
+    INITIAL_RETRY_DELAY = 2  # seconds
+    MAX_RETRY_DELAY = 30  # seconds
     
     def __init__(
         self,
@@ -1249,6 +1255,7 @@ class PCloudClient:
         self.endpoint = endpoint
         self._client = None
         self._initialized = False
+        self._auth_validated = False
     
     def _initialize(self):
         """Initialize the pCloud client (lazy loading)."""
@@ -1260,19 +1267,70 @@ class PCloudClient:
             
             if self.access_token:
                 logger.info("Initializing pCloud with OAuth access token")
-                self._client = PyCloud(oauth2_token=self.access_token, endpoint=self.endpoint)
+                try:
+                    self._client = PyCloud(oauth2_token=self.access_token, endpoint=self.endpoint)
+                except Exception as e:
+                    error_msg = str(e).lower()
+                    if 'invalid' in error_msg or 'token' in error_msg:
+                        raise ValueError("pCloud OAuth token is invalid or expired. Please refresh your access token.")
+                    elif 'auth' in error_msg:
+                        raise ValueError(f"pCloud authentication failed: {e}")
+                    else:
+                        raise ValueError(f"Failed to connect to pCloud: {e}")
             elif self.username and self.password:
                 logger.info(f"Initializing pCloud with username: {self.username}")
-                self._client = PyCloud(self.username, self.password, endpoint=self.endpoint)
+                try:
+                    self._client = PyCloud(self.username, self.password, endpoint=self.endpoint)
+                except Exception as e:
+                    error_msg = str(e).lower()
+                    if 'login' in error_msg or 'password' in error_msg or 'invalid' in error_msg:
+                        raise ValueError("pCloud login failed. Please check your username and password.")
+                    elif 'locked' in error_msg or 'disabled' in error_msg:
+                        raise ValueError("pCloud account is locked or disabled. Please contact pCloud support.")
+                    elif 'network' in error_msg or 'connection' in error_msg:
+                        raise ConnectionError(f"Cannot connect to pCloud servers: {e}")
+                    else:
+                        raise ValueError(f"pCloud authentication error: {e}")
             else:
-                raise ValueError("Either access_token or username/password must be provided")
+                raise ValueError("pCloud credentials not configured. Either access_token or username/password must be provided.")
             
             self._initialized = True
             logger.info("pCloud client initialized successfully")
             
+            # Validate authentication by making a test call
+            self._validate_authentication()
+            
+        except (ValueError, ConnectionError):
+            raise
         except Exception as e:
             logger.error(f"Failed to initialize pCloud client: {e}", exc_info=True)
+            raise ValueError(f"Unexpected error initializing pCloud: {e}")
+    
+    def _validate_authentication(self):
+        """Validate authentication by making a test API call."""
+        if self._auth_validated:
+            return
+        
+        try:
+            # Test authentication with a simple API call
+            result = self._client.listfolder(folderid=0)
+            if result.get('result') != 0:
+                error_code = result.get('result')
+                if error_code == 2000:
+                    raise ValueError("pCloud authentication failed: Invalid credentials")
+                elif error_code == 2094:
+                    raise ValueError("pCloud authentication failed: Access token expired")
+                else:
+                    raise ValueError(f"pCloud API error during authentication: {result}")
+            
+            self._auth_validated = True
+            logger.info("pCloud authentication validated successfully")
+            
+        except ValueError:
             raise
+        except Exception as e:
+            logger.error(f"Authentication validation failed: {e}")
+            raise ValueError(f"Failed to validate pCloud credentials: {e}")
     
     async def _ensure_photo_memories_folder(self) -> int:
         """Ensure Photo_Memories folder exists and return its ID."""
@@ -1329,15 +1387,47 @@ class PCloudClient:
             logger.error(f"Failed to create folder: {e}", exc_info=True)
             return {"error": str(e)}
     
+    def _is_retryable_error(self, error: Exception) -> bool:
+        """Determine if an error is retryable."""
+        error_str = str(error).lower()
+        retryable_keywords = [
+            'timeout', 'connection', 'network', 'temporary', 'unavailable',
+            'rate limit', 'too many requests', '503', '504', '429'
+        ]
+        return any(keyword in error_str for keyword in retryable_keywords)
+    
+    async def _retry_with_backoff(self, operation, operation_name: str, *args, **kwargs):
+        """Execute operation with exponential backoff retry logic."""
+        import asyncio
+        import time
+        
+        last_exception = None
+        delay = self.INITIAL_RETRY_DELAY
+        
+        for attempt in range(self.MAX_RETRIES):
+            try:
+                return await operation(*args, **kwargs) if asyncio.iscoroutinefunction(operation) else operation(*args, **kwargs)
+            except Exception as e:
+                last_exception = e
+                
+                if not self._is_retryable_error(e) or attempt == self.MAX_RETRIES - 1:
+                    raise
+                
+                logger.warning(f"{operation_name} failed (attempt {attempt + 1}/{self.MAX_RETRIES}): {e}. Retrying in {delay}s...")
+                await asyncio.sleep(delay)
+                delay = min(delay * 2, self.MAX_RETRY_DELAY)  # Exponential backoff with cap
+        
+        raise last_exception
+    
     async def upload_file(self, file_path: str, file_name: str, folder_id: int, mime_type: str = "image/jpeg") -> Dict[str, Any]:
-        """Upload a file to a specific folder in pCloud."""
+        """Upload a file to a specific folder in pCloud with retry logic."""
         try:
             self._initialize()
             
-            # Upload file using the pcloud library
-            result = self._client.uploadfile(
-                files=[file_path],
-                folderid=folder_id
+            # Upload file using the pcloud library with retry
+            result = await self._retry_with_backoff(
+                lambda: self._client.uploadfile(files=[file_path], folderid=folder_id),
+                f"Upload file '{file_name}'"
             )
             
             if result.get('result') == 0:
@@ -1358,24 +1448,29 @@ class PCloudClient:
                 else:
                     return {"error": "No metadata returned from upload"}
             else:
-                error_msg = f"pCloud upload error: {result}"
-                logger.error(error_msg)
-                return {"error": error_msg}
+                error_code = result.get('result')
+                if error_code == 2008:
+                    return {"error": "Storage quota exceeded", "error_code": error_code}
+                elif error_code == 2009:
+                    return {"error": "File already exists", "error_code": error_code}
+                else:
+                    error_msg = f"pCloud upload error (code {error_code}): {result}"
+                    logger.error(error_msg)
+                    return {"error": error_msg, "error_code": error_code}
             
         except Exception as e:
             logger.error(f"Failed to upload file: {e}", exc_info=True)
-            return {"error": str(e)}
+            return {"error": str(e), "retryable": self._is_retryable_error(e)}
     
     async def upload_file_from_bytes(self, file_bytes: bytes, file_name: str, folder_id: int, mime_type: str = "image/jpeg") -> Dict[str, Any]:
-        """Upload a file from bytes to a specific folder in pCloud."""
+        """Upload a file from bytes to a specific folder in pCloud with retry logic."""
         try:
             self._initialize()
             
-            # Upload file data directly
-            result = self._client.uploadfile(
-                data=file_bytes,
-                filename=file_name,
-                folderid=folder_id
+            # Upload file data directly with retry
+            result = await self._retry_with_backoff(
+                lambda: self._client.uploadfile(data=file_bytes, filename=file_name, folderid=folder_id),
+                f"Upload file '{file_name}' from bytes"
             )
             
             if result.get('result') == 0:
@@ -1396,13 +1491,19 @@ class PCloudClient:
                 else:
                     return {"error": "No metadata returned from upload"}
             else:
-                error_msg = f"pCloud upload error: {result}"
-                logger.error(error_msg)
-                return {"error": error_msg}
+                error_code = result.get('result')
+                if error_code == 2008:
+                    return {"error": "Storage quota exceeded", "error_code": error_code}
+                elif error_code == 2009:
+                    return {"error": "File already exists", "error_code": error_code}
+                else:
+                    error_msg = f"pCloud upload error (code {error_code}): {result}"
+                    logger.error(error_msg)
+                    return {"error": error_msg, "error_code": error_code}
             
         except Exception as e:
             logger.error(f"Failed to upload file from bytes: {e}", exc_info=True)
-            return {"error": str(e)}
+            return {"error": str(e), "retryable": self._is_retryable_error(e)}
     
     async def find_folder(self, folder_name: str, parent_folder_id: Optional[int] = None) -> Dict[str, Any]:
         """Find a folder by name in pCloud."""
