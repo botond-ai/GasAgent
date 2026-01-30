@@ -1,0 +1,146 @@
+# ============================================================================
+# COMPREHENSIVE REQUIREMENTS.TXT FOR SUPPORTAI MULTI-TOOL APPLICATION
+# ============================================================================
+# This file contains all Python packages needed to run the entire solution
+# including backend API, frontend integration, and test scripts.
+# ============================================================================
+
+# ============================================================================
+# CORE WEB FRAMEWORK & API
+# ============================================================================
+# FastAPI: Modern async web framework for building REST APIs
+fastapi==0.109.0
+# Uvicorn: ASGI server for running FastAPI applications
+uvicorn[standard]==0.27.0
+# Pydantic: Data validation and settings management using Python type hints
+pydantic==2.5.3
+# Pydantic Settings: Configuration management with environment variables
+pydantic-settings==2.1.0
+# Python-multipart: Multipart form data parsing for file uploads
+python-multipart>=0.0.6
+# Jinja2: Template engine for rendering HTML pages and tickets
+jinja2>=3.1.0
+
+# ============================================================================
+# HTTP CLIENTS & NETWORKING
+# ============================================================================
+# httpx: Modern async HTTP client for making API requests
+httpx==0.26.0
+# Requests: HTTP library for synchronous requests
+requests==2.31.0
+
+# ============================================================================
+# LANGCHAIN & LLM ORCHESTRATION
+# ============================================================================
+# LangChain: Framework for building applications with language models
+langchain==0.1.4
+# LangChain OpenAI: OpenAI integration for LangChain
+langchain-openai==0.0.5
+# LangChain Community: Community integrations and tools for LangChain
+langchain-community==0.0.16
+# LangGraph: Graph-based orchestration for multi-step workflows
+langgraph==0.0.20
+# OpenAI: Official OpenAI Python client for GPT models
+openai==1.10.0
+
+# ============================================================================
+# ENVIRONMENT & CONFIGURATION
+# ============================================================================
+# Python-dotenv: Load environment variables from .env files
+python-dotenv==1.0.0
+# Pytz: Timezone handling and conversion utilities
+pytz>=2023.3
+
+# ============================================================================
+# DATA PROCESSING & ANALYSIS
+# ============================================================================
+# Pandas: Data manipulation and analysis library
+pandas>=2.0.0
+# OpenPyXL: Read/write Excel files (.xlsx format)
+openpyxl>=3.1.0
+
+# ============================================================================
+# VECTOR SEARCH & SEMANTIC SEARCH
+# ============================================================================
+# FAISS: Facebook AI Similarity Search for vector indexing and retrieval
+faiss-cpu>=1.7.0
+
+# ============================================================================
+# LANGUAGE DETECTION & TRANSLATION
+# ============================================================================
+# Lingua Language Detector: Accurate language detection library
+lingua-language-detector>=2.0.0
+
+# ============================================================================
+# EXTERNAL API INTEGRATIONS
+# ============================================================================
+# PyRadios: Radio browser API client for radio station information
+pyradios>=2.1.1
+# Google API Python Client: Google Drive API for file operations
+google-api-python-client>=2.100.0
+# Google Auth: Authentication library for Google APIs
+google-auth>=2.23.0
+# Google Auth OAuthlib: OAuth 2.0 authentication for Google APIs
+google-auth-oauthlib>=1.1.0
+# pCloud: pCloud API client for cloud storage operations
+pcloud>=1.0.0
+
+# ============================================================================
+# MONITORING & METRICS
+# ============================================================================
+# Prometheus Client: Prometheus metrics collection and export
+prometheus-client>=0.19.0
+
+# ============================================================================
+# TESTING FRAMEWORKS & TOOLS
+# ============================================================================
+# Pytest: Testing framework for unit and integration tests
+pytest>=7.4.0
+# Pytest HTML: HTML report generation for pytest test results
+pytest-html>=4.1.0
+# Pytest Timeout: Timeout plugin to prevent hanging tests
+pytest-timeout>=2.2.0
+
+# ============================================================================
+# BROWSER AUTOMATION & UI TESTING
+# ============================================================================
+# Selenium: Browser automation framework for UI testing
+selenium>=4.15.0
+# WebDriver Manager: Automatic WebDriver binary management for Selenium
+webdriver-manager>=4.0.0
+
+# ============================================================================
+# OPTIONAL: DATABASE & PERSISTENCE
+# ============================================================================
+# Note: SQLite3 is included in Python standard library
+# For advanced database features, consider adding:
+# sqlalchemy>=2.0.0
+# alembic>=1.12.0
+
+# ============================================================================
+# OPTIONAL: ADDITIONAL UTILITIES
+# ============================================================================
+# Note: The following are included in Python standard library:
+# - json: JSON encoding/decoding
+# - logging: Logging framework
+# - sqlite3: SQLite database
+# - datetime: Date and time handling
+# - pathlib: Object-oriented filesystem paths
+# - asyncio: Asynchronous I/O
+# - unittest: Unit testing framework
+# - typing: Type hints and annotations
+
+# ============================================================================
+# INSTALLATION INSTRUCTIONS
+# ============================================================================
+# Install all dependencies:
+#   pip install -r requirements.txt
+#
+# Install specific groups:
+#   pip install -r requirements.txt --only-binary :all:
+#
+# For development with test dependencies:
+#   pip install -r requirements.txt
+#   pip install -r requirements-test.txt
+#
+# ============================================================================
