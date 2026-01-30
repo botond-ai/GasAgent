@@ -1,544 +1,399 @@
-# AI Agent Demo - LangGraph + FastAPI + React
+# SupportAI - Multi-Tool Agent System
 
-A complete working example demonstrating an AI Agent workflow with a Python backend (FastAPI + LangGraph) and React frontend.
-
-## Recent Features (Homework 1-3)
-- **Homework 1 - Radio API Tool**: Fetches current radio station information and playing tracks for various countries and genres
-- **Homework 2 - Book RAG Tool**: Provides RAG (Retrieval-Augmented Generation) capabilities for querying literary content, featuring Ferenc Molnár's "Pál Utcai Fiúk" with FAISS vector database
-- **Homework 3 - Photo Upload Tool**: Upload photos to pCloud Photo_Memories folder with automatic organization by date, event, and location
+A comprehensive AI-powered customer support ticketing system built with LangGraph, FastAPI, and React. This application processes user support requests through a sophisticated forced sequence of tools, creating structured tickets with full GDPR compliance.
 
 ## 🎯 Overview
 
-This application demonstrates the **Agent Workflow Cycle**:
+This application implements a **Support Feedback Workflow** that automatically:
 
-```
-Prompt → Decision → Tool → Observation → Memory → Response
-```
-
-**Workflow**: `Agent → Tool → Agent → User`
-
-The agent uses **LangGraph** for orchestration, **OpenAI** for LLM capabilities, and provides a **ChatGPT-like interface** for interaction.
+1. ❓ **Understands** the user's issue using RAG-based document search
+2. 😊 **Analyzes sentiment** of the user's message
+3. 🌐 **Responds in the user's language** with weather-based small talk
+4. 📖 **Provides information** from the knowledge base
+5. �️ **Classifies urgency** and assigns priority
+6. ⏰ **Commits resolution deadline** based on SLA
+7. 💰 **Calculates costs** and converts to multiple currencies
+8. 🛡️ **Masks personal data** for GDPR/legal compliance
+9. 🏗️ **Structures conversation** into a JSON ticket
+10. 💾 **Stores data** in SQLite database and pCloud storage
+11. 📧 **Notifies the team** via email
+12. 📊 **Displays tickets** on a dashboard
 
 ## ✨ Key Features
 
-### Agent Capabilities
-- **LangGraph-based orchestration**: Graph of nodes for agent reasoning and tool execution
-- **11 integrated tools**:
-  - 🌤️ **Weather forecast** (Open-Meteo) - Current and 2-day future forecast
-  - 🗺️ **Geocoding** (OpenStreetMap Nominatim) - Address to coordinates and reverse geocoding
-  - 📍 **IP geolocation** (ipapi.co) - Get location from IP address
-  - 💱 **Foreign exchange rates** (ExchangeRate.host) - Currency conversion with historical data
-  - ₿ **Cryptocurrency prices** (CoinGecko) - Real-time crypto prices and 24h changes
-  - 📝 **File creation** (local storage) - Save user notes and documents
-  - 🔍 **Conversation history search** - Search past conversations
-  - 📻 **Radio API** (HW1) - Search radio stations worldwide by country, language, genre, or popularity
-  - 🌐 **Translator** - Detect language and translate text using OpenAI GPT with lingua language detection
-  - 📚 **Book RAG** (HW2) - Query Ferenc Molnár's "Pál Utcai Fiúk" using FAISS vector database with automatic language detection
-  - 📸 **Photo Upload** (HW3) - Upload photos to pCloud Photo_Memories folder with metadata (date, event, location)
+### 13+ Integrated Tools
+| Tool | Purpose | API/Technology |
+|------|---------|----------------|
+| 🌐 **Translator** | Language detection & translation | OpenAI GPT + Lingua |
+| 😊 **Sentiment** | Emotional tone analysis | OpenAI GPT |
+| ☀️ **Weather** | Current weather for greetings | Open-Meteo |
+| � **Documents (RAG)** | Issue identification from KB | FAISS + LangChain |
+| 💱 **FX Rates** | Currency conversion | ExchangeRate.host |
+| 🛡️ **Guardrails** | PII masking for GDPR | Regex patterns |
+| 🏗️ **JSON Creator** | Structured ticket creation | Local |
+| � **Photo Upload** | Attachment storage | pCloud API |
+| 💾 **SQLite Save** | Database persistence | SQLite |
+| � **Email Send** | Team notifications | Gmail SMTP |
+| 📻 **Radio** | Radio station search | Radio Browser API |
+| ₿ **Crypto** | Cryptocurrency prices | CoinGecko |
+| �️ **Geocode** | Address to coordinates | Nominatim |
 
-- **Memory management**: Maintains user preferences, conversation history, and workflow state
-- **Multi-language support**: Responds in user's preferred language (Hungarian/English)
+### Monitoring & Analytics
+- **Prometheus** metrics collection (port 9090)
+- **Grafana** dashboards (port 3001)
+- Ticket statistics, cost analytics, tool performance tracking
 
-### Persistence
-- ✅ **All conversation messages** persisted to JSON files
-- ✅ **User profiles** stored separately (never deleted)
-- ✅ **Reset context** command: Clears conversation but preserves profile
-- ✅ **File-based storage**: Simple, transparent, and easy to inspect
+---
 
-### Architecture
-- 🏗️ **SOLID principles** applied throughout
-- 📦 **Clean architecture**: Domain → Services → Infrastructure → API layers
-- 🔌 **Dependency Inversion**: Abstract interfaces for all external dependencies
-- 🎯 **Single Responsibility**: Each class/module has one clear purpose
-- 🔓 **Open/Closed**: Easy to extend with new tools without modifying existing code
+## ⚙️ Forced Tool Sequence
+
+When a support issue is detected, the system executes this predefined sequence:
+
+```
+User Message
+│
+▼
+┌─────────────────────┐
+│ Detect Support Issue│ ◄── Keyword matching + short message detection
+└──────────┬──────────┘
+           │ YES
+           ▼
+┌─────────────────────┐
+│ 1. Translator       │ ◄── Translate to English if needed
+└──────────┬──────────┘
+           ▼
+┌─────────────────────┐
+│ 2. Sentiment        │ ◄── Analyze emotional tone
+└──────────┬──────────┘
+           ▼
+┌─────────────────────┐
+│ 3. Weather          │ ◄── Get weather for greeting
+└──────────┬──────────┘
+           ▼
+┌─────────────────────┐
+│ 4. Documents (RAG)  │ ◄── Identify issue type from knowledge base
+└──────────┬──────────┘
+           ▼
+┌─────────────────────┐
+│ 5. FX Rates USD→EUR │ ◄── Convert cost to EUR
+└──────────┬──────────┘
+           ▼
+┌─────────────────────┐
+│ 6. FX Rates USD→HUF │ ◄── Convert cost to HUF
+└──────────┬──────────┘
+           ▼
+┌─────────────────────┐
+│ 7. Final Response   │ ◄── Generate warm, helpful response
+└──────────┬──────────┘
+           ▼
+┌─────────────────────┐
+│ 8. Guardrails       │ ◄── Mask PII for GDPR compliance
+└──────────┬──────────┘
+           ▼
+┌─────────────────────┐
+│ 9. JSON Creator     │ ◄── Create structured ticket
+└──────────┬──────────┘
+           ▼
+┌─────────────────────┐
+│ 10. Photo Upload    │ ◄── Upload attachments to pCloud
+└──────────┬──────────┘
+           ▼
+┌─────────────────────┐
+│ 11. SQLite Save     │ ◄── Save ticket to database
+└──────────┬──────────┘
+           ▼
+┌─────────────────────┐
+│ 12. Email Send      │ ◄── Notify team via email
+└──────────┬──────────┘
+           ▼
+┌─────────────────────┐
+│ 13. Dashboard       │ ◄── View all tickets
+└─────────────────────┘
+```
+
+---
 
 ## 🏛️ Architecture
+
+### System Components
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                         FRONTEND (React)                             │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐ │
+│  │ Chat Window │  │ View Tickets│  │ Debug Panel │  │ File Upload │ │
+│  └──────┬──────┘  └──────┬──────┘  └─────────────┘  └──────┬──────┘ │
+└─────────┼────────────────┼──────────────────────────────────┼───────┘
+          │                │                                  │
+          ▼                ▼                                  ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                         BACKEND (FastAPI)                            │
+│  ┌─────────────────────────────────────────────────────────────────┐│
+│  │                      ChatService                                 ││
+│  │  • Process messages    • Manage sessions    • Build memory      ││
+│  └──────────────────────────────┬──────────────────────────────────┘│
+│                                 │                                    │
+│  ┌──────────────────────────────▼──────────────────────────────────┐│
+│  │                        AIAgent (LangGraph)                       ││
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  ││
+│  │  │agent_decide │──│ tool_nodes  │──│   agent_finalize        │  ││
+│  │  └─────────────┘  └─────────────┘  └─────────────────────────┘  ││
+│  └─────────────────────────────────────────────────────────────────┘│
+│                                 │                                    │
+│  ┌──────────────────────────────▼──────────────────────────────────┐│
+│  │                          TOOLS (13+)                             ││
+│  │  Translator│Sentiment│Documents│Weather│FX_Rates│Guardrails     ││
+│  │  JSON_Creator│SQLite_Save│Photo_Upload│Email_Send│Radio│Crypto  ││
+│  └─────────────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────────────┘
+          │                │                │                │
+          ▼                ▼                ▼                ▼
+    ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
+    │ SQLite   │    │  pCloud  │    │  Gmail   │    │ External │
+    │ Database │    │ Storage  │    │  SMTP    │    │   APIs   │
+    └──────────┘    └──────────┘    └──────────┘    └──────────┘
+```
+
+### Technology Stack
+
+| Layer | Technology |
+|-------|------------|
+| Frontend | React, TypeScript, CSS |
+| Backend | FastAPI, Python 3.11 |
+| AI Framework | LangGraph, LangChain |
+| LLM | OpenAI GPT-4 Turbo |
+| Vector DB | FAISS |
+| Database | SQLite |
+| Cloud Storage | pCloud API |
+| Email | Gmail SMTP |
+| Monitoring | Prometheus, Grafana |
+| Containerization | Docker, Docker Compose |
 
 ### Backend Structure
 
 ```
 backend/
 ├── domain/                 # Domain layer - Core business entities
-│   ├── models.py          # Data models (Message, UserProfile, Memory, etc.)
+│   ├── models.py          # Data models (Message, UserProfile, Memory, ToolCall, etc.)
 │   └── interfaces.py      # Abstract interfaces (IUserRepository, IToolClient, etc.)
 ├── infrastructure/        # Infrastructure layer - External implementations
 │   ├── repositories.py    # File-based persistence (user profiles, conversations)
-│   └── tool_clients.py    # External API clients (weather, crypto, FX, etc.)
+│   ├── tool_clients.py    # External API clients (weather, crypto, FX, RAG, etc.)
+│   ├── smtp_client.py     # Gmail SMTP client for email notifications
+│   ├── metrics.py         # Prometheus metrics collection
+│   └── error_handlers.py  # Global exception handling
 ├── services/              # Service layer - Business logic
-│   ├── agent.py           # LangGraph agent implementation
-│   ├── tools.py           # Tool wrappers for agent
+│   ├── agent.py           # LangGraph agent implementation with forced tool sequence
+│   ├── tools.py           # 13+ tool wrappers (Guardrails, JSON Creator, etc.)
 │   └── chat_service.py    # Chat workflow orchestration
+├── templates/             # Jinja2 templates for tickets dashboard
 └── main.py               # API layer - FastAPI endpoints
 ```
 
-### LangGraph Workflow
-
-The agent is implemented as a **LangGraph state graph**:
-
-```
-┌─────────────────┐
-│  agent_decide   │  ← Entry: Analyzes request, decides action
-└────────┬────────┘
-         │
-         ├─→ tool_weather ──┐
-         ├─→ tool_geocode ──┤
-         ├─→ tool_ip ───────┤
-         ├─→ tool_fx ───────┤
-         ├─→ tool_crypto ───┤
-         ├─→ tool_file ─────┼─→ agent_finalize ─→ END
-         ├─→ tool_radio ────┤
-         ├─→ tool_translator┤
-         ├─→ tool_book ─────┤
-         ├─→ tool_photo_upload
-         ├─→ tool_search ───┘
-         │
-         └─→ agent_finalize ─→ END (if no tool needed)
-```
-
-**Nodes**:
-- `agent_decide`: LLM reasoning - decides whether to call tools
-- `tool_*`: Individual tool execution nodes
-- `agent_finalize`: Generates final natural language response
-
-### Persistence Model
-
-#### User Profile (`data/users/{user_id}.json`)
-```json
-{
-  "user_id": "user_123",
-  "language": "hu",
-  "default_city": "Budapest",
-  "created_at": "2025-12-08T10:00:00",
-  "updated_at": "2025-12-08T10:30:00",
-  "preferences": {}
-}
-```
-
-**Behavior**:
-- ✅ Created automatically on first interaction
-- ✅ Updated when preferences change
-- ❌ **Never deleted** - persists across all sessions
-
-#### Conversation History (`data/sessions/{session_id}.json`)
-```json
-{
-  "session_id": "session_456",
-  "messages": [
-    {
-      "role": "user",
-      "content": "What's the weather in Budapest?",
-      "timestamp": "2025-12-08T10:15:00",
-      "metadata": null
-    },
-    {
-      "role": "system",
-      "content": "Fetched weather forecast for location (47.4979, 19.0402)",
-      "timestamp": "2025-12-08T10:15:01",
-      "metadata": null
-    },
-    {
-      "role": "assistant",
-      "content": "A jelenlegi hőmérséklet Budapesten 12°C.",
-      "timestamp": "2025-12-08T10:15:02",
-      "metadata": null
-    }
-  ],
-  "summary": null,
-  "created_at": "2025-12-08T10:15:00",
-  "updated_at": "2025-12-08T10:15:02"
-}
-```
-
-**Behavior**:
-- ✅ All messages (user, assistant, system, tool) are persisted
-- ✅ Can be cleared with "reset context" command
-- ✅ User profile remains intact after reset
-
-### Frontend Structure
-
-```
-frontend/
-├── src/
-│   ├── components/
-│   │   ├── ChatWindow.tsx      # Scrollable message list
-│   │   ├── MessageBubble.tsx   # Individual message display
-│   │   ├── ChatInput.tsx       # User input field
-│   │   └── DebugPanel.tsx      # Tools & memory viewer
-│   ├── App.tsx                 # Main application
-│   ├── api.ts                  # Backend API client
-│   ├── types.ts                # TypeScript interfaces
-│   └── utils.ts                # Utility functions
-├── index.html
-├── vite.config.ts
-└── package.json
-```
+---
 
 ## 🚀 Getting Started
 
 ### Prerequisites
 - **Python 3.11+**
 - **Node.js 18+**
-- **Docker & Docker Compose** (for containerized deployment)
+- **Docker & Docker Compose**
 - **OpenAI API Key**
 
-### Option 1: Docker (Recommended)
+### Quick Start with Docker (Recommended)
 
-1. **Clone and navigate**:
-   ```bash
-   cd ai_agent_complex
-   ```
+```bash
+cd Application
+docker-compose up -d
+```
 
-2. **Set up environment**:
-   ```bash
-   cp .env.example .env
-   # Edit .env and add your OPENAI_API_KEY
-   ```
+### Access Points
 
-3. **Run with Docker Compose**:
-   ```bash
-   docker-compose up --build
-   ```
+| Service | URL | Credentials |
+|---------|-----|-------------|
+| Frontend | http://localhost:3000 | - |
+| Backend API | http://localhost:8000 | - |
+| API Docs | http://localhost:8000/docs | - |
+| Tickets Dashboard | http://localhost:8000/tickets | - |
+| Prometheus | http://localhost:9090 | - |
+| Grafana | http://localhost:3001 | admin / supportai123 |
 
-4. **Access the application**:
-   - Frontend: http://localhost:3000
-   - Backend API: http://localhost:8000
-   - API Docs: http://localhost:8000/docs
+---
 
-### Option 2: Local Development
+## 🔒 Environment Variables
 
-#### Backend
+Create a `.env` file in the Application folder:
 
-1. **Navigate to backend**:
-   ```bash
-   cd backend
-   ```
+```env
+# Required
+OPENAI_API_KEY=your_openai_api_key
 
-2. **Create virtual environment**:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
+# pCloud Storage (for photo uploads)
+PCLOUD_USERNAME=your_pcloud_username
+PCLOUD_PASSWORD=your_pcloud_password
+PCLOUD_ACCESS_TOKEN=your_pcloud_token
+PCLOUD_ENDPOINT=eapi
+PCLOUD_PHOTO_MEMORIES_FOLDER_ID=your_folder_id
 
-3. **Install dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
+# Gmail SMTP (for email notifications)
+GMAIL_USERNAME=your_gmail@gmail.com
+GMAIL_APP_PASSWORD=your_app_password
+GMAIL_SMTP_SERVER=smtp.gmail.com
+GMAIL_SMTP_PORT=587
+GMAIL_TO_EMAIL=recipient@email.com
 
-4. **Set environment variable**:
-   ```bash
-   export OPENAI_API_KEY='your_api_key_here'
-   # On Windows: set OPENAI_API_KEY=your_api_key_here
-   ```
+# RAG Re-ranker (optional)
+RERANKER_TYPE=llm
+COHERE_API_KEY=your_cohere_key
+```
 
-5. **Run the server**:
-   ```bash
-   uvicorn main:app --reload --host 0.0.0.0 --port 8000
-   ```
+---
 
-#### Frontend
+## 🛡️ Guardrails - PII Masking
 
-1. **Navigate to frontend**:
-   ```bash
-   cd frontend
-   ```
+The Guardrails tool automatically masks sensitive personal information for GDPR compliance:
 
-2. **Install dependencies**:
-   ```bash
-   npm install
-   ```
+| PII Type | Mask |
+|----------|------|
+| Email addresses | `###EMAIL###` |
+| Phone numbers | `###PHONE###` |
+| Credit card numbers | `###CREDIT_CARD###` |
+| Social Security Numbers | `###SSN###` |
+| National IDs | `###NATIONAL_ID###` |
+| IP addresses | `###IP###` |
+| IBAN bank accounts | `###IBAN###` |
+| Dates of birth | `###DOB###` |
+| Passport numbers | `###PASSPORT###` |
+| Physical addresses | `###ADDRESS###` |
+| Tax IDs | `###TAX_ID###` |
 
-3. **Run development server**:
-   ```bash
-   npm run dev
-   ```
+---
 
-4. **Access**: http://localhost:3000
+## 📊 Monitoring
+
+### Prometheus Metrics
+
+The application exposes metrics at `/metrics`:
+- 🎫 Ticket statistics (total, by priority, sentiment, issue type)
+- 💰 Cost analytics (OpenAI API costs, ticket costs)
+- 🔧 Tool performance (invocations, execution time, success rate)
+- 📡 HTTP request metrics (rate, latency, status codes)
+- 🌐 Language & sentiment distribution
+- 🔢 Token usage tracking
+
+### Grafana Dashboards
+
+Pre-configured dashboards include:
+1. **Overview** - Key metrics at a glance
+2. **Ticket Analytics** - Priority, sentiment, issue type distribution
+3. **Tool Performance** - Invocations, execution time, success rates
+4. **Cost Analytics** - OpenAI costs, token usage, ticket costs
+5. **Language & Sentiment** - Message languages, translations
+6. **HTTP Requests** - Request rates, latencies, status codes
+
+---
 
 ## 📚 API Endpoints
 
-### `POST /api/chat`
-Process chat message or reset context.
+### Chat Endpoints
 
-**Request**:
-```json
-{
-  "user_id": "user_123",
-  "message": "What's the weather in Budapest?",
-  "session_id": "session_456"
-}
-```
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/chat` | Process chat message |
+| POST | `/api/chat/upload` | Process chat with file attachments |
+| GET | `/api/session/{session_id}` | Get conversation history |
+| GET | `/api/history/search?q=query` | Search conversation history |
 
-**Response**:
-```json
-{
-  "final_answer": "A jelenlegi hőmérséklet Budapesten 12°C.",
-  "tools_used": [
-    {
-      "name": "weather",
-      "arguments": {"city": "Budapest"},
-      "success": true
-    }
-  ],
-  "memory_snapshot": {
-    "preferences": {
-      "language": "hu",
-      "default_city": "Budapest"
-    },
-    "workflow_state": {
-      "flow": null,
-      "step": 0,
-      "total_steps": 0
-    },
-    "message_count": 3
-  },
-  "logs": ["Tools called: 1"]
-}
-```
+### Profile Endpoints
 
-### `GET /api/session/{session_id}`
-Get conversation history.
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/profile/{user_id}` | Get user profile |
+| PUT | `/api/profile/{user_id}` | Update user profile |
 
-### `GET /api/profile/{user_id}`
-Get user profile.
+### Ticket Endpoints
 
-### `PUT /api/profile/{user_id}`
-Update user profile.
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/tickets` | View tickets dashboard (HTML) |
+| GET | `/api/tickets` | Get all tickets (JSON) |
+| GET | `/api/tickets/{ticket_number}` | Get specific ticket |
 
-**Request**:
-```json
-{
-  "language": "en",
-  "default_city": "Szeged"
-}
-```
+### Monitoring Endpoints
 
-### `POST /api/chat/upload`
-Process chat message with file uploads (multipart/form-data).
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/metrics` | Prometheus metrics |
+| GET | `/` | Health check |
 
-**Request** (multipart/form-data):
-- `user_id`: string
-- `message`: string
-- `session_id`: string (optional)
-- `files`: File[] (multiple files supported)
-
-**Response**: Same as `/api/chat`
-
-### `GET /api/history/search?q=weather`
-Search conversation history.
-
-## 💡 Example Interactions
-
-### Weather Query
-```
-User: What will the weather be like tomorrow in Budapest?
-Agent: [Calls geocode tool → weather tool]
-Response: A holnap előrejelzett hőmérséklet Budapesten 8-14°C között lesz.
-```
-
-### Cryptocurrency Price
-```
-User: What's the current BTC price in EUR?
-Agent: [Calls crypto_price tool]
-Response: A Bitcoin (BTC) jelenlegi ára 42,350 EUR, 24 órás változás: +2.3%.
-```
-
-### Language Preference Update
-```
-User: From now on, answer in English
-Agent: [Updates user profile]
-Response: Understood! I will respond in English from now on.
-```
-
-### Reset Context
-```
-User: reset context
-Agent: [Clears conversation history, keeps profile]
-Response: Context has been reset. We are starting a new conversation, but your preferences are preserved.
-```
-
-### History Search
-```
-User: Search our past conversations for 'weather'
-Agent: [Calls search_history tool]
-Response: I found 3 previous mentions of weather in our conversations...
-```
-
-## 🎨 Special Features
-
-### Reset Context Command
-When a user sends `"reset context"` (case-insensitive):
-1. ✅ Conversation history is **cleared**
-2. ✅ User profile is **preserved**
-3. ✅ New session starts fresh
-4. ✅ Preferences (language, city) remain intact
-
-**Implementation**: Detected in `ChatService.process_message()` before agent invocation.
-
-### User Profile Management
-- **Never deleted**: Only created/loaded and updated
-- **Automatic updates**: Agent detects preference changes in conversation
-- **Manual updates**: Via `PUT /api/profile/{user_id}` endpoint
-- **Persistent across sessions**: Stored in `data/users/{user_id}.json`
-
-### Memory Context
-The agent receives:
-- **Recent messages**: Last 20 messages for context
-- **User preferences**: Language, default city, custom preferences
-- **Workflow state**: Multi-step process tracking (extensible)
-
-## 🏗️ SOLID Principles Applied
-
-### Single Responsibility Principle (SRP)
-- Each class/module has **one clear purpose**
-- `FileUserRepository`: Only handles user profile persistence
-- `WeatherTool`: Only handles weather API calls
-- `ChatService`: Only orchestrates chat workflow
-
-### Open/Closed Principle (OCP)
-- **Easy to add new tools** without modifying existing code
-- New tool: Implement `IToolClient`, create wrapper in `tools.py`, register in `agent.py`
-- **No changes needed** to agent core logic or graph structure
-
-### Liskov Substitution Principle (LSP)
-- All tool clients implement `IToolClient` interface
-- Can be swapped without breaking agent functionality
-- Mock implementations for testing
-
-### Interface Segregation Principle (ISP)
-- **Specific interfaces** for different concerns:
-  - `IUserRepository`: User profile operations
-  - `IConversationRepository`: Conversation operations
-  - `IWeatherClient`, `IFXRatesClient`, etc.: Specific tool operations
-- Clients only depend on methods they use
-
-### Dependency Inversion Principle (DIP)
-- High-level modules (`ChatService`, `AIAgent`) depend on **abstractions** (`IUserRepository`, `IToolClient`)
-- Low-level modules (repositories, API clients) implement abstractions
-- **Easy to swap implementations** (file storage → database, real APIs → mocks)
-
-## 🛠️ Technologies
-
-### Backend
-- **FastAPI**: Modern async web framework
-- **LangGraph**: Agent orchestration and workflow
-- **LangChain**: LLM integration utilities
-- **OpenAI**: GPT-4 Turbo for reasoning and responses
-- **Pydantic**: Data validation and settings
-- **httpx**: Async HTTP client for tools
-- **FAISS**: Vector database for RAG (Book tool)
-- **PyPDF**: PDF parsing for document ingestion
-- **lingua-language-detector**: Accurate language detection for multi-language support
-- **pCloud SDK**: Cloud storage integration for photo uploads
-
-### Frontend
-- **React 18**: UI library
-- **TypeScript**: Type-safe JavaScript
-- **Vite**: Fast build tool
-- **Axios**: HTTP client
-- **CSS**: Custom ChatGPT-like styling
-- **File upload**: Drag-and-drop and file picker support for photo uploads
-
-### Infrastructure
-- **Docker**: Containerization
-- **Docker Compose**: Multi-container orchestration
-- **Nginx**: Static file serving and reverse proxy (configured with 100MB max body size for photo uploads)
-- **JSON files**: Simple, transparent persistence
-- **pCloud API**: Cloud storage for photo uploads
+---
 
 ## 📂 Data Storage
-
-All data is stored in JSON files for transparency and easy inspection:
 
 ```
 data/
 ├── users/           # User profiles (never deleted)
 │   └── user_123.json
-├── sessions/        # Conversation histories (can be reset)
+├── sessions/        # Conversation histories
 │   └── session_456.json
-└── files/           # User-created files
-    └── user_123/
-        └── note.txt
+├── tickets/         # JSON ticket files
+│   └── TK20260130_001/
+│       ├── ticket.json
+│       └── attachments/
+└── tickets.db       # SQLite database
 ```
-
-## 🧪 Development
-
-### Backend Tests
-```bash
-cd backend
-pytest  # (Add tests in tests/ directory)
-```
-
-### Frontend Tests
-```bash
-cd frontend
-npm test  # (Add tests with Vitest/Jest)
-```
-
-### Type Checking
-```bash
-cd frontend
-npm run type-check
-```
-
-## 🔒 Environment Variables
-
-### Required
-- `OPENAI_API_KEY`: Your OpenAI API key
-
-### Optional (for Photo Upload feature - HW3)
-- `PCLOUD_USERNAME`: pCloud account username
-- `PCLOUD_PASSWORD`: pCloud account password
-- `PCLOUD_ACCESS_TOKEN`: pCloud OAuth access token (alternative to username/password)
-- `PCLOUD_ENDPOINT`: pCloud API endpoint (`eapi` for Europe, `api` for US, default: `eapi`)
-- `PCLOUD_PHOTO_MEMORIES_FOLDER_ID`: Folder ID for Photo_Memories folder
-
-### Default Ports
-- Backend runs on port `8000` by default
-- Frontend runs on port `3000` by default
-- Adjust in `docker-compose.yml` or locally
-
-## 🚧 Extending the Application
-
-### Adding a New Tool
-
-1. **Create client** in `infrastructure/tool_clients.py`:
-   ```python
-   class MyAPIClient(IToolClient):
-       async def execute(self, **kwargs) -> Dict[str, Any]:
-           # Implementation
-   ```
-
-2. **Create tool wrapper** in `services/tools.py`:
-   ```python
-   class MyTool:
-       def __init__(self, client: MyAPIClient):
-           self.client = client
-           self.name = "my_tool"
-           self.description = "..."
-       
-       async def execute(self, **kwargs) -> Dict[str, Any]:
-           # Wrapper logic
-   ```
-
-3. **Register in agent** (`services/agent.py`):
-   ```python
-   self.tools["my_tool"] = my_tool_instance
-   ```
-
-4. **Add to graph** (automatic via node creation in `_build_graph`)
-
-### Adding a New Workflow Step
-
-Modify `WorkflowState` in `domain/models.py` and update `ChatService` logic to track multi-step processes.
-
-## 📝 License
-
-This is a demo application for educational purposes.
-
-## 🤝 Contributing
-
-This is a teaching example. Feel free to fork and extend for your own learning!
 
 ---
 
-**Built with ❤️ for the AI Agent Programming Course**
+## 🧪 Testing
+
+Test scripts are available in the `Test_Scripts_And_Logs` folder:
+
+```bash
+# Run all tests
+pip install -r requirements.txt
+pytest Test_Scripts_And_Logs/
+
+# Individual test suites
+python Test_Scripts_And_Logs/test_pydantic_api.py      # API tests
+python Test_Scripts_And_Logs/test_selenium_ui.py       # UI tests
+python Test_Scripts_And_Logs/test_unit_ai_functions.py # Unit tests
+```
+
+---
+
+## 📈 Documentation
+
+- **langraph.md** - Comprehensive LangGraph workflow documentation
+- **readme.md** (root) - Project overview and quick start
+- **requirements.txt** - All Python dependencies with comments
+
+---
+
+## 🛠️ Technologies
+
+### Backend
+- **FastAPI** - Modern async web framework
+- **LangGraph** - Agent orchestration and workflow
+- **LangChain** - LLM integration utilities
+- **OpenAI** - GPT-4 Turbo for reasoning
+- **FAISS** - Vector database for RAG
+- **SQLite** - Ticket persistence
+- **Prometheus Client** - Metrics collection
+
+### Frontend
+- **React 18** - UI library
+- **TypeScript** - Type-safe JavaScript
+- **Vite** - Fast build tool
+- **Axios** - HTTP client
+
+### Infrastructure
+- **Docker** - Containerization
+- **Docker Compose** - Multi-container orchestration
+- **Nginx** - Reverse proxy
+- **Prometheus** - Metrics collection
+- **Grafana** - Metrics visualization
+
+---
+
+**Built for the AI Agent Programming Course - Homework 4**
