@@ -1,0 +1,200 @@
+# Render.com Blueprint - KnowledgeRouter Deployment (INGYENES)
+# Tutorial technikák: Multi-service orchestration, Health checks, Environment variables
+
+services:
+  # ═══════════════════════════════════════════════════════════
+  # Backend Service (Django + LangGraph)
+  # ═══════════════════════════════════════════════════════════
+  - type: web
+    name: knowledgerouter-backend
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    
+    # Auto-deploy from GitHub
+    repo: https://github.com/YOUR_USERNAME/YOUR_REPO
+    branch: main
+    
+    # Health check endpoint (Tutorial technika)
+    healthCheckPath: /api/healthz
+    
+    # Environment variables
+    envVars:
+      - key: DEBUG
+        value: "False"
+      
+      - key: SECRET_KEY
+        generateValue: true  # Auto-generated secret
+      
+      - key: ALLOWED_HOSTS
+        value: ".onrender.com"
+      
+      - key: DJANGO_SETTINGS_MODULE
+        value: core.settings
+      
+      # OpenAI API Key (Render Secret)
+      - key: OPENAI_API_KEY
+        sync: false  # Manually set in Render dashboard
+      
+      - key: OPENAI_MODEL
+        value: gpt-4o-mini
+      
+      # Database connection (auto-linked)
+      - key: POSTGRES_HOST
+        fromDatabase:
+          name: knowledgerouter-db
+          property: host
+      
+      - key: POSTGRES_PORT
+        fromDatabase:
+          name: knowledgerouter-db
+          property: port
+      
+      - key: POSTGRES_DB
+        fromDatabase:
+          name: knowledgerouter-db
+          property: database
+      
+      - key: POSTGRES_USER
+        fromDatabase:
+          name: knowledgerouter-db
+          property: user
+      
+      - key: POSTGRES_PASSWORD
+        fromDatabase:
+          name: knowledgerouter-db
+          property: password
+      
+      # Redis connection (auto-linked)
+      - key: REDIS_HOST
+        fromService:
+          name: knowledgerouter-redis
+          type: pserv
+          property: host
+      
+      - key: REDIS_PORT
+        value: "6379"
+      
+      # Qdrant connection (auto-linked)
+      - key: QDRANT_HOST
+        fromService:
+          name: knowledgerouter-qdrant
+          type: pserv
+          property: host
+      
+      - key: QDRANT_PORT
+        value: "6333"
+      
+      # Feature flags
+      - key: USE_SIMPLE_PIPELINE
+        value: "True"
+      
+      - key: STRICT_RAG_MODE
+        value: "true"
+    
+    # Auto-scaling (Render Free tier: 1 instance)
+    plan: free
+    
+    # Build command (optional)
+    buildCommand: |
+      cd backend
+      pip install -r requirements.txt
+      python manage.py collectstatic --noinput
+      python manage.py migrate
+    
+    # Start command
+    startCommand: cd backend && gunicorn core.wsgi:application --bind 0.0.0.0:$PORT --workers 2
+
+  # ═══════════════════════════════════════════════════════════
+  # Frontend Service (Nginx + Tailwind)
+  # ═══════════════════════════════════════════════════════════
+  - type: web
+    name: knowledgerouter-frontend
+    runtime: static
+    buildCommand: |
+      cd frontend
+      npm install
+      npx tailwindcss -i ./input.css -o ./static/css/style.css --minify
+    staticPublishPath: ./frontend/static
+    
+    # Custom routing rules
+    routes:
+      - type: rewrite
+        source: /api/*
+        destination: https://knowledgerouter-backend.onrender.com/api/*
+    
+    plan: free
+
+  # ═══════════════════════════════════════════════════════════
+  # PostgreSQL Database (Render Managed)
+  # ═══════════════════════════════════════════════════════════
+databases:
+  - name: knowledgerouter-db
+    databaseName: knowledgerouter
+    plan: free  # Free tier: 90 days, then expires
+    # WARNING: Free PostgreSQL expires after 90 days!
+
+  # ═══════════════════════════════════════════════════════════
+  # Redis Cache (Render Private Service)
+  # ═══════════════════════════════════════════════════════════
+  - type: pserv
+    name: knowledgerouter-redis
+    runtime: docker
+    dockerfilePath: ./Dockerfile.redis
+    dockerContext: .
+    
+    plan: free
+    
+    disk:
+      name: redis-data
+      mountPath: /data
+      sizeGB: 1
+
+  # ═══════════════════════════════════════════════════════════
+  # Qdrant Vector Database (Private Service)
+  # ═══════════════════════════════════════════════════════════
+  - type: pserv
+    name: knowledgerouter-qdrant
+    runtime: docker
+    dockerfilePath: ./Dockerfile.qdrant
+    dockerContext: .
+    
+    plan: free
+    
+    disk:
+      name: qdrant-storage
+      mountPath: /qdrant/storage
+      sizeGB: 1
+    
+    envVars:
+      - key: QDRANT__SERVICE__GRPC_PORT
+        value: "6334"
+
+# ═══════════════════════════════════════════════════════════
+# MEGJEGYZÉSEK
+# ═══════════════════════════════════════════════════════════
+# 
+# INGYENES TIER LIMITEK:
+# - Web Services: 750 óra/hó, 512 MB RAM, Sleep after 15 min inactivity
+# - PostgreSQL: 90 nap lejárat, 1 GB tárhely
+# - Private Services: 1 instance max
+# - Disk: 1 GB/service
+# 
+# HIÁNYZÓ SZOLGÁLTATÁSOK (költségesek):
+# - Prometheus: $7/hó (monitoring service)
+# - Grafana: $7/hó (dashboard service)
+# 
+# ALTERNATÍVA MONITORINGRA:
+# - Render beépített metrics (CPU, RAM, Response time)
+# - CloudWatch Logs → Render Logs
+# 
+# DEPLOYMENT FOLYAMAT:
+# 1. GitHub repo push → Auto-build (Docker build)
+# 2. Health check → Service ready
+# 3. Auto-rollback ha health check fail
+# 
+# MANUÁLIS SETUP LÉPÉSEK:
+# 1. Render.com account (GitHub login)
+# 2. "New Blueprint" → Upload render.yaml
+# 3. Environment variables: OPENAI_API_KEY, CONFLUENCE_*, JIRA_*
+# 4. Deploy! (5-10 perc)

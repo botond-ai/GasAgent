@@ -1,0 +1,5 @@
+# Simple Redis Dockerfile for Render.com
+FROM redis:7-alpine
+
+# Enable AOF persistence (append-only file)
+CMD ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]

@@ -1,0 +1,8 @@
+# Qdrant Vector Database Dockerfile for Render.com
+FROM qdrant/qdrant:v1.7.0
+
+# Expose gRPC and HTTP ports
+EXPOSE 6333 6334
+
+# Storage will be mounted at /qdrant/storage (Render disk)
+VOLUME /qdrant/storage
