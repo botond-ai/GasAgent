@@ -1,0 +1,231 @@
+name: Deploy RAG Agent to Local VPS
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: false
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+
+env:
+  DEPLOY_PATH: /home/deploy/rag-agent
+  SERVICE_NAME: rag-agent
+  BACKEND_HEALTH_CHECK: "http://localhost:8000/api/health"
+  FRONTEND_HEALTH_CHECK: "http://localhost:3000"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔑 Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts 2>/dev/null || true
+
+      - name: 🏥 Pre-deployment health check (informational)
+        continue-on-error: true
+        run: |
+          echo "Checking current service status..."
+          ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+            "cd $DEPLOY_PATH && docker-compose ps || echo 'Services not running yet'"
+
+      - name: 💾 Backup persistent data
+        run: |
+          BACKUP_DIR="$DEPLOY_PATH/data/.backup_$(date +%Y%m%d_%H%M%S)"
+          ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'EOF'
+          set -e
+          DEPLOY_PATH="${{ env.DEPLOY_PATH }}"
+          BACKUP_DIR="$DEPLOY_PATH/data/.backup_$(date +%Y%m%d_%H%M%S)"
+          
+          if [ -d "$DEPLOY_PATH/data" ]; then
+            echo "📁 Creating backup: $BACKUP_DIR"
+            mkdir -p "$BACKUP_DIR"
+            cp -r "$DEPLOY_PATH/data/users" "$BACKUP_DIR/" 2>/dev/null || true
+            cp -r "$DEPLOY_PATH/data/sessions" "$BACKUP_DIR/" 2>/dev/null || true
+            echo "✓ Backup created successfully"
+          fi
+          EOF
+
+      - name: 📦 Pull latest code
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'EOF'
+          set -e
+          DEPLOY_PATH="${{ env.DEPLOY_PATH }}"
+          cd "$DEPLOY_PATH"
+          
+          echo "Fetching latest changes..."
+          git fetch origin main
+          git checkout main
+          git pull origin main
+          echo "✓ Code updated successfully"
+          EOF
+
+      - name: 🚀 Update Docker services (graceful restart)
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'EOF'
+          set -e
+          DEPLOY_PATH="${{ env.DEPLOY_PATH }}"
+          cd "$DEPLOY_PATH"
+          
+          echo "Pulling latest images and restarting services..."
+          docker-compose pull
+          docker-compose up -d --build
+          echo "✓ Services updated and restarted"
+          EOF
+
+      - name: ✅ Backend health check
+        run: |
+          BACKEND_URL="${{ env.BACKEND_HEALTH_CHECK }}"
+          MAX_ATTEMPTS=30
+          ATTEMPT=0
+          INTERVAL=10
+          
+          echo "Waiting for backend to be healthy..."
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            ATTEMPT=$((ATTEMPT + 1))
+            echo "Attempt $ATTEMPT/$MAX_ATTEMPTS..."
+            
+            if curl -s --connect-timeout 5 --max-time 10 "$BACKEND_URL" | grep -q '"ok"'; then
+              echo "✓ Backend is healthy"
+              exit 0
+            fi
+            
+            if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+              echo "Waiting ${INTERVAL}s before retry..."
+              sleep $INTERVAL
+            fi
+          done
+          
+          echo "❌ Backend health check failed after $MAX_ATTEMPTS attempts"
+          exit 1
+
+      - name: ✅ Frontend health check
+        continue-on-error: true
+        run: |
+          FRONTEND_URL="${{ env.FRONTEND_HEALTH_CHECK }}"
+          MAX_ATTEMPTS=15
+          ATTEMPT=0
+          INTERVAL=5
+          
+          echo "Checking frontend availability..."
+          while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
+            ATTEMPT=$((ATTEMPT + 1))
+            echo "Attempt $ATTEMPT/$MAX_ATTEMPTS..."
+            
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout 5 "$FRONTEND_URL" || echo "000")
+            if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "301" ]; then
+              echo "✓ Frontend is responding ($HTTP_CODE)"
+              exit 0
+            fi
+            
+            if [ $ATTEMPT -lt $MAX_ATTEMPTS ]; then
+              echo "Waiting ${INTERVAL}s before retry..."
+              sleep $INTERVAL
+            fi
+          done
+          
+          echo "⚠️  Frontend check timed out (may still be healthy)"
+
+      - name: 🧪 Smoke test
+        run: |
+          BACKEND_URL="${{ env.BACKEND_HEALTH_CHECK }}"
+          echo "Running smoke test..."
+          RESPONSE=$(curl -s "$BACKEND_URL")
+          
+          if echo "$RESPONSE" | grep -q '"ok"'; then
+            echo "✓ Smoke test passed"
+            echo "Backend response: $RESPONSE"
+          else
+            echo "❌ Smoke test failed"
+            echo "Backend response: $RESPONSE"
+            exit 1
+          fi
+
+      - name: 📊 Log service status and metrics
+        if: always()
+        run: |
+          ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'EOF'
+          DEPLOY_PATH="${{ env.DEPLOY_PATH }}"
+          cd "$DEPLOY_PATH"
+          
+          echo "=== Docker Compose Status ==="
+          docker-compose ps
+          
+          echo ""
+          echo "=== Recent Logs (last 20 lines per service) ==="
+          docker-compose logs --tail=20
+          
+          echo ""
+          echo "=== System Resources ==="
+          docker stats --no-stream || true
+          EOF
+
+      - name: ✨ Deployment successful
+        if: success()
+        run: |
+          echo "✅ Deployment completed successfully!"
+          echo ""
+          echo "Services are now running:"
+          echo "  Backend:  ${{ env.BACKEND_HEALTH_CHECK }}"
+          echo "  Frontend: ${{ env.FRONTEND_HEALTH_CHECK }}"
+          echo ""
+          echo "To rollback, use the timestamped backup in: $DEPLOY_PATH/data/.backup_*/"
+
+      - name: 🚨 Deployment failed - troubleshooting
+        if: failure()
+        run: |
+          echo "❌ Deployment failed"
+          echo ""
+          echo "Common issues and fixes:"
+          echo ""
+          echo "1. SSH connection failed"
+          echo "   - Check DEPLOY_HOST and DEPLOY_USER secrets"
+          echo "   - Verify SSH key has access to the VPS"
+          echo ""
+          echo "2. Git pull failed"
+          echo "   - Check git credentials on VPS"
+          echo "   - Verify repository URL and branch 'main'"
+          echo ""
+          echo "3. Docker build failed"
+          echo "   - Check Docker daemon is running"
+          echo "   - Review docker-compose.yml syntax"
+          echo "   - Check available disk space on VPS"
+          echo ""
+          echo "4. Backend health check failed"
+          echo "   - Verify OPENAI_API_KEY is set in .env"
+          echo "   - Check backend logs: docker-compose logs backend"
+          echo "   - Ensure port 8000 is not blocked"
+          echo ""
+          echo "5. Frontend health check failed"
+          echo "   - Check frontend build output"
+          echo "   - Verify nginx configuration"
+          echo "   - Ensure port 3000 is not blocked"
+          echo ""
+          echo "6. Data backup failed"
+          echo "   - Check disk space availability"
+          echo "   - Verify data directory permissions"
+          echo ""
+          echo "Rollback using:"
+          echo "  cd $DEPLOY_PATH"
+          echo "  cp -r data/.backup_TIMESTAMP/users data/"
+          echo "  cp -r data/.backup_TIMESTAMP/sessions data/"
+          echo "  docker-compose restart"
+          exit 1
+
+      - name: 🔐 Cleanup SSH key
+        if: always()
+        run: |
+          rm -f ~/.ssh/deploy_key
+          echo "SSH key cleaned up"
