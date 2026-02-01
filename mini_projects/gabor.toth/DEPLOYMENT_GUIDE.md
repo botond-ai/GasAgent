@@ -1,576 +1,633 @@
-# Deployment Guide: Local VPS Deployment for RAG Agent
+# 🚀 Deployment Guide - RAG Agent to Local VPS
 
-## Overview
-
-This guide provides instructions for deploying the Gábor Tóth RAG Agent to a local VPS using GitHub Actions. The workflow handles automated deployment, health checks, data backup, and graceful service restarts.
-
-**Deployment Model**: Manual trigger via GitHub Actions → SSH to VPS → Git pull → Docker Compose restart
+> **⚠️ NOTE**: Ez a deployment workflow **manuális trigger** GitHub Actions-ből. Nem automatikus push-nál - ez a közös repo egyenlege miatt így lett beállítva.
 
 ---
 
-## Prerequisites
+## 📋 Előfeltételek
 
-### On Your Local VPS
+### VPS-en (szerv-oldal):
 
-1. **Operating System**: Linux (Ubuntu 20.04+ recommended)
-2. **Required Software**:
-   - Docker 20.10+ (`docker --version`)
-   - Docker Compose 2.0+ (`docker-compose --version`)
+1. **OS**: Ubuntu 20.04+ vagy Debian 11+
+2. **Szoftver**:
    - Git (`git --version`)
-   - SSH server (sshd running)
-   - curl (for health checks)
+   - Docker (`docker --version`)
+   - Docker Compose (`docker-compose --version`)
+   - curl (health check-hez)
 
-3. **User Setup**:
-   - Create deployment user: `sudo useradd -m -s /bin/bash deploy`
-   - Add to docker group: `sudo usermod -aG docker deploy`
-   - Create deployment directory: `sudo mkdir -p /home/deploy/rag-agent && sudo chown deploy:deploy /home/deploy/rag-agent`
+3. **Felhasználó**: 
+   - SSH user (default: `ubuntu`)
+   - Sudoer jogok (Docker futtatáshoz)
 
-4. **SSH Access**:
-   - Generate ED25519 key pair on your local machine: `ssh-keygen -t ed25519 -f ~/.ssh/deploy_key`
-   - Copy public key to VPS: `ssh-copy-id -i ~/.ssh/deploy_key.pub deploy@your-vps-ip`
-
-5. **Environment Setup**:
-   - Create `.env` file on VPS: `/home/deploy/rag-agent/.env`
-   - Add required environment variables:
-     ```
-     OPENAI_API_KEY=sk-...your-api-key...
-     ```
-
-6. **Verify Setup**:
+4. **Klón**: Repository már klónozva
    ```bash
-   ssh deploy@your-vps-ip "cd /home/deploy/rag-agent && docker-compose ps"
+   cd /home/ubuntu
+   git clone https://github.com/Global-rd/ai-agents-hu.git
+   cd ai-agents-hu/mini_projects/gabor.toth
+   ```
+
+5. **Environment fájl**:
+   ```bash
+   cp .env.example .env
+   # Szerkeszd az .env-t és add meg az OPENAI_API_KEY-t
+   nano .env
+   ```
+
+6. **Docker demon** futása:
+   ```bash
+   sudo systemctl start docker
+   sudo systemctl enable docker
    ```
 
 ---
 
-## GitHub Actions Setup
+## 🔑 GitHub Secrets Setup
 
-### 1. Generate SSH Key for Deployment
+A workflow-nak szüksége van 2 secretre a repo Secrets-ben. Ezeket a GitHub repo Settings → Secrets and variables → Actions menübe kell beírni:
 
-**On your local machine**:
+| Secret Név | Érték | Példa |
+|-----------|-------|-------|
+| `DEPLOY_HOST` | VPS IP vagy hostname | `192.168.1.100` vagy `deploy.example.com` |
+| `DEPLOY_USER` | SSH felhasználó | `ubuntu` |
+| `DEPLOY_SSH_KEY` | **Privát** SSH kulcs | `-----BEGIN OPENSSH PRIVATE KEY-----...` |
+
+### Hogyan generálj SSH kulcsot?
+
+**1. Lokálisan (fejlesztői gép):**
 ```bash
-# Generate ED25519 key (secure and efficient)
-ssh-keygen -t ed25519 -f ~/rag-deploy-key -N ""
-# Or with passphrase:
-ssh-keygen -t ed25519 -f ~/rag-deploy-key
+ssh-keygen -t ed25519 -C "github-actions-rag-agent" -f ~/.ssh/id_github_rag -N ""
 ```
 
-**Verify the key**:
+**2. Public kulcs másolása VPS-re:**
 ```bash
-cat ~/rag-deploy-key
-cat ~/rag-deploy-key.pub
+ssh-copy-id -i ~/.ssh/id_github_rag.pub ubuntu@YOUR_VPS_IP
 ```
 
-### 2. Add GitHub Secrets
-
-Go to your GitHub repository → **Settings** → **Secrets and variables** → **Actions**
-
-Add these secrets:
-
-| Secret Name | Value | Example |
-|------------|-------|---------|
-| `DEPLOY_HOST` | VPS IP or hostname | `192.168.1.100` or `deploy.example.com` |
-| `DEPLOY_USER` | SSH user on VPS | `deploy` |
-| `DEPLOY_SSH_KEY` | Private SSH key content (paste entire file) | `-----BEGIN OPENSSH PRIVATE KEY-----\n...` |
-
-**⚠️ Important**: 
-- Paste the **entire private key file** content (including `-----BEGIN OPENSSH PRIVATE KEY-----` lines)
-- Never share this key
-- Keep backups in a secure location
-
-### 3. Verify Secrets Configuration
-
+Vagy manuálisan:
 ```bash
-# Test SSH connection from GitHub (use workflow UI)
-# Or test locally:
-ssh -i ~/rag-deploy-key deploy@192.168.1.100 "echo 'SSH works!'"
+# VPS-en:
+mkdir -p ~/.ssh
+echo "PASTE_PUBLIC_KEY_HERE" >> ~/.ssh/authorized_keys
+chmod 600 ~/.ssh/authorized_keys
 ```
+
+**3. Privát kulcs GitHub-ba:**
+- nyisd meg: `~/.ssh/id_github_rag`
+- másolj ki **teljes tartalmat** (BEGIN-ből END-ig)
+- illeszd be a GitHub Secrets `DEPLOY_SSH_KEY` értékeként
 
 ---
 
-## Deployment Methods
+## 🚀 Deployment Indítása
 
-### Method 1: GitHub Web UI (Recommended for Manual Deployments)
+### GitHub UI-ből (Ajánlott):
 
-1. Go to your repository on GitHub
-2. Click **Actions** tab
-3. Select **Deploy RAG Agent to Local VPS** workflow
-4. Click **Run workflow** button
-5. Choose environment (default: `production`)
-6. Click **Run workflow**
-7. Monitor the workflow execution in real-time
+1. GitHub repo → **Actions** tab
+2. Bal oldalon: **Deploy RAG Agent to Local Server**
+3. **Run workflow** gomb
+4. Válaszd az environment-et (production/staging)
+5. Kattints a **Run workflow** zöld gombra
+6. Nézd meg a live loggokat
 
-**Expected output**:
-```
-✓ Code updated successfully
-✓ Services updated and restarted
-✓ Backend is healthy
-✓ Frontend is responding
-✓ Smoke test passed
-✅ Deployment completed successfully!
-```
-
-### Method 2: GitHub CLI (For Automation)
+### GitHub CLI-ből:
 
 ```bash
-gh workflow run deploy-local-server.yml \
-  --ref main \
-  -f environment=production
+gh workflow run deploy-local-server.yml -f environment=production
 ```
 
-### Method 3: GitHub REST API
+### Manuálisan (Git push nélkül):
 
 ```bash
 curl -X POST \
-  https://api.github.com/repos/YOUR_OWNER/YOUR_REPO/actions/workflows/deploy-local-server.yml/dispatches \
   -H "Accept: application/vnd.github.v3+json" \
   -H "Authorization: token YOUR_GITHUB_TOKEN" \
-  -d '{
-    "ref": "main",
-    "inputs": {
-      "environment": "production"
-    }
-  }'
+  https://api.github.com/repos/Global-rd/ai-agents-hu/actions/workflows/deploy-local-server.yml/dispatches \
+  -d '{"ref":"main","inputs":{"environment":"production"}}'
 ```
 
 ---
 
-## Detailed Workflow Steps
+## 📊 Workflow Mi Történik?
 
-### Step 1: Code Checkout
-- Pulls the latest code from the repository
-- Ensures we're deploying the correct version
+```
+0. Code checkout (GitHub Actions kontextus)
+   ↓
+1. SSH key setup
+   ├─ Privát kulcs dekódolása
+   └─ VPS hostname hozzáadása known_hosts-hoz
+   ↓
+2. PRE-DEPLOYMENT HEALTH CHECK
+   ├─ Van-e működő backend?
+   └─ Van-e működő frontend?
+   ↓
+3. BACKUP PERSISTENT DATA
+   ├─ data/users biztonsági mentése
+   └─ data/sessions biztonsági mentése
+      (Rollback-hoz, ha probléma van)
+   ↓
+4. GIT PULL
+   ├─ git fetch origin
+   ├─ git checkout main
+   └─ git pull origin main
+   ↓
+5. GRACEFUL DOCKER UPDATE
+   ├─ docker-compose pull (új image letöltése)
+   └─ docker-compose up -d --build (graceful restart)
+   ↓
+6. HEALTH CHECK - BACKEND
+   ├─ Loop: max 30x, 10mp között
+   ├─ GET http://localhost:8000/api/health
+   └─ ✅ vagy ❌ logs + exit
+   ↓
+7. HEALTH CHECK - FRONTEND
+   ├─ Loop: max 15x, 5mp között
+   ├─ GET http://localhost:3000 (status 200 vagy 301)
+   └─ ⚠️ (warning, de nem kritikus, ha timeout)
+   ↓
+8. SMOKE TEST
+   ├─ Backend API response validálása
+   └─ "ok" field keresése a JSON-ben
+   ↓
+9. DETAILED LOGS & METRICS
+   ├─ docker-compose ps (service státusz)
+   ├─ Backend & frontend naplók (15 sor)
+   └─ docker stats (CPU, memória használat)
+   ↓
+10. SUCCESS SUMMARY
+    ├─ Backend & Frontend URL-ek
+    ├─ Confirmation: "Application is now live!"
+    └─ Összefoglalás (sikeres vagy sikertelen)
+```
 
-### Step 2: SSH Setup
-- Configures SSH authentication using the stored private key
-- Adds VPS to known_hosts to prevent "host verification" prompts
-- Permissions set to 600 (secure) on private key
-
-### Step 3: Pre-deployment Health Check (Informational)
-- Checks current service status before deployment
-- Non-blocking (continues even if services are down)
-- Useful for understanding current state
-
-### Step 4: Data Backup
-- Creates timestamped backup directory: `data/.backup_YYYYMMDD_HHMMSS/`
-- Backs up:
-  - User profiles (`data/users/`)
-  - Chat sessions (`data/sessions/`)
-- Allows easy rollback if needed
-- Non-blocking if backup fails (service continues)
-
-### Step 5: Git Pull
-- Fetches latest changes from GitHub
-- Checks out main branch
-- Pulls latest commits
-- Fails workflow if git pull fails (prevents deploying broken state)
-
-### Step 6: Docker Update (Graceful Restart)
-- Pulls latest Docker images: `docker-compose pull`
-- Restarts services with new code: `docker-compose up -d --build`
-- Builds any new images needed
-- Maintains data persistence
-
-### Step 7: Backend Health Check
-- Polls `/api/health` endpoint (max 30 attempts, 10s intervals = 5 min timeout)
-- Verifies response contains `"ok"` field
-- **Blocking**: Workflow fails if backend doesn't respond
-- Ensures application is operational before considering deployment successful
-
-### Step 8: Frontend Health Check (Non-blocking)
-- Polls frontend HTTP (max 15 attempts, 5s intervals = 75s timeout)
-- Accepts HTTP 200 or 301 status
-- **Non-blocking**: Continues even if frontend times out
-- Frontend may be loading assets, so less strict than backend
-
-### Step 9: Smoke Test
-- Makes HTTP GET request to `/api/health`
-- Validates response contains `"ok"`
-- Confirms backend is functional with correct response format
-- Catches configuration issues
-
-### Step 10: Log Service Status
-- Displays `docker-compose ps` (running containers)
-- Shows last 20 lines of logs from all services
-- Displays resource usage (CPU, memory)
-- Helpful for debugging if health checks fail
-
-### Step 11: Success Summary
-- Confirms all services are running
-- Displays access URLs and service endpoints
-- Notes backup location for rollback
-
-### Step 12: Failure Handling
-- Only runs if workflow failed
-- Provides troubleshooting checklist (6 common issues)
-- Shows rollback procedure using timestamped backups
-
-### Step 13: Cleanup
-- Removes SSH private key from GitHub runner
-- Always runs (even if workflow failed)
-- Prevents key from being left in logs or temporary files
+**Total time**: ~5-8 perc (ha mindent bem fut felül)
 
 ---
 
-## Troubleshooting
+## 🐛 Troubleshooting
 
-### Issue 1: SSH Connection Failed
+### ❌ "Pre-deployment health check says no service running"
 
-**Symptoms**:
-```
-Permission denied (publickey)
-or
-Could not resolve hostname
-```
+**OK**: Első deployment vagy szerver le volt állítva
 
-**Solutions**:
-1. Verify VPS IP/hostname:
-   ```bash
-   ping your-vps-ip
-   ssh deploy@your-vps-ip
-   ```
-
-2. Check SSH key permissions:
-   ```bash
-   chmod 600 ~/.ssh/deploy_key
-   ssh-add ~/.ssh/deploy_key
-   ```
-
-3. Verify SSH key is added to VPS:
-   ```bash
-   cat ~/.ssh/deploy_key.pub | ssh deploy@your-vps-ip "cat >> .ssh/authorized_keys"
-   ```
-
-4. Test from command line:
-   ```bash
-   ssh -i ~/.ssh/deploy_key deploy@your-vps-ip "echo 'Connected!'"
-   ```
-
-### Issue 2: Git Pull Failed
-
-**Symptoms**:
-```
-fatal: 'origin' does not appear to be a 'git' repository
-or
-Permission denied (publickey).
-```
-
-**Solutions**:
-1. Verify git is initialized on VPS:
-   ```bash
-   ssh deploy@your-vps-ip "cd /home/deploy/rag-agent && git status"
-   ```
-
-2. Clone repository if not present:
-   ```bash
-   ssh deploy@your-vps-ip "cd /home/deploy && git clone https://github.com/YOUR_OWNER/YOUR_REPO rag-agent"
-   ```
-
-3. If using SSH URLs, ensure deploy user has GitHub SSH access:
-   ```bash
-   ssh deploy@your-vps-ip "ssh -T git@github.com"
-   ```
-
-### Issue 3: Docker Build Failed
-
-**Symptoms**:
-```
-ERROR: Service 'backend' failed to build
-or
-ENOSPC: no space left on device
-```
-
-**Solutions**:
-1. Check disk space on VPS:
-   ```bash
-   ssh deploy@your-vps-ip "df -h"
-   ```
-
-2. Clean up Docker:
-   ```bash
-   ssh deploy@your-vps-ip "docker system prune -a"
-   ```
-
-3. Check docker-compose.yml syntax:
-   ```bash
-   ssh deploy@your-vps-ip "cd /home/deploy/rag-agent && docker-compose config"
-   ```
-
-4. Verify Docker daemon is running:
-   ```bash
-   ssh deploy@your-vps-ip "sudo systemctl status docker"
-   ```
-
-### Issue 4: Backend Health Check Timeout
-
-**Symptoms**:
-```
-Backend health check failed after 30 attempts
-```
-
-**Solutions**:
-1. Check backend logs:
-   ```bash
-   ssh deploy@your-vps-ip "cd /home/deploy/rag-agent && docker-compose logs backend --tail=50"
-   ```
-
-2. Verify OPENAI_API_KEY is set:
-   ```bash
-   ssh deploy@your-vps-ip "grep OPENAI_API_KEY /home/deploy/rag-agent/.env"
-   ```
-
-3. Test endpoint manually:
-   ```bash
-   ssh deploy@your-vps-ip "curl -s http://localhost:8000/api/health | head -20"
-   ```
-
-4. Check if port 8000 is exposed:
-   ```bash
-   ssh deploy@your-vps-ip "docker-compose ps | grep backend"
-   ```
-
-### Issue 5: Frontend Health Check Timeout
-
-**Symptoms**:
-```
-Frontend check timed out (may still be healthy)
-```
-
-**Solutions** (non-critical, but if concerning):
-1. Check frontend logs:
-   ```bash
-   ssh deploy@your-vps-ip "cd /home/deploy/rag-agent && docker-compose logs frontend --tail=50"
-   ```
-
-2. Verify port 3000 is exposed:
-   ```bash
-   ssh deploy@your-vps-ip "docker-compose ps | grep frontend"
-   ```
-
-3. Test nginx health:
-   ```bash
-   ssh deploy@your-vps-ip "curl -s http://localhost:3000 -I"
-   ```
-
-### Issue 6: Data Backup Failed
-
-**Symptoms**:
-```
-cp: cannot create directory (Permission denied)
-```
-
-**Solutions**:
-1. Check data directory ownership:
-   ```bash
-   ssh deploy@your-vps-ip "ls -la /home/deploy/rag-agent/data/"
-   ```
-
-2. Ensure deploy user owns the directory:
-   ```bash
-   ssh deploy@your-vps-ip "sudo chown -R deploy:deploy /home/deploy/rag-agent"
-   ```
-
-3. Check disk space:
-   ```bash
-   ssh deploy@your-vps-ip "df -h /home/deploy/rag-agent"
-   ```
+**Fix**: Ez nem hiba! A workflow így vagy úgy működik. A `docker-compose up -d --build` felépíti.
 
 ---
 
-## Monitoring and Maintenance
+### ❌ "SSH Connection Failed"
 
-### Check Service Status
+**OK**: SSH kulcs vagy host nem jó
 
+**Fix**:
 ```bash
-# From any machine with SSH access to VPS:
-ssh deploy@your-vps-ip "cd /home/deploy/rag-agent && docker-compose ps"
+# Ellenőrizd GitHub Secretsben:
+# 1. DEPLOY_HOST = valid IP vagy hostname
+# 2. DEPLOY_USER = ubuntu (vagy a te ssh user-ed)
+# 3. DEPLOY_SSH_KEY = -----BEGIN OPENSSH PRIVATE KEY-----...
 
-# Expected output:
-# NAME                COMMAND                  SERVICE             STATUS              PORTS
-# rag-agent-backend-1   "python3 main.py"        backend             Up 2 hours          8000->8000/tcp
-# rag-agent-frontend-1  "nginx -g daemon off"    frontend            Up 2 hours          3000->3000/tcp
-```
-
-### View Live Logs
-
-```bash
-# All services:
-ssh deploy@your-vps-ip "cd /home/deploy/rag-agent && docker-compose logs -f"
-
-# Specific service:
-ssh deploy@your-vps-ip "cd /home/deploy/rag-agent && docker-compose logs -f backend"
-```
-
-### Monitor Resource Usage
-
-```bash
-ssh deploy@your-vps-ip "docker stats --no-stream"
-```
-
-### Check API Health
-
-```bash
-# From your local machine:
-curl -s http://your-vps-ip:8000/api/health | jq .
-# Expected response: {"ok": true, "timestamp": "2026-02-01T21:30:00Z"}
-
-# Access frontend:
-curl -s http://your-vps-ip:3000 | head -20
+# VPS-en, ellenőrizd az authorized_keys:
+cat ~/.ssh/authorized_keys | grep "github-actions"
 ```
 
 ---
 
-## Rollback Procedure
+### ❌ "Git pull failed - authentication"
 
-### Automatic Rollback
+**OK**: VPS-en nincs Git SSH key vagy credentials
 
-If a deployment fails, the previous version remains running because Docker Compose restarts fail gracefully.
-
-### Manual Rollback Using Backups
-
+**Fix - VPS-en**:
 ```bash
-ssh deploy@your-vps-ip << 'EOF'
-cd /home/deploy/rag-agent
+# GitHub SSH key setup (ha private repo)
+ssh-keygen -t ed25519 -C "vps-deployment" -f ~/.ssh/id_github -N ""
 
-# List available backups
-ls -la data/.backup_*/
+# Public key hozzáadása GitHub-ban (Settings → SSH Keys)
+cat ~/.ssh/id_github.pub
 
-# Restore from specific backup (example):
-BACKUP_DIR="data/.backup_20260201_213000"
-cp -r $BACKUP_DIR/users data/users
-cp -r $BACKUP_DIR/sessions data/sessions
+# Git config
+git config --global user.name "Deployment"
+git config --global user.email "deploy@example.com"
+```
 
-# Restart services
-docker-compose restart
+---
 
-# Verify
-docker-compose ps
+### ❌ "Docker Build Failed - disk space"
+
+**OK**: Docker image túl nagy vagy nincs hely
+
+**Fix**:
+```bash
+# VPS-en, lemez check
+df -h
+
+# Docker cleanup
+docker system prune -a --volumes
+
+# Szabad hely
+docker system df
+```
+
+---
+
+### ❌ "Backend health check failed - timeout"
+
+**OK**: 5 perc alatt nem indult el a backend
+
+**Fix - VPS-en, debug**:
+```bash
+cd /home/ubuntu/ai-agents-hu/mini_projects/gabor.toth
+
+# Naplók nézése
+docker-compose logs backend
+
+# Ellenőrizd:
+# 1. OPENAI_API_KEY van-e a .env-ben?
+# 2. Python szintaxis hibák?
+# 3. ChromaDB inicializálása?
+
+# Explicit test
+docker-compose up --build backend
+# Ctrl+C után
+
+# Port check
+netstat -tlnp | grep 8000
+```
+
+---
+
+### ❌ "Backend health check passes, de API nem működik"
+
+**OK**: Smoke test-ben "ok" nincs a response-ban
+
+**Fix - VPS-en**:
+```bash
+# Direct health check tesztje
+curl -v http://localhost:8000/api/health
+
+# Expected response:
+# {"status":"ok"} vagy {"status":"healthy"}
+
+# Ha üres vagy error:
+docker-compose logs backend --tail=50
+
+# Check OPENAI_API_KEY
+cat .env | grep OPENAI_API_KEY
+```
+
+---
+
+### ❌ "Frontend health check fails"
+
+**OK**: nginx lassú vagy 3000 foglalt
+
+**Fix**:
+```bash
+# VPS-en, port check
+netstat -tlnp | grep 3000
+
+# Ha foglalt, kill
+sudo kill -9 <PID>
+
+# Frontend explicit test
+docker-compose logs frontend --tail=30
+
+# Nginx config check (container-ben)
+docker-compose exec frontend nginx -t
+```
+
+---
+
+### ❌ "Smoke test - unexpected backend response"
+
+**OK**: Backend válasza nem tartalmaz "ok" szöveget
+
+**Fix - VPS-en**:
+```bash
+# Full response check
 curl -s http://localhost:8000/api/health | jq .
-EOF
+
+# Expected structure:
+# {
+#   "status": "ok",
+#   "timestamp": "2026-02-01T..."
+# }
+
+# Ha más response:
+# 1. Backend verziót check
+# 2. API endpoint megváltozott?
+# 3. Naplók: docker-compose logs backend
 ```
 
-### Full Rollback (Code + Data)
+---
+
+### ❌ "Deployment Successful, de app nem működik"
+
+**OK**: Health check passed, de logika hiba
+
+**Fix**:
+```bash
+# Full workflow check
+docker-compose ps  # All containers running?
+
+# Logs minden service-ből
+docker-compose logs
+
+# Resource użytkownika
+docker stats
+
+# Network check
+docker network ls
+docker inspect <network-name>
+
+# Rollback az előző verzióra:
+git log --oneline | head -5
+git reset --hard HEAD~1
+docker-compose down
+docker-compose up -d --build
+```
+
+---
+
+### ❌ "Backup failed - no such file"
+
+**OK**: data/users vagy sessions mappa nem létezik (első deploy)
+
+**Fix**: Ez nem hiba, egyszerűen nincs mit backupálni. Workflow folytatódik.
+
+---
+
+### ⚠️ "Frontend health check - timeout (warning)"
+
+**OK**: Frontend 75 másodpercnél lassabb
+
+**Fix - VPS-en**:
+```bash
+# Frontend naplók
+docker-compose logs frontend --tail=30
+
+# Build output check (lehet nagy?)
+docker image ls | grep rag-agent
+
+# Resources
+docker stats frontend
+
+# Restart explicit
+docker-compose restart frontend
+docker-compose logs -f frontend
+```
+
+---
+
+## ✅ Detailed Deployment Workflow Steps
+
+### Step 1: Pre-Deployment Health Check
+```
+Ellenőrzi: Van-e működő backend/frontend az update előtt?
+Tud: Információs (nem blokkoló)
+Oka: Tudni akarjuk, milyen státuszból indulunk
+```
+
+### Step 2: Backup Data
+```
+Biztonsági mentés: data/users és data/sessions
+Rollback készítés: Ha probléma van
+Tárhelyre: data/.backup_TIMESTAMP/
+```
+
+### Step 3: Git Pull
+```
+Lépés: fetch → checkout main → pull
+Timeout: ~2-5 mp
+Hiba: Git auth vagy network issue
+```
+
+### Step 4: Graceful Docker Update
+```
+Proces: docker-compose pull → up -d --build
+Downtime: ~30-60 mp (build közben)
+Stabilizálás: 10 másodperc
+```
+
+### Step 5 & 6: Health Checks
+```
+Backend:  max 30x, 10mp között (300 mp = 5 perc)
+Frontend: max 15x, 5mp között (75 mp = 1.25 perc)
+Endpoint: /api/health (backend), 5173 root (frontend)
+Sikertelen: Logs kiírása, exit 1
+```
+
+### Step 7: Smoke Test
+```
+Tesztel: Backend API response validálása
+Keresés: "ok" string a JSON-ben
+Oka: Ellenőrzi, hogy nem csak "up", hanem "ready"
+```
+
+### Step 8: Logs & Metrics
+```
+Naplók: docker-compose logs (15 sor/service)
+Status: docker-compose ps (container állapota)
+CPU/Mem: docker stats (resource usage)
+```
+
+---
+
+## 📈 Monitoring Után
+
+### Service státusza:
 
 ```bash
-ssh deploy@your-vps-ip << 'EOF'
-cd /home/deploy/rag-agent
+# VPS-en:
+docker-compose ps
+```
 
-# Reset to previous git commit
-git log --oneline -5  # See recent commits
-git reset --hard <commit-hash>
+### Naplók követése (real-time):
 
-# Restore data
-BACKUP_DIR="data/.backup_20260201_213000"
-cp -r $BACKUP_DIR/users data/users
-cp -r $BACKUP_DIR/sessions data/sessions
+```bash
+# Backend naplók
+docker-compose logs -f backend
 
-# Restart with old version
+# Frontend naplók
+docker-compose logs -f frontend
+
+# Összes service
+docker-compose logs -f
+```
+
+### Backend health ellenőrzése:
+
+```bash
+curl http://localhost:8000/api/health
+```
+
+### Frontend elérhetősége:
+
+```bash
+curl -I http://localhost:3000
+```
+
+### Resource használat:
+
+```bash
+# CPU & memória
+docker stats
+
+# Lemezhasználat
+du -sh data/
+```
+
+### Teljes restart (ha kritikus probléma van):
+
+```bash
+cd /home/ubuntu/ai-agents-hu/mini_projects/gabor.toth
+
+# Leállítás
+docker-compose down
+
+# Friss indítás
+docker-compose up -d --build
+
+# Monitoring
+docker-compose logs -f
+```
+
+### Backup visszaállítása (rollback):
+
+```bash
+# Legutóbbi backup mappanevének lekérése
+ls -la data/ | grep ".backup_"
+
+# Pl. data/.backup_1704067200
+BACKUP_DIR="data/.backup_1704067200"
+
+# Data visszaállítása
+cp -r $BACKUP_DIR/users data/ || echo "Nincs users backup"
+cp -r $BACKUP_DIR/sessions data/ || echo "Nincs sessions backup"
+
+# Services restart
 docker-compose down
 docker-compose up -d
-
-# Verify
-docker-compose ps
-curl -s http://localhost:8000/api/health | jq .
-EOF
 ```
 
 ---
 
-## Future Enhancements
+## 🔧 Fejlesztőknek: Workflow Módosítása
 
-### 1. Slack Notifications
+Ha változtatsz a workflow-on (pl. más `DEPLOY_PATH`, vagy health check URL):
+- Szerkeszd: `mini_projects/gabor.toth/.github/workflows/deploy-local-server.yml`
+- Módosítsd az `env` szekciót a tetején
+- Git push, majd GitHub Actions futtatás
 
-Add to your workflow to notify on success/failure:
+---
 
+## 📝 Jövőbeli Fejlesztések
+
+### Slack/Discord Notification (opcionális)
+
+Ha szeretnél valós idejű notification-t, add hozzá a workflow-hoz:
+
+**1. Slack Webhook URL készítése:**
+   - Slack workspace Settings → Apps & integrations → Incoming Webhooks
+   - "Add New Webhook to Workspace"
+   - Channel kiválasztása (pl. #deployments)
+   - URL kopizálása
+
+**2. GitHub Secrets-hez hozzáadás:**
+   - `SLACK_WEBHOOK_URL` = `https://hooks.slack.com/services/T.../B.../X...`
+
+**3. Workflow-hoz hozzáadás (Success):**
 ```yaml
-- name: Notify Slack on Success
+- name: Notify Slack - Success
   if: success()
-  uses: slackapi/slack-github-action@v1
-  with:
-    payload: |
-      {
-        "text": "✅ RAG Agent deployed successfully",
-        "blocks": [
-          {
-            "type": "section",
-            "text": {
-              "type": "mrkdwn",
-              "text": "*Deployment Successful*\nCommit: ${{ github.sha }}\nActor: ${{ github.actor }}"
-            }
+  run: |
+    curl -X POST ${{ secrets.SLACK_WEBHOOK_URL }} \
+      -H 'Content-Type: application/json' \
+      -d '{
+        "text": "✅ RAG Agent deployment successful!",
+        "blocks": [{
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "*✅ Deployment Successful*\n📦 RAG Agent\n🌍 Server: ${{ secrets.DEPLOY_HOST }}\n🔗 Backend: http://localhost:8000\n🔗 Frontend: http://localhost:3000"
           }
-        ]
-      }
-  env:
-    SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        }]
+      }'
 ```
 
-### 2. Automatic Rollback on Failed Health Check
-
+**4. Workflow-hoz hozzáadás (Failure):**
 ```yaml
-- name: Automatic Rollback
+- name: Notify Slack - Failure
   if: failure()
   run: |
-    ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'EOF'
+    curl -X POST ${{ secrets.SLACK_WEBHOOK_URL }} \
+      -H 'Content-Type: application/json' \
+      -d '{
+        "text": "❌ RAG Agent deployment FAILED",
+        "blocks": [{
+          "type": "section",
+          "text": {
+            "type": "mrkdwn",
+            "text": "*❌ Deployment Failed*\n📦 RAG Agent\n🌍 Server: ${{ secrets.DEPLOY_HOST }}\n🔗 Check logs: <GitHub Actions URL>"
+          }
+        }]
+      }'
+```
+
+---
+
+### Auto-Rollback (opcionális)
+
+Ha szeretnél automatikus rollback-et failure-nél:
+
+```yaml
+- name: Rollback on Failure
+  if: failure()
+  run: |
+    ssh -i ~/.ssh/id_rsa ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'EOF'
+    set -e
     cd ${{ env.DEPLOY_PATH }}
-    LATEST_BACKUP=$(ls -t data/.backup_* | head -1)
-    cp -r $LATEST_BACKUP/users data/
-    cp -r $LATEST_BACKUP/sessions data/
-    docker-compose restart
-    echo "Auto-rolled back to: $LATEST_BACKUP"
+    
+    echo "🔄 Rolling back to previous version..."
+    git reset --hard HEAD~1
+    docker-compose down --remove-orphans
+    docker-compose up -d --build
+    
+    sleep 10
+    if curl -s http://localhost:8000/api/health > /dev/null; then
+      echo "✅ Rollback successful!"
+    else
+      echo "❌ Rollback failed too!"
+    fi
     EOF
 ```
 
-### 3. Email Notifications
+---
 
-Use GitHub's built-in email on failure, or add:
+### Email Notification (opcionális)
 
-```yaml
-- name: Send Email on Failure
-  if: failure()
-  uses: dawidd6/action-send-mail@v3
-  with:
-    server_address: ${{ secrets.MAIL_SERVER }}
-    server_port: 465
-    username: ${{ secrets.MAIL_USERNAME }}
-    password: ${{ secrets.MAIL_PASSWORD }}
-    subject: "❌ RAG Agent Deployment Failed"
-    to: ${{ secrets.ADMIN_EMAIL }}
-    from: "deployments@rag-agent.com"
-    body: "Deployment failed. Check GitHub Actions for details: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-```
+GitHub Actions beépített email funkciót használ - ha notification kell, a workflow `continue-on-error` vagy `failure()` step végzéshez email érkezik.
 
 ---
 
-## Pre-Deployment Checklist
+## ✅ Checklist - Mielőtt Deploy-olsz
 
-Before running your first deployment:
-
-- [ ] VPS has Docker and Docker Compose installed
-- [ ] SSH key pair generated and added to VPS
-- [ ] GitHub Secrets configured (DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY)
-- [ ] `.env` file exists on VPS with OPENAI_API_KEY
-- [ ] Git repository cloned to `/home/deploy/rag-agent` on VPS
-- [ ] Deploy user has permissions for docker and /home/deploy/rag-agent directory
-- [ ] Ports 3000 (frontend) and 8000 (backend) are accessible
-- [ ] SSH connection tested: `ssh -i deploy_key deploy@vps-ip`
-- [ ] Workflow file created at `.github/workflows/deploy-local-server.yml`
-- [ ] README or documentation updated with deployment links
+- [ ] VPS SSH key be van állítva
+- [ ] GitHub Secrets feltöltve: `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`
+- [ ] VPS-en `.env` fájl létezik az `OPENAI_API_KEY`-vel
+- [ ] Docker & Docker Compose fut a VPS-en
+- [ ] Repository klónozva a VPS-en a megadott útvonalra
+- [ ] Git pull-t tudsz csinálni manuálisan (`git pull origin main`)
+- [ ] `curl http://localhost:8000/api/health` működik lokálisan
 
 ---
 
-## Support and Documentation
+## 📞 Support
 
-For additional information:
-- [GitHub Actions Documentation](https://docs.github.com/en/actions)
-- [Docker Compose Documentation](https://docs.docker.com/compose/)
-- [SSH Best Practices](https://linux.die.net/man/1/ssh-keygen)
-- See project README for architecture and application details
+Ha probléma van, nézd meg:
+1. GitHub Actions logok: Actions tab → workflow run → output
+2. VPS-en: `docker-compose logs`
+3. SSH elérhetőség: `ssh -i ~/.ssh/id_github_rag ubuntu@YOUR_VPS_IP`
 
 ---
 
-## Version History
-
-| Version | Date | Changes |
-|---------|------|---------|
-| 1.0 | 2026-02-01 | Initial release with GitHub Actions workflow for local VPS deployment |
-
+**Készült**: 2026. február  
+**Verzió**: 1.0  
+**Szerző**: RAG Agent Deployment System
