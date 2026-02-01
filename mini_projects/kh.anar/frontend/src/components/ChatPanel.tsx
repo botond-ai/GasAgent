@@ -57,7 +57,7 @@ const ChatPanel: React.FC<Props> = ({
         <div className="uk-flex uk-flex-middle" data-testid="chat-input">
           <textarea
             className="uk-textarea"
-            placeholder='Ask anything... or type "reset context"'
+            placeholder="Ask anything..."
             rows={3}
             value={input}
             onChange={(e) => onInputChange(e.target.value)}

@@ -1,8 +1,8 @@
-"""Embedder interface and deterministic test embedder
+"""Beágyazó interfész és determinisztikus tesztbeágyazó.
 
-The real embedder would call a model like sentence-transformers or OpenAI
-embeddings. For test determinism we provide a HashEmbedder that turns text
-into a fixed-length pseudo-embedding derived from a hashing function.
+A valódi beágyazó egy sentence-transformers vagy OpenAI embeddings modellhez
+hívna. Teszt-determinizmusért egy HashEmbeddert adunk, ami a szöveget
+fix hosszúságú pszeudo-beágyazássá alakítja egy hash függvényből.
 """
 from typing import List
 import hashlib
@@ -22,11 +22,11 @@ class HashEmbedder(Embedder):
         self.dim = dim
 
     def embed_text(self, text: str) -> List[float]:
-        # deterministic pseudo-embedding: take sha256 and split into dim floats
+        # determinisztikus pszeudo-beágyazás: sha256, majd dim darab float-ra bontás
         h = hashlib.sha256(text.encode("utf-8")).digest()
         vals = [b for b in h]
-        # repeat/trim to dim
+        # ismétlés/vágás a dim méretre
         rep = (vals * ((self.dim // len(vals)) + 1))[: self.dim]
-        # normalize to 0-1
+        # normalizálás 0-1 közé
         emb = [v / 255.0 for v in rep]
         return emb

@@ -1,6 +1,6 @@
-# rag package: Hybrid RAG components (Chroma + BM25)
-# This package will contain ingestion, chunking, dense and sparse retrieval,
-# hybrid merge/reranking, and citation mapping.
+# rag csomag: hibrid RAG komponensek (Chroma + BM25)
+# Ez a csomag tartalmazza a betöltést, darabolást, sűrű és ritka keresést,
+# hibrid összefésülést/újrarángsorolást és hivatkozás-leképezést.
 
 __all__ = [
     "ingestion",

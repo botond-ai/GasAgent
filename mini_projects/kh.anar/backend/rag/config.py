@@ -1,9 +1,9 @@
 from dataclasses import dataclass
 import os
 
-# Configuration for RAG components. Values are loaded from env or defaulted.
-# We use a dataclass to keep configuration immutable-ish and easy to pass around
-# adhering to DIP (dependancy injection of config).
+# Konfiguráció a RAG komponensekhez. Az értékek env-ből töltődnek vagy alapértelmezetten kerülnek be.
+# Dataclass-t használunk, hogy a konfiguráció kvázi változatlan és könnyen továbbadható legyen,
+# a DIP-hez (dependancy injection of config) igazodva.
 
 @dataclass
 class RAGConfig:
@@ -18,11 +18,11 @@ class RAGConfig:
     chunk_overlap: int = int(os.getenv("CHUNK_OVERLAP", "128"))
     persist: bool = os.getenv("CHROMA_PERSIST", "true").lower() == "true"
     
-    # KB folder ingestion config
+    # Tudástár-mappa betöltésének konfigurációja
     kb_data_dir: str = os.getenv("KB_DATA_DIR", "docs/kb-data")
     kb_version_store: str = os.getenv("KB_VERSION_STORE", ".kb_versions.json")
     ingest_on_startup: bool = os.getenv("KB_INGEST_ON_STARTUP", "true").lower() == "true"
 
 
-# Export a single config instance to be used by default. Tests may inject another.
+# Alapértelmezetten használandó egyetlen konfigurációs példány exportálása. A tesztek másikat is beinjektálhatnak.
 default_config = RAGConfig()  # type: ignore

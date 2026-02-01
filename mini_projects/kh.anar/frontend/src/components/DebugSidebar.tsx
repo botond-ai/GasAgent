@@ -6,7 +6,7 @@ export type DebugInfo = {
   session_id: string;
   user_query: string;
   rag_context: Array<Record<string, unknown>> | string[];
-  // New: RAG telemetry provides run_id, decision, topk with scores, latencies, config snapshot
+  // Új: a RAG telemetria run_id-t, döntést, topk-ot pontszámokkal, késleltetéseket és konfigurációs pillanatképet ad
   rag_telemetry?: Record<string, any>;
   final_llm_prompt: string;
 };

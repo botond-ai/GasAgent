@@ -14,7 +14,7 @@ from rag.service import RAGService
 
 router = APIRouter()
 
-# Simple admin protection: env var ADMIN_TOKEN or 401.
+# Egyszerű adminvédelem: env változóban lévő ADMIN_TOKEN vagy 401-es hiba.
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "changeme")
 
 
@@ -34,11 +34,11 @@ class AddDocRequest(BaseModel):
     text: str
 
 
-# Persisted document registry (simple JSON store)
+# Tartós dokumentum-nyilvántartás (egyszerű JSON tároló)
 from rag.persistence.store import DocumentStore
 
 DOC_STORE = DocumentStore(base_dir=dict(os.environ).get("DATA_DIR", "."))
-# ensure the directory is accessible in tests and local runs
+# biztosítjuk, hogy a könyvtár teszt és lokális futás alatt is elérhető legyen
 import logging
 logger = logging.getLogger("rag.persistence")
 logger.info(f"DocumentStore initialized at {DOC_STORE.base}")
@@ -46,15 +46,15 @@ logger.info(f"DocumentStore initialized at {DOC_STORE.base}")
 
 @router.post("/add", dependencies=[Depends(_check_admin)])
 async def add_document(req: AddDocRequest):
-    """Add or update a document in persistent store and index it.
+    """Dokumentum hozzáadása vagy frissítése a tartós tárolóban és indexelése.
 
-    Writing to the store makes the document durable across restarts and enables
-    later async reindex jobs to pick up the canonical source of truth.
+    A tárolóba írás újraindítások között is megőrzi a dokumentumot, és lehetővé
+    teszi a későbbi aszinkron újraindexelő feladatoknak, hogy a hiteles forrást használják.
     """
-    # persist document
+    # dokumentum tartósítása
     DOC_STORE.save_doc(req.dict())
 
-    # prepare retrievers and embedder; in prod these would be singletons
+    # keresők és beágyazó előkészítése; élesben ezek singletonok lennének
     embedder = HashEmbedder()
     dense = DenseRetriever(default_config, embedder=embedder)
     sparse = SparseRetriever()
@@ -68,11 +68,10 @@ async def add_document(req: AddDocRequest):
 
 @router.post("/reindex", dependencies=[Depends(_check_admin)])
 async def reindex_all():
-    """Reindex all documents from the persistent store.
+    """Az összes dokumentum újraindexelése a tartós tárolóból.
 
-    For small datasets this synchronous implementation is still available.
-    For larger datasets prefer `/reindex_async` which runs in background and
-    provides job status tracking.
+    Kis adathalmaznál ez a szinkron megoldás is használható.
+    Nagyobb készleteknél a háttérben futó és állapotot mutató `/reindex_async` javasolt.
     """
     embedder = HashEmbedder()
     dense = DenseRetriever(default_config, embedder=embedder)
@@ -90,19 +89,19 @@ async def reindex_all():
 
 @router.delete("/doc/{doc_id}", dependencies=[Depends(_check_admin)])
 async def delete_document(doc_id: str):
-    """Delete a document from the persistent store and return whether removed."""
+    """Töröl egy dokumentumot a tartós tárolóból és visszaadja, hogy sikerült-e."""
     ok = DOC_STORE.delete_doc(doc_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Document not found")
-    # Optionally trigger a reindex to remove chunks from indices; we keep it
-    # synchronous for simplicity here.
+    # Opcionálisan újraindexelést is indíthatnánk a darabok eltávolítására; itt
+    # az egyszerűség kedvéért szinkron marad.
     return {"success": True, "deleted": doc_id}
 
 
 @router.get("/doc/{doc_id}/versions", dependencies=[Depends(_check_admin)])
 async def list_doc_versions(doc_id: str):
     versions = DOC_STORE.list_versions(doc_id)
-    # return list of filenames and metadata like version fields
+    # fájlnevek és metaadatok (pl. verzió mezők) listáját adja vissza
     ver_files = []
     verdir = DOC_STORE.base / "versions" / doc_id
     for f in sorted(verdir.glob("*.json")):
@@ -120,7 +119,7 @@ async def revert_doc(doc_id: str, version_name: str):
 
 @router.post("/snapshot", dependencies=[Depends(_check_admin)])
 async def create_snapshot():
-    """Create a snapshot (tar.gz) of the persisted document store and return path."""
+    """Készít egy pillanatképet (tar.gz) a tartós dokumentumtárolóról és visszaadja az elérési utat."""
     import tarfile
     import time
 
@@ -134,8 +133,8 @@ async def create_snapshot():
 
 @router.post("/reindex_async", dependencies=[Depends(_check_admin)])
 async def reindex_async():
-    """Start an async reindex job and return a job_id for status polling."""
-    # define the job runner that captures the DOC_STORE
+    """Elindít egy aszinkron újraindexelési feladatot és visszaad egy job_id-t az állapotlekérdezéshez."""
+    # a DOC_STORE-t bezáró feladatfuttató definíciója
     def _runner():
         embedder = HashEmbedder()
         dense = DenseRetriever(default_config, embedder=embedder)
@@ -165,9 +164,9 @@ async def reindex_status(job_id: str):
 
 @router.post("/kb/ingest_incremental", dependencies=[Depends(_check_admin)])
 async def kb_ingest_incremental():
-    """Trigger incremental KB ingestion from folder.
+    """Inkrementális tudástár-betöltés indítása mappából.
     
-    Only processes new/changed/removed documents from kb-data folder.
+    Csak az új/módosult/törölt dokumentumokat dolgozza fel a kb-data mappából.
     """
     from rag.ingestion.kb_indexer import KBIndexer
     from rag.ingestion.version_store import VersionStore
@@ -190,10 +189,10 @@ async def kb_ingest_incremental():
 
 @router.post("/kb/reindex_full", dependencies=[Depends(_check_admin)])
 async def kb_reindex_full():
-    """Trigger full KB reindex from folder.
+    """Teljes tudástár-újraindexelés indítása mappából.
     
-    Clears version tracking and reindexes all documents.
-    Use when chunking config or embedding model changed.
+    Törli a verziókövetést és minden dokumentumot újraindexel.
+    Akkor használd, ha a darabolási konfiguráció vagy a beágyazó modell változott.
     """
     from rag.ingestion.kb_indexer import KBIndexer
     from rag.ingestion.version_store import VersionStore

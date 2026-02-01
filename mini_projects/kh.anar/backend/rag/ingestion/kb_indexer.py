@@ -1,22 +1,22 @@
-"""KB Indexer Orchestrator
+"""Tudástár-indexelő orkesztrátor.
 
-Design rationale:
-- Orchestrates the full KB ingestion pipeline: scan → parse → chunk → embed → index.
-- SRP: Each step delegates to specialized modules (scanner, parser, chunker, retrievers).
-- DIP: Depends on interfaces/config, not concrete implementations.
-- Handles incremental updates: only reindex changed documents.
+Tervezési indoklás:
+- A teljes tudástár-betöltési folyamatot vezérli: scan → parse → chunk → embed → index.
+- SRP: minden lépést dedikált modulokra bíz (scanner, parser, chunker, retrieverek).
+- DIP: interfészekre/konfigurációra támaszkodik, nem konkrét implementációkra.
+- Inkrementális frissítéseket kezel: csak a változott dokumentumokat indexeli újra.
 
-Lifecycle:
-1. Scan kb-data folder for documents
-2. Compare with version store to detect new/changed/removed docs
-3. For changed docs: delete old chunks, re-chunk, re-embed, re-index
-4. For removed docs: delete chunks from indices
-5. Update version store
+Életciklus:
+1. kb-data mappa átvizsgálása dokumentumokért
+2. Összevetés a verziótárral az új/módosult/törölt dokumentumok felismeréséhez
+3. Módosultaknál: régi darabok törlése, újradarabolás, újrabeágyazás, újraindexelés
+4. Törölteknél: darabok eltávolítása az indexekből
+5. Verziótár frissítése
 
-Why this approach:
-- Deterministic: same files => same index state.
-- Incremental: fast updates; only process changed files.
-- Observable: logs every action with counts and timings.
+Miért ez a megközelítés:
+- Determinisztikus: ugyanazok a fájlok => ugyanaz az indexállapot.
+- Inkrementális: gyors frissítések; csak a változott fájlokat dolgozza fel.
+- Megfigyelhető: minden műveletet naplóz darabszámmal és időzítéssel.
 """
 from __future__ import annotations
 from pathlib import Path
@@ -38,12 +38,12 @@ logger = logging.getLogger(__name__)
 
 
 class KBIndexer:
-    """Orchestrates KB document ingestion and indexing.
+    """A tudástári dokumentumok betöltését és indexelését szervezi.
     
-    Design:
-    - Stateless orchestrator; state lives in version_store and retrievers.
-    - Each ingest call reconciles folder state with index state.
-    - Thread-safe for single-process use.
+    Tervezés:
+    - Állapot nélküli orkesztrátor; az állapot a version_store-ban és a retrieverekben él.
+    - Minden betöltés összehangolja a mappa állapotát az index állapotával.
+    - Egyfolyamatú használatnál szálbiztos.
     """
     
     def __init__(
@@ -67,19 +67,19 @@ class KBIndexer:
         self.kb_dir = Path(config.kb_data_dir)
     
     def ingest_incremental(self) -> dict:
-        """Incremental ingestion: only process new/changed documents.
+        """Inkrementális betöltés: csak az új/módosult dokumentumokat dolgozza fel.
         
         Returns:
-            Dict with stats: new, updated, removed, total_chunks
+            Dict statisztikákkal: new, updated, removed, total_chunks
         """
         start_time = time.time()
         logger.info(f"Starting incremental KB ingestion from {self.kb_dir}")
         
-        # Scan folder
+        # Mappa átvizsgálása
         discovered = scan_kb_folder(self.kb_dir)
         discovered_ids = {d["doc_id"] for d in discovered}
         
-        # Compare with version store
+        # Összevetés a verziótárral
         tracked_ids = set(self.version_store.get_all_doc_ids())
         
         new_docs = [d for d in discovered if d["doc_id"] not in tracked_ids]
@@ -93,7 +93,7 @@ class KBIndexer:
         
         total_chunks = 0
         
-        # Process new documents
+        # Új dokumentumok feldolgozása
         for doc_meta in new_docs:
             chunks = self._process_document(doc_meta)
             total_chunks += len(chunks)
@@ -104,7 +104,7 @@ class KBIndexer:
                 len(chunks),
             )
         
-        # Process updated documents (delete old chunks first)
+        # Módosult dokumentumok feldolgozása (előbb a régi darabok törlése)
         for doc_meta in updated_docs:
             self._delete_document_chunks(doc_meta["doc_id"])
             chunks = self._process_document(doc_meta)
@@ -116,7 +116,7 @@ class KBIndexer:
                 len(chunks),
             )
         
-        # Process removed documents
+        # Törölt dokumentumok feldolgozása
         for doc_id in removed_ids:
             self._delete_document_chunks(doc_id)
             self.version_store.remove(doc_id)
@@ -133,28 +133,28 @@ class KBIndexer:
         }
     
     def ingest_full_reindex(self) -> dict:
-        """Full reindex: clear version store and reindex all documents.
+        """Teljes újraindexelés: verziótár törlése és minden dokumentum újraindexelése.
         
-        Use when:
-        - Chunking config changed
-        - Embedding model changed
-        - Index corruption suspected
+        Akkor használd, ha:
+        - Megváltozott a darabolási konfiguráció
+        - Megváltozott a beágyazó modell
+        - Indexsérülés gyanítható
         
         Returns:
-            Dict with stats: total_docs, total_chunks, elapsed_s
+            Dict statisztikákkal: total_docs, total_chunks, elapsed_s
         """
         start_time = time.time()
         logger.info(f"Starting full KB reindex from {self.kb_dir}")
         
-        # Clear version store
+        # Verziótár törlése
         self.version_store.clear()
         
-        # Note: We don't clear the dense/sparse indices here because they may
-        # contain manually added docs. For a true clean slate, the caller should
-        # delete the chroma_dir and reinitialize. For incremental behavior, we
-        # rely on delete_document_chunks to remove old data.
+        # Megjegyzés: itt nem töröljük a sűrű/ritka indexeket, mert kézzel hozzáadott
+        # dokumentumokat tartalmazhatnak. Teljes tiszta induláshoz a hívónak törölnie kell
+        # a chroma_dir-t és újrainicializálnia. Inkrementális működéshez a
+        # delete_document_chunks-re támaszkodunk a régi adatok eltávolításához.
         
-        # Scan and process all documents
+        # Minden dokumentum átvizsgálása és feldolgozása
         discovered = scan_kb_folder(self.kb_dir)
         total_chunks = 0
         
@@ -178,10 +178,10 @@ class KBIndexer:
         }
     
     def _process_document(self, doc_meta: dict) -> List:
-        """Parse, chunk, embed, and index a single document.
+        """Egyetlen dokumentum feldolgozása: parse, darabolás, beágyazás, indexelés.
         
         Returns:
-            List of chunks indexed
+            A beindexelt darabok listája
         """
         file_path = Path(doc_meta["file_path"])
         doc_id = doc_meta["doc_id"]
@@ -189,7 +189,7 @@ class KBIndexer:
         
         logger.debug(f"Processing document: {doc_id} ({ext})")
         
-        # Parse based on extension
+        # Kiterjesztés alapján történő feldolgozás
         if ext == ".pdf":
             parse_result = parse_pdf(file_path)
             text = parse_result.text
@@ -215,24 +215,24 @@ class KBIndexer:
             logger.warning(f"Unsupported file type: {ext} for {doc_id}")
             return []
         
-        # Chunk
+        # Darabolás
         chunks = self.chunker.chunk(doc_id, text, doc_metadata)
         
         if not chunks:
             logger.warning(f"No chunks generated for {doc_id}")
             return []
         
-        # Embed and index
+        # Beágyazás és indexelés
         chunk_texts = [c.text for c in chunks]
         chunk_ids = [c.chunk_id for c in chunks]
         chunk_metas = [c.metadata for c in chunks]
         
         embeddings = self.embedder.embed_batch(chunk_texts)
         
-        # Add to dense index
+        # Hozzáadás a sűrű indexhez
         self.dense.add_chunks(chunk_ids, embeddings, chunk_texts, chunk_metas)
         
-        # Add to sparse index
+        # Hozzáadás a ritka indexhez
         for chunk_id, text, meta in zip(chunk_ids, chunk_texts, chunk_metas):
             self.sparse.add_chunk(chunk_id, text, meta)
         
@@ -241,25 +241,25 @@ class KBIndexer:
         return chunks
     
     def _delete_document_chunks(self, doc_id: str) -> None:
-        """Delete all chunks for a document from indices.
+        """Törli az adott dokumentumhoz tartozó összes darabot az indexekből.
         
-        Design note:
-        - We use doc_id prefix matching to find and delete chunks.
-        - For Chroma, we filter by metadata.doc_id.
-        - For sparse index, we remove by chunk_id prefix.
+        Tervezési megjegyzés:
+        - doc_id prefix egyezéssel keressük és töröljük a darabokat.
+        - Chroma esetén metadata.doc_id alapján szűrünk.
+        - Ritka indexnél a chunk_id prefix alapján törlünk.
         """
         logger.debug(f"Deleting chunks for doc_id: {doc_id}")
         
-        # Delete from dense index (ChromaDB)
-        # Note: This requires the dense retriever to support deletion by metadata filter.
-        # We'll add a delete_by_doc_id method to DenseRetriever.
+        # Törlés a sűrű indexből (ChromaDB)
+        # Megjegyzés: ehhez a sűrű keresőnek támogatnia kell a metaadat-szűrős törlést.
+        # Hozzá fogjuk adni a delete_by_doc_id metódust a DenseRetrieverhez.
         try:
             self.dense.delete_by_doc_id(doc_id)
         except AttributeError:
             logger.warning("DenseRetriever does not support delete_by_doc_id; skipping dense deletion")
         
-        # Delete from sparse index
-        # Note: SparseRetriever needs a delete_by_doc_id method as well.
+        # Törlés a ritka indexből
+        # Megjegyzés: a SparseRetrievernek is szüksége van delete_by_doc_id metódusra.
         try:
             self.sparse.delete_by_doc_id(doc_id)
         except AttributeError:

@@ -16,3 +16,5 @@ rank-bm25==0.2.2
 sentence-transformers==2.2.2
 # PDF parsing for KB ingestion
 pypdf==4.0.1
+# Note: MCP servers are run separately, no need to add mcp package here
+# The backend communicates with MCP servers via HTTP using httpx (already included)

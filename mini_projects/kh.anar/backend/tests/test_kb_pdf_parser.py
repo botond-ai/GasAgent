@@ -1,9 +1,9 @@
-"""Unit tests for PDF parser
+"""Egységtesztek a PDF parserhez.
 
-Tests:
-- PDF text extraction
-- Metadata extraction
-- Page-level data
+Tesztek:
+- PDF szövegkinyerés
+- Metaadat-kinyerés
+- Oldalszintű adatok
 """
 import pytest
 from pathlib import Path
@@ -14,9 +14,9 @@ from rag.ingestion.pdf_parser import parse_pdf, PYPDF_AVAILABLE
 
 @pytest.mark.skipif(not PYPDF_AVAILABLE, reason="pypdf not installed")
 def test_parse_simple_pdf():
-    """Parse a minimal valid PDF."""
-    # Create a minimal PDF (this is a simplified example)
-    # In practice, use a real PDF fixture or generate with reportlab
+    """Egy minimális érvényes PDF feldolgozása."""
+    # Hozzunk létre egy minimális PDF-et (ez egyszerűsített példa)
+    # Gyakorlatban használj valódi PDF tesztfájlt vagy generálj reportlabbal
     pdf_content = b"""%PDF-1.4
 1 0 obj
 <<
@@ -83,26 +83,26 @@ startxref
         
         result = parse_pdf(pdf_path)
         
-        # Check structure
+        # Struktúra ellenőrzése
         assert result.text is not None
         assert isinstance(result.pages, list)
         assert isinstance(result.metadata, dict)
         
-        # Check pages
+        # Oldalak ellenőrzése
         assert len(result.pages) > 0
         assert result.pages[0]["page_num"] == 1
 
 
 @pytest.mark.skipif(not PYPDF_AVAILABLE, reason="pypdf not installed")
 def test_parse_pdf_with_metadata():
-    """Test metadata extraction (title, author)."""
-    # For this test we'd need a PDF with metadata
-    # Skipping detailed implementation; in practice use a fixture PDF
+    """Metaadatkinyerés (cím, szerző) tesztelése."""
+    # Ehhez a teszthez metaadatos PDF kellene
+    # A részletes megvalósítást átugorjuk; gyakorlatban használj fixture PDF-et
     pass
 
 
 def test_parse_pdf_missing_library():
-    """Test graceful failure when pypdf not available."""
+    """Kecses hiba, ha a pypdf nem érhető el."""
     if PYPDF_AVAILABLE:
         pytest.skip("pypdf is available")
     

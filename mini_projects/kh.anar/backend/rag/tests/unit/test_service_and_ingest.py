@@ -13,7 +13,7 @@ class FakeDense:
             self.storage[c["id"]] = c
 
     def query(self, embedding, k=5, filters=None):
-        # simple similarity: pick ids we have
+        # egyszerű hasonlóság: az általunk tárolt azonosítókat választjuk
         results = []
         for _id, c in self.storage.items():
             results.append({"id": _id, "score_vector": 0.8 if "CANARY_TOKEN" in c["text"] else 0.1, "document": c.get("text"), "metadata": c.get("metadata")})
@@ -31,7 +31,7 @@ def test_ingest_and_canary_retrieval():
     assert any("CANARY_TOKEN" in c["text"] for c in ingested)
 
     hr = HybridRetriever(dense, sparse, embedder=None)  # config will be injected in next test
-    # we need a config-like object with k, threshold, w_dense, w_sparse
+    # szükségünk van egy config-szerű objektumra k, threshold, w_dense, w_sparse mezőkkel
     class Cfg: k = 5; threshold = 0.2; w_dense = 0.7; w_sparse = 0.3
     cfg = Cfg()
     hr = HybridRetriever(dense, sparse, cfg)

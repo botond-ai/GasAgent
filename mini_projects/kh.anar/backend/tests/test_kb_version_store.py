@@ -1,10 +1,10 @@
-"""Unit tests for VersionStore
+"""Egységtesztek a VersionStore-hoz.
 
-Tests:
-- Save/load version tracking
-- Change detection
-- Deletion
-- Persistence across instances
+Tesztek:
+- Verziókövetés mentése/betöltése
+- Változásérzékelés
+- Törlés
+- Tartósság példányok között
 """
 import pytest
 from pathlib import Path
@@ -14,54 +14,54 @@ from rag.ingestion.version_store import VersionStore
 
 
 def test_version_store_new_document():
-    """Track a new document."""
+    """Új dokumentum követése."""
     with tempfile.TemporaryDirectory() as tmpdir:
         store_path = Path(tmpdir) / "versions.json"
         store = VersionStore(store_path)
         
-        # Initially empty
+        # Kezdetben üres
         assert store.get_version("doc1") is None
         assert store.has_changed("doc1", "hash123")
         
-        # Add document
+        # Dokumentum hozzáadása
         store.update("doc1", "hash123", "/path/to/doc1.pdf", 10)
         
-        # Now tracked
+        # Most már követve van
         assert store.get_version("doc1") == "hash123"
         assert not store.has_changed("doc1", "hash123")
 
 
 def test_version_store_change_detection():
-    """Detect when document hash changes."""
+    """Észleli, ha a dokumentum hash-e megváltozik."""
     with tempfile.TemporaryDirectory() as tmpdir:
         store_path = Path(tmpdir) / "versions.json"
         store = VersionStore(store_path)
         
         store.update("doc1", "hash_v1", "/path/to/doc1.pdf", 10)
         
-        # Same hash => no change
+        # Azonos hash => nincs változás
         assert not store.has_changed("doc1", "hash_v1")
         
-        # Different hash => changed
+        # Eltérő hash => változott
         assert store.has_changed("doc1", "hash_v2")
 
 
 def test_version_store_persistence():
-    """Version store persists across instances."""
+    """A verziótár példányok között is megmarad."""
     with tempfile.TemporaryDirectory() as tmpdir:
         store_path = Path(tmpdir) / "versions.json"
         
-        # First instance
+        # Első példány
         store1 = VersionStore(store_path)
         store1.update("doc1", "hash123", "/path/doc1.pdf", 5)
         
-        # Second instance (reload from disk)
+        # Második példány (betöltés lemezről)
         store2 = VersionStore(store_path)
         assert store2.get_version("doc1") == "hash123"
 
 
 def test_version_store_removal():
-    """Remove a document from tracking."""
+    """Dokumentum eltávolítása a követésből."""
     with tempfile.TemporaryDirectory() as tmpdir:
         store_path = Path(tmpdir) / "versions.json"
         store = VersionStore(store_path)
@@ -74,7 +74,7 @@ def test_version_store_removal():
 
 
 def test_version_store_list_all():
-    """List all tracked doc_ids."""
+    """Összes követett doc_id listázása."""
     with tempfile.TemporaryDirectory() as tmpdir:
         store_path = Path(tmpdir) / "versions.json"
         store = VersionStore(store_path)
@@ -87,7 +87,7 @@ def test_version_store_list_all():
 
 
 def test_version_store_clear():
-    """Clear all version data."""
+    """Minden verzióadat törlése."""
     with tempfile.TemporaryDirectory() as tmpdir:
         store_path = Path(tmpdir) / "versions.json"
         store = VersionStore(store_path)

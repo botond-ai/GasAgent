@@ -1,9 +1,9 @@
-"""Ingestion module: document model, ingest pipeline, incremental updates
+"""Betöltő modul: dokumentummodell, betöltési folyamat, inkrementális frissítések.
 
-This module is responsible for converting Documents -> Chunks, computing
-embeddings (or accepting them), and pushing chunks to both dense and sparse
-indices. It follows SRP: ingestion only handles conversion and index calls,
-not retrieval or synthesis.
+Ez a modul felelős a Document -> Chunk átalakításért, az embeddingek számításáért
+(vagy átvételéért), és a darabok továbbításáért a sűrű és ritka indexekbe.
+SRP-t követ: a betöltés csak az átalakítást és indexhívásokat kezeli, nem a
+visszakeresést vagy szintézist.
 """
 from dataclasses import dataclass
 from typing import Dict, Any, List
@@ -40,7 +40,7 @@ class Ingester:
                 "metadata": {"doc_id": c.doc_id, "title": doc.title, "source": doc.source, "doc_type": doc.doc_type, "version": doc.version, **c.metadata},
                 "embedding": embedding,
             })
-        # write to both indices
+        # írás mindkét indexbe
         self.dense.add_chunks(prepared)
         self.sparse.add_chunks(prepared)
         return prepared

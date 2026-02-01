@@ -1,14 +1,14 @@
-"""File Scanner for KB ingestion
+"""Fájlszkenner a tudástár betöltéséhez.
 
-Design rationale:
-- SRP: This module's single responsibility is discovering files in the KB folder
-  and computing stable identifiers (doc_id, version_hash) for change detection.
-- Deterministic: File hash (SHA256) ensures we detect content changes reliably.
-- Testable: Pure functions take paths and return metadata; no side effects.
+Tervezési indoklás:
+- SRP: ennek a modulnak egyetlen feladata a KB mappában lévő fájlok felderítése
+  és stabil azonosítók (doc_id, version_hash) számítása a változások felismeréséhez.
+- Determinisztikus: a fájl hash (SHA256) megbízhatóan jelzi a tartalmi változást.
+- Tesztelhető: tiszta függvények kapnak útvonalakat és metaadatot adnak vissza; nincs mellékhatás.
 
-Why hashing:
-- Allows incremental updates: only re-index changed documents.
-- Stable across runs: same file content => same hash => skip reindex.
+Miért hashing:
+- Lehetővé teszi az inkrementális frissítést: csak a változott dokumentumokat indexeljük újra.
+- Futások között stabil: azonos fájltartalom => azonos hash => nincs újraindexelés.
 """
 from __future__ import annotations
 from pathlib import Path
@@ -20,10 +20,10 @@ logger = logging.getLogger(__name__)
 
 
 def compute_file_hash(path: Path) -> str:
-    """Compute SHA256 hash of file content for version detection.
+    """SHA256 hash számítása a fájltartalomhoz verziódetektáláshoz.
     
-    Why SHA256: Strong collision resistance, widely supported, fast enough
-    for typical KB documents (PDFs usually < 10MB).
+    Miért SHA256: erős ütközésállóság, széles körű támogatás, elég gyors
+    tipikus KB dokumentumokhoz (PDF-ek általában < 10MB).
     """
     sha = hashlib.sha256()
     with open(path, "rb") as f:
@@ -33,20 +33,20 @@ def compute_file_hash(path: Path) -> str:
 
 
 def scan_kb_folder(kb_dir: Path, extensions: List[str] = None) -> List[Dict[str, Any]]:
-    """Scan the KB folder and return metadata for each discovered file.
+    """Beolvassa a tudástár mappát és metaadatot ad vissza minden talált fájlhoz.
     
     Args:
-        kb_dir: Path to the KB data directory
-        extensions: List of file extensions to include (e.g., [".pdf", ".txt", ".md"])
-                   If None, defaults to [".pdf", ".txt", ".md"]
+        kb_dir: Útvonal a tudástár adatkönyvtárhoz
+        extensions: Fájlkiterjesztések listája (pl. [".pdf", ".txt", ".md"]);
+                   ha None, alapértelmezés [".pdf", ".txt", ".md"]
     
     Returns:
-        List of dicts with keys: doc_id, file_path, version_hash, file_size, extension
+        Dict-ek listája a következő kulcsokkal: doc_id, file_path, version_hash, file_size, extension
     
-    Design notes:
-    - doc_id is derived from relative path (stable across moves within kb-data)
-    - version_hash allows detecting file updates
-    - We log discovery stats for observability
+    Tervezési jegyzetek:
+    - A doc_id a relatív útvonalból származik (stabil marad a kb-data-n belüli mozgatásoknál)
+    - A version_hash segít felismerni a fájlfrissítéseket
+    - Felfedezési statisztikákat naplózunk az átláthatóságért
     """
     if extensions is None:
         extensions = [".pdf", ".txt", ".md"]
@@ -61,8 +61,8 @@ def scan_kb_folder(kb_dir: Path, extensions: List[str] = None) -> List[Dict[str,
             if not fpath.is_file():
                 continue
             
-            # Derive doc_id from relative path (replace / with _)
-            # Why: stable identifier; allows organizing docs in subfolders
+            # doc_id származtatása a relatív útvonalból ("/" helyett "_")
+            # Miért: stabil azonosító; engedi a dokumentumok almappákba rendezését
             relative = fpath.relative_to(kb_dir)
             doc_id = str(relative).replace("/", "_").replace("\\", "_")
             

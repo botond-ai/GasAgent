@@ -1,18 +1,18 @@
-"""PDF Parser for KB ingestion
+"""PDF parser a tudástár-betöltéshez.
 
-Design rationale:
-- SRP: Isolate PDF parsing logic; return structured data (text + metadata).
-- OCP: Could extend to support other parsers (DOCX, HTML) by introducing an interface.
-- Deterministic: Page-by-page extraction ensures consistent chunking anchors.
+Tervezési indoklás:
+- SRP: a PDF feldolgozási logika elkülönítése; struktúrált adatot ad vissza (szöveg + metaadat).
+- OCP: további parserrek (DOCX, HTML) is beilleszthetők egy interfésszel.
+- Determinisztikus: oldalankénti kinyerés biztosítja a stabil darabolási támpontokat.
 
-Why pypdf:
-- Pure Python, no external dependencies (unlike pdfplumber or camelot).
-- Sufficient for text extraction; works well with most PDFs.
-- Lightweight and fast.
+Miért pypdf:
+- Tiszta Python, nincs külső függőség (ellentétben a pdfplumberrel vagy a camelottal).
+- Elég a szövegkinyeréshez; a legtöbb PDF-fel jól működik.
+- Könnyű és gyors.
 
-Metadata preservation:
-- Capture page numbers for citation and context.
-- Include PDF metadata (title, author) when available.
+Metaadat-megőrzés:
+- Oldalszámok rögzítése hivatkozáshoz és kontextushoz.
+- PDF metaadatok (cím, szerző) felvétele, ha elérhetők.
 """
 from __future__ import annotations
 from pathlib import Path
@@ -30,32 +30,32 @@ except ImportError:
 
 
 class PDFParseResult:
-    """Structured result from PDF parsing.
+    """Strukturált eredmény a PDF feldolgozásából.
     
-    Why a class: encapsulates parsed data + metadata; easier to extend.
+    Miért osztály: a feldolgozott adatot és metaadatot is kapszulázza; könnyebb bővíteni.
     """
     def __init__(self, text: str, pages: List[Dict[str, Any]], metadata: Dict[str, Any]):
-        self.text = text  # Full text concatenated
-        self.pages = pages  # List of {page_num, text}
-        self.metadata = metadata  # PDF metadata (title, author, etc.)
+        self.text = text  # A teljes szöveg összefűzve
+        self.pages = pages  # {page_num, text} elemek listája
+        self.metadata = metadata  # PDF metaadatok (cím, szerző stb.)
 
 
 def parse_pdf(file_path: Path) -> PDFParseResult:
-    """Parse a PDF file and extract text + metadata.
+    """PDF fájl feldolgozása és szöveg + metaadatok kinyerése.
     
     Args:
-        file_path: Path to the PDF file
+        file_path: Útvonal a PDF-hez
     
     Returns:
-        PDFParseResult with text, page-level data, and PDF metadata
+        PDFParseResult a szöveggel, oldal szintű adatokkal és PDF metaadatokkal
     
     Raises:
-        RuntimeError: If pypdf is not available
-        Exception: If PDF cannot be parsed
+        RuntimeError: ha a pypdf nem érhető el
+        Exception: ha a PDF nem dolgozható fel
     
-    Design notes:
-    - Page-by-page extraction allows page-aware chunking.
-    - Metadata extraction enables richer context for retrieval.
+    Tervezési jegyzetek:
+    - Oldalankénti kinyerés lehetővé teszi az oldal-tudatos darabolást.
+    - A metaadatkinyerés gazdagabb kontextust ad a visszakereséshez.
     """
     if not PYPDF_AVAILABLE:
         raise RuntimeError("pypdf not available; install via: pip install pypdf")
@@ -63,7 +63,7 @@ def parse_pdf(file_path: Path) -> PDFParseResult:
     try:
         reader = PdfReader(str(file_path))
         
-        # Extract PDF metadata
+        # PDF metaadatok kinyerése
         pdf_metadata = {}
         if reader.metadata:
             pdf_metadata = {
@@ -73,13 +73,13 @@ def parse_pdf(file_path: Path) -> PDFParseResult:
                 "creator": reader.metadata.get("/Creator", ""),
             }
         
-        # Extract text page by page
+        # Szöveg kinyerése oldalanként
         pages = []
         all_text = []
         for i, page in enumerate(reader.pages):
             page_text = page.extract_text() or ""
             pages.append({
-                "page_num": i + 1,  # 1-indexed for human readability
+                "page_num": i + 1,  # 1-től indexelve, hogy embernek könnyebb legyen olvasni
                 "text": page_text,
             })
             all_text.append(page_text)

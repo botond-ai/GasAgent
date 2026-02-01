@@ -1,8 +1,8 @@
-"""Transformer-based embedder using sentence-transformers when available
+"""Transformer-alapú beágyazó, amely sentence-transformers-t használ, ha elérhető.
 
-Falls back to HashEmbedder if transformer package not installed; this keeps
-tests fast and deterministic while enabling higher-quality embeddings in
-production when the dependency is present.
+Ha nincs telepítve a transformer csomag, HashEmbedderre lép vissza; ez gyors és
+determinisztikus teszteket biztosít, miközben élesben jobb minőségű beágyazást tesz lehetővé,
+ha a függőség jelen van.
 """
 from typing import List
 from .embedder import Embedder, HashEmbedder
@@ -25,5 +25,5 @@ class TransformerEmbedder(Embedder):
 
 
 class FallbackEmbedder(HashEmbedder):
-    """Alias to use HashEmbedder when real model isn't available."""
+    """Álnév a HashEmbedder használatához, amikor a valódi modell nem elérhető."""
     pass

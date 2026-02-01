@@ -29,13 +29,13 @@ def test_delete_and_versions_flow(tmp_path):
     versions = vs.json().get("versions")
     assert versions and len(versions) >= 1
 
-    # revert to first version
+    # visszaállítás az első verzióra
     ver_name = versions[0]["name"]
     rv = client.post(f"/admin/rag/doc/vdoc/revert?version_name={ver_name}", headers={"token": "vtok"})
     assert rv.status_code == 200
 
-    # delete
+    # törlés
     d = client.delete("/admin/rag/doc/vdoc", headers={"token": "vtok"})
     assert d.status_code == 200
-    # ensure file removed
+    # győződjünk meg róla, hogy a fájl törlődött
     assert not (Path('.') / 'rag_documents' / 'vdoc.json').exists()

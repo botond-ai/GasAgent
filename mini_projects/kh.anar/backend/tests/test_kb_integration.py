@@ -1,10 +1,10 @@
-"""Integration tests for KB folder ingestion
+"""Integrációs tesztek a tudástár-mappa betöltéséhez.
 
-Tests:
-- End-to-end ingestion from folder
-- Incremental updates (new/changed/removed docs)
-- Full reindex
-- Canary document retrieval
+Tesztek:
+- Végponttól végpontig tartó betöltés mappából
+- Inkrementális frissítések (új/módosult/törölt dokumentumok)
+- Teljes újraindexelés
+- Kanári dokumentum visszakeresése
 """
 import pytest
 from pathlib import Path
@@ -19,7 +19,7 @@ from rag.retrieval.sparse import SparseRetriever
 
 
 class FakeDenseRetriever:
-    """In-memory fake for testing without ChromaDB."""
+    """Memóriabeli ál-kereső teszteléshez ChromaDB nélkül."""
     def __init__(self, config, embedder=None):
         self.storage = {}
         self.embedder = embedder
@@ -39,7 +39,7 @@ class FakeDenseRetriever:
             del self.storage[k]
     
     def query(self, embedding, k=5, filters=None):
-        # Return chunks with matching metadata if filters provided
+        # Ha van szűrő, akkor a metaadatnak megfelelő darabokat adjuk vissza
         results = []
         for cid, data in self.storage.items():
             if filters:
@@ -56,7 +56,7 @@ class FakeDenseRetriever:
 
 
 class FakeSparseRetriever:
-    """In-memory fake for testing."""
+    """Memóriabeli ál-kereső a teszteléshez."""
     def __init__(self):
         self.storage = {}
     
@@ -77,7 +77,7 @@ def test_kb_incremental_ingest_new_doc():
         kb_dir.mkdir()
         version_store_path = Path(tmpdir) / "versions.json"
         
-        # Create a test text document
+        # Teszt szöveges dokumentum létrehozása
         (kb_dir / "doc1.txt").write_text("This is test document one.", encoding="utf-8")
         
         config = RAGConfig(
@@ -101,7 +101,7 @@ def test_kb_incremental_ingest_new_doc():
         assert stats["removed"] == 0
         assert stats["total_chunks"] > 0
         
-        # Verify chunks indexed
+        # Ellenőrizzük, hogy a darabok indexelve lettek
         assert len(dense.storage) > 0
         assert len(sparse.storage) > 0
 
@@ -129,23 +129,23 @@ def test_kb_incremental_ingest_update_doc():
         version_store = VersionStore(version_store_path)
         indexer = KBIndexer(config, dense, sparse, embedder, version_store)
         
-        # First ingest
+        # Első betöltés
         stats1 = indexer.ingest_incremental()
         assert stats1["new"] == 1
         chunks_after_first = len(dense.storage)
         
-        # Update document
+        # Dokumentum frissítése
         doc_path.write_text("Version 2 - updated content", encoding="utf-8")
         
-        # Second ingest
+        # Második betöltés
         stats2 = indexer.ingest_incremental()
         assert stats2["new"] == 0
         assert stats2["updated"] == 1
         assert stats2["removed"] == 0
         
-        # Old chunks should be replaced
+        # A régi daraboknak cserélődnie kell
         chunks_after_update = len(dense.storage)
-        # Since we delete old chunks and add new ones, count should reflect new chunks
+        # Mivel töröljük a régieket és újakat adunk hozzá, a számnak az új darabokat kell tükröznie
         assert chunks_after_update > 0
 
 
@@ -172,21 +172,21 @@ def test_kb_incremental_ingest_remove_doc():
         version_store = VersionStore(version_store_path)
         indexer = KBIndexer(config, dense, sparse, embedder, version_store)
         
-        # First ingest
+        # Első betöltés
         stats1 = indexer.ingest_incremental()
         assert stats1["new"] == 1
         assert len(dense.storage) > 0
         
-        # Remove document
+        # Dokumentum törlése
         doc_path.unlink()
         
-        # Second ingest
+        # Második betöltés
         stats2 = indexer.ingest_incremental()
         assert stats2["new"] == 0
         assert stats2["updated"] == 0
         assert stats2["removed"] == 1
         
-        # Chunks should be deleted
+        # A darabokat törölni kell
         assert len(dense.storage) == 0
         assert len(sparse.storage) == 0
 
@@ -228,7 +228,7 @@ def test_kb_canary_document_retrieval():
         kb_dir.mkdir()
         version_store_path = Path(tmpdir) / "versions.json"
         
-        # Create canary doc with unique token
+        # Kanári dokumentum létrehozása egyedi tokennel
         canary_content = "This is a CANARY_TOKEN_XYZ123 document for testing retrieval."
         (kb_dir / "canary.txt").write_text(canary_content, encoding="utf-8")
         
@@ -247,9 +247,9 @@ def test_kb_canary_document_retrieval():
         
         indexer.ingest_incremental()
         
-        # Query for canary token (fake embedding)
+        # Lekérdezés a kanári tokenre (ál embedding)
         results = dense.query([0.1] * 128, k=5)
         
-        # At least one result should contain the canary token
+        # Legalább egy eredménynek tartalmaznia kell a kanári tokent
         texts = [r["document"] for r in results]
         assert any("CANARY_TOKEN_XYZ123" in t for t in texts)

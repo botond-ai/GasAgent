@@ -1,8 +1,8 @@
 from typing import List
 
-# httpx is used for Google Custom Search calls. If it's not installed in the
-# runtime (e.g., local dev environment without dependencies installed), we
-# gracefully handle that and surface a clear message when Google is selected.
+# A httpx a Google Custom Search hívásokhoz kell. Ha nincs telepítve a futtatási
+# környezetben (pl. lokális fejlesztésnél a függőségek nélkül), akkor ezt
+# kezeljük, és egyértelmű üzenetet adunk, ha a Google kerül kiválasztásra.
 try:
     import httpx
     _HTTPX_AVAILABLE = True
@@ -19,10 +19,10 @@ from ..core.config import settings
 
 
 class WebSearchService:
-    """Removed web search service.
+    """Eltávolított webkeresési szolgáltatás.
 
-    The project no longer supports web search. This stub remains for
-    compatibility but always reports that search is unavailable.
+    A projekt már nem támogatja a webes keresést. Ez a csonk a kompatibilitás
+    miatt maradt, de mindig azt jelzi, hogy a keresés nem érhető el.
     """
 
     def __init__(self) -> None:

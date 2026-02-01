@@ -16,7 +16,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
     if not request.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty.")
 
-    storage.load_profile(request.user_id)  # ensure profile exists
+    storage.load_profile(request.user_id)  # gondoskodunk róla, hogy létezzen a profil
 
     if request.message.strip().lower() == "reset context":
         storage.reset_conversation(request.user_id, request.session_id)

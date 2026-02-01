@@ -1,7 +1,7 @@
-"""Hybrid retriever that merges dense and sparse scores and applies threshold
+"""Hibrid kereső, amely egyesíti a sűrű és ritka pontszámokat, majd küszöböt alkalmaz.
 
-This module performs score normalization and final score computation using
-configurable weights. It also contains the 'no_hit' logic to drive fallback.
+Ez a modul végzi a pontszámok normalizálását és a végső pontszám számítását
+konfigurálható súlyokkal. Tartalmazza a 'no_hit' logikát is a visszalépéshez.
 """
 from typing import List, Dict, Any
 import math
@@ -35,7 +35,7 @@ class HybridRetriever:
         dense_res = self.dense.query(query_embedding, k=k, filters=filters)
         sparse_res = self.sparse.query(query_text, k=k)
 
-        # Map results by id for merge
+        # Eredmények csoportosítása azonosító alapján az összevonáshoz
         by_id = {}
         for i, r in enumerate(dense_res):
             _id = r["id"]
@@ -61,7 +61,7 @@ class HybridRetriever:
 
         merged.sort(key=lambda x: x["score_final"], reverse=True)
 
-        # threshold logic
+        # küszöblogika
         if not merged or merged[0]["score_final"] < self.config.threshold:
             return {"hits": [], "decision": "no_hit", "topk": merged}
         return {"hits": merged[:k], "decision": "hit", "topk": merged}

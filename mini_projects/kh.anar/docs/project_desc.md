@@ -66,7 +66,7 @@ async def hr_workflow_node(state: AgentState) -> AgentState:
     """HR-specifikus workflow végrehajtás."""
     
     if "szabadság" in state["query"].lower():
-        # Generate HR request JSON
+        # HR kérelem JSON generálása
         hr_request = {
             "type": "vacation_request",
             "employee_id": state["user_id"],
@@ -75,7 +75,7 @@ async def hr_workflow_node(state: AgentState) -> AgentState:
             "status": "pending_approval"
         }
         
-        # Save to file
+        # Mentés fájlba
         filename = f"hr_request_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         save_json(hr_request, filename)
         
@@ -94,7 +94,7 @@ async def it_workflow_node(state: AgentState) -> AgentState:
     """IT-specifikus workflow végrehajtás."""
     
     if "nem működik" in state["query"].lower():
-        # Create Jira ticket draft
+        # Jira jegy vázlatának létrehozása
         ticket = {
             "project": "ITSUPPORT",
             "issue_type": "Bug",

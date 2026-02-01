@@ -1,13 +1,13 @@
-"""Deterministic chunker
+"""Determinista daraboló
 
-This chunker deterministically splits a document by whitespace into chunks of
-`chunk_size` characters with `chunk_overlap` characters overlapped between
-consecutive chunks.
+Ez a daraboló determinisztikusan osztja fel a dokumentumot szóközöknél
+`chunk_size` hosszú darabokra, ahol az egymást követő darabok között
+`chunk_overlap` karakter az átfedés.
 
-Rationale / why: using character-based chunking is language-agnostic, simple,
-and deterministic (no randomness). Overlap helps preserve context across
-boundary splits; chunk_size/overlap are configurable and chosen to balance
-context window vs. RAG recall.
+Miért így: a karakteralapú darabolás nyelvfüggetlen, egyszerű és
+determinisztikus (nincs benne véletlen). Az átfedés segít megőrizni a
+kontextust a határszélek mentén; a chunk_size/overlap paraméterezhető, hogy
+egyensúlyban legyen a kontextusablak és a RAG visszakeresés.
 """
 from dataclasses import dataclass
 from typing import List, Dict
@@ -22,13 +22,13 @@ class Chunk:
 
 
 class DeterministicChunker:
-    """Chunker that splits text deterministically by character counts.
+    """Daraboló, amely a szöveget determinisztikusan karakterhossz szerint osztja.
 
-    Not the most linguistically aware, but deterministic and easy to test.
-    Tradeoffs:
-      - Pros: deterministic, simple, portable
-      - Cons: may split across sentences, which can be mitigated by tuning
-        chunk_size and overlap.
+    Nem a legnyelvtudatosabb megközelítés, de determinisztikus és könnyű tesztelni.
+    Csereügyletek:
+      - Előnyök: determinisztikus, egyszerű, hordozható
+      - Hátrányok: mondatok között is vághat, amit a chunk_size és overlap
+        hangolásával lehet enyhíteni.
     """
 
     def __init__(self, chunk_size: int = 800, chunk_overlap: int = 128):
@@ -38,15 +38,15 @@ class DeterministicChunker:
         self.chunk_overlap = chunk_overlap
 
     def chunk(self, doc_id: str, text: str, doc_metadata: Dict = None) -> List[Chunk]:
-        """Return a list of Chunk objects for the given document text.
+        """Visszaadja a megadott dokumentum szövegéhez tartozó Chunk objektumok listáját.
 
-        Deterministic: same input text always yields same chunk ids and texts.
-        Chunk ids are `doc_id:idx`.
+        Determinisztikus: ugyanaz a bemenet mindig ugyanazokat az azonosítókat és darabokat adja.
+        A chunk azonosítók formátuma: `doc_id:idx`.
         
         Args:
-            doc_id: Document identifier
-            text: Text content to chunk
-            doc_metadata: Optional metadata to include in each chunk (e.g., title, source, page)
+            doc_id: Dokumentumazonosító
+            text: A darabolandó szövegtartalom
+            doc_metadata: Opcionális metaadatok minden darabhoz (pl. cím, forrás, oldal)
         """
         chunks: List[Chunk] = []
         start = 0
@@ -59,7 +59,7 @@ class DeterministicChunker:
             chunk_text = text[start:end]
             chunk_id = f"{doc_id}:{idx}"
             
-            # Merge char offsets with provided doc metadata
+            # Karakterpozíciók összefésülése a megadott dokumentum metaadataival
             metadata = {**base_metadata, "start": start, "end": end, "chunk_index": idx}
             
             chunks.append(Chunk(chunk_id=chunk_id, doc_id=doc_id, text=chunk_text, metadata=metadata))

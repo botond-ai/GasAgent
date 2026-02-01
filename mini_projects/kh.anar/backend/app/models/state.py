@@ -14,3 +14,10 @@ class AgentState(TypedDict, total=False):
     response_text: str
     request_metadata: Dict
     enable_search: bool
+    user_preferences: dict
+    rag_telemetry: dict
+    system_prompt: str
+    # MCP tool support
+    llm_response: dict
+    tool_calls: list
+    tool_results: list

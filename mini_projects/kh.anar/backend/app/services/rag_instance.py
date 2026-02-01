@@ -1,16 +1,16 @@
-"""Shared RAG instances for the application.
+"""Megosztott RAG példányok az alkalmazáshoz.
 
-This module provides singleton-like shared instances of the RAG components
-to ensure that all parts of the application use the same retrievers.
+Ez a modul singleton-szerű megosztott RAG komponenseket ad, hogy az
+alkalmazás minden része ugyanazokat a keresőket használja.
 
-Critical for BM25 sparse retriever which is in-memory and non-persistent:
-- If each endpoint creates its own SparseRetriever, they have separate data
-- KB ingestion must populate the SAME instances used by the chat agent
+Különösen fontos a BM25 ritka keresőnél, ami memóriában él és nem tartós:
+- Ha minden végpont saját SparseRetrievert hoz létre, az adatok elkülönülnek
+- A tudástár-betöltésnek UGYANAZOKAT a példányokat kell feltöltenie, mint amit a chat ügynök használ
 
-Design:
-- Initialize once at module load
-- Import from here in routes.py, admin.py, main.py lifespan
-- Ensures consistent state across requests
+Tervezés:
+- Egyszer inicializáljuk modulbetöltéskor
+- Innen importáljuk a routes.py, admin.py, main.py életciklusából
+- Biztosítja a következetes állapotot a kérések között
 """
 from rag.config import default_config
 from rag.embeddings.embedder import HashEmbedder
@@ -19,7 +19,7 @@ from rag.retrieval.sparse import SparseRetriever
 from rag.retrieval.hybrid import HybridRetriever
 from rag.service import RAGService
 
-# Shared instances - initialized once at module import
+# Megosztott példányok - egyszer inicializálva modulimportkor
 embedder = HashEmbedder()
 dense_retriever = DenseRetriever(default_config, embedder=embedder)
 sparse_retriever = SparseRetriever()

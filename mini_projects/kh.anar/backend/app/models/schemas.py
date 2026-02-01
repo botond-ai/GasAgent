@@ -24,7 +24,7 @@ class DebugInfo(BaseModel):
     session_id: str
     user_query: str
     rag_context: List[Any]
-    # Detailed RAG telemetry including run_id, topk, decision, latencies, config snapshot
+    # Részletes RAG telemetria run_id-vel, topk értékkel, döntéssel, késleltetésekkel és konfigurációs pillanatképpel
     rag_telemetry: Optional[Dict[str, Any]] = None
     final_llm_prompt: str
 

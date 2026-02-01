@@ -7,7 +7,7 @@ from ..models.schemas import MessageRecord, UserProfile
 
 
 class FileStorage:
-    """Filesystem persistence for users and conversations."""
+    """Fájlrendszeres tartósság a felhasználók és beszélgetések számára."""
 
     def __init__(self, base_dir: Path | None = None) -> None:
         self.base_dir = base_dir or settings.data_dir

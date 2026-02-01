@@ -8,7 +8,7 @@ def test_start_async_reindex_and_poll(monkeypatch):
     client = TestClient(app)
     os.environ["ADMIN_TOKEN"] = "async-token"
 
-    # add a doc first
+    # először adjunk hozzá egy dokumentumot
     payload = {
         "doc_id": "doc-async",
         "title": "Async Doc",

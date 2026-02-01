@@ -1,9 +1,9 @@
-"""Unit tests for file scanner
+"""Egységtesztek a fájlszkennerhez.
 
-Tests:
-- File hash determinism
-- Change detection
-- Folder scanning with multiple file types
+Tesztek:
+- Fájl hash determinizmus
+- Változásérzékelés
+- Mappa beolvasása több fájltípussal
 """
 import pytest
 from pathlib import Path
@@ -14,7 +14,7 @@ from rag.ingestion.scanner import compute_file_hash, scan_kb_folder
 
 
 def test_file_hash_deterministic():
-    """Same content => same hash."""
+    """Azonos tartalom => azonos hash."""
     with tempfile.TemporaryDirectory() as tmpdir:
         fpath = Path(tmpdir) / "test.txt"
         fpath.write_text("Hello World", encoding="utf-8")
@@ -27,7 +27,7 @@ def test_file_hash_deterministic():
 
 
 def test_file_hash_change_detection():
-    """Different content => different hash."""
+    """Eltérő tartalom => eltérő hash."""
     with tempfile.TemporaryDirectory() as tmpdir:
         fpath = Path(tmpdir) / "test.txt"
         
@@ -41,7 +41,7 @@ def test_file_hash_change_detection():
 
 
 def test_scan_kb_folder_empty():
-    """Empty folder => no documents."""
+    """Üres mappa => nincs dokumentum."""
     with tempfile.TemporaryDirectory() as tmpdir:
         kb_dir = Path(tmpdir)
         docs = scan_kb_folder(kb_dir)
@@ -49,7 +49,7 @@ def test_scan_kb_folder_empty():
 
 
 def test_scan_kb_folder_pdf():
-    """Scan folder with PDF."""
+    """Mappa átvizsgálása PDF-fel."""
     with tempfile.TemporaryDirectory() as tmpdir:
         kb_dir = Path(tmpdir)
         pdf_file = kb_dir / "guide.pdf"
@@ -65,7 +65,7 @@ def test_scan_kb_folder_pdf():
 
 
 def test_scan_kb_folder_multiple_types():
-    """Scan folder with multiple file types."""
+    """Mappa átvizsgálása több fájltípussal."""
     with tempfile.TemporaryDirectory() as tmpdir:
         kb_dir = Path(tmpdir)
         
@@ -82,7 +82,7 @@ def test_scan_kb_folder_multiple_types():
 
 
 def test_scan_kb_folder_nested():
-    """Scan nested folder structure."""
+    """Beágyazott mappastruktúra átvizsgálása."""
     with tempfile.TemporaryDirectory() as tmpdir:
         kb_dir = Path(tmpdir)
         subdir = kb_dir / "subdir"
@@ -95,6 +95,6 @@ def test_scan_kb_folder_nested():
         
         assert len(docs) == 2
         doc_ids = {d["doc_id"] for d in docs}
-        # doc_id should reflect relative path
+        # a doc_id tükrözze a relatív útvonalat
         assert "root.pdf" in doc_ids
-        assert "subdir_nested.pdf" in doc_ids  # / replaced with _
+        assert "subdir_nested.pdf" in doc_ids  # a "/" helyett "_" kerül

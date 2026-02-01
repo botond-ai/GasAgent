@@ -1,11 +1,11 @@
-"""Simple JSON-backed DocumentStore
+"""Egyszerű, JSON-alapú DocumentStore
 
-Design notes / why:
-- Keeps documents persisted on disk under DATA_DIR/rag_documents.
-- Files are written atomically (tmp write + rename) to avoid partial writes.
-- Interface is minimal: save, load, list, delete — suitable for admin workflows
-  and reindexing. In a production deployment, this could be replaced by a
-  database or object store with versioning and ACLs.
+Tervezési megjegyzések / miért:
+- A dokumentumokat a lemezen tartósítja a DATA_DIR/rag_documents mappa alatt.
+- A fájlok atomikusan íródnak (ideiglenes írás + átnevezés), így nincs részleges írás.
+- Az interfész minimális: mentés, betöltés, lista, törlés — admin munkafolyamatokhoz
+  és újraindexeléshez elég. Élesben ezt lecserélhetnénk verziózott és jogosultságos
+  adatbázisra vagy objektumtárra.
 """
 from __future__ import annotations
 from pathlib import Path
@@ -25,16 +25,16 @@ class DocumentStore:
 
     def save_doc(self, doc: Dict[str, Any]) -> None:
         p = self._path_for(doc["doc_id"])
-        # if an existing doc is present, archive it as a version
+        # ha már létezik a dokumentum, archiváljuk verzióként
         if p.exists():
             existing = json.loads(p.read_text(encoding="utf-8"))
             version = existing.get("version") or "v1"
             verdir = self.base / "versions" / doc["doc_id"]
             verdir.mkdir(parents=True, exist_ok=True)
-            # version filename includes timestamp for uniqueness
+            # a verziófájlnév tartalmaz időbélyeget az egyediségért
             verpath = verdir / f"{version}_{int(Path(p).stat().st_mtime)}.json"
             verpath.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")
-        # atomic write
+        # atomikus írás
         with tempfile.NamedTemporaryFile("w", delete=False, dir=str(self.base)) as tf:
             json.dump(doc, tf, ensure_ascii=False, indent=2)
             tmp_name = tf.name
@@ -64,13 +64,13 @@ class DocumentStore:
         if not src.exists():
             return False
         current_path = self._path_for(doc_id)
-        # archive current into versions as well
+        # a jelenlegit is archiváljuk a verziók közé
         if current_path.exists():
             existing = json.loads(current_path.read_text(encoding="utf-8"))
             verdir.mkdir(parents=True, exist_ok=True)
             verpath = verdir / f"revert_{int(Path(current_path).stat().st_mtime)}.json"
             verpath.write_text(json.dumps(existing, ensure_ascii=False, indent=2), encoding="utf-8")
-        # copy selected version to current
+        # kiválasztott verzió másolása az aktuális helyére
         current_path.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
         return True
 
@@ -80,7 +80,7 @@ class DocumentStore:
             try:
                 docs.append(json.loads(f.read_text(encoding="utf-8")))
             except Exception:
-                # skip corrupt files but continue; log in real app
+                # hibás fájlok kihagyása, de folytatjuk; élesben naplóznánk
                 continue
         return docs
 

@@ -2,8 +2,8 @@ import { test, expect } from '@playwright/test';
 
 test('debug sidebar shows rag telemetry and topk expansion', async ({ page }) => {
   await page.goto('http://localhost:3000');
-  // mount admin UI if needed
-  // ensure debug data is present by mocking the /api/chat endpoint response
+  // szükség esetén mountoljuk az admin UI-t
+  // biztosítsuk, hogy legyen debug adat a /api/chat endpoint válaszának mockolásával
   await page.route('**/api/chat', route => {
     route.fulfill({
       status: 200,
@@ -40,7 +40,7 @@ test('debug sidebar shows rag telemetry and topk expansion', async ({ page }) =>
   await expect(page.locator('text=Run ID: r1')).toBeVisible();
   await expect(page.locator('text=Doc1')).toBeVisible();
 
-  // click topk row to expand
+  // topk sor kinyitása kattintással
   await page.click('tbody tr:first-child');
   await expect(page.locator('pre').first()).toContainText('This is chunk content');
 });

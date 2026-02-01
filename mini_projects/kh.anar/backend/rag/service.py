@@ -1,13 +1,13 @@
-"""RAGService: orchestrates embedding, hybrid retrieval, telemetry and run_id
+"""RAGService: beágyazást, hibrid keresést, telemetriát és run_id-t szervez.
 
-Provides a single entry point `route_and_retrieve` which performs:
-  - normalization of query
-  - embed the query
-  - call dense + sparse retrievers via HybridRetriever
-  - measure latencies and construct a telemetry dict (run_id, scores, topk, decision)
+Egyetlen belépési pontja a `route_and_retrieve`, amely:
+  - normalizálja a lekérdezést
+  - beágyazza a lekérdezést
+  - meghívja a sűrű + ritka keresőket a HybridRetrieveren keresztül
+  - méri a késleltetéseket és felépít egy telemetria dictet (run_id, pontok, topk, döntés)
 
-This keeps observability in one place and makes it easy to test the routing logic
-where KB-first decisions are made (if top hit below threshold -> no_hit -> fallback)
+Ez egy helyen tartja az observability-t és megkönnyíti a KB-first útválasztási logika
+tesztelését (ha a legjobb találat küszöb alatt -> no_hit -> visszalépés).
 """
 import time
 import uuid
@@ -37,7 +37,7 @@ class RAGService:
         emb_end = time.time()
         telemetry["latency_embed_s"] = emb_end - emb_start
 
-        # call hybrid retriever
+        # hívjuk meg a hibrid keresőt
         hybrid_start = time.time()
         res = self.hybrid.retrieve(embedding, norm_q, k=k or self.config.k, filters=filters)
         hybrid_end = time.time()
@@ -48,8 +48,8 @@ class RAGService:
         telemetry["config_snapshot"] = {"k": self.config.k, "threshold": self.config.threshold, "w_dense": self.config.w_dense, "w_sparse": self.config.w_sparse}
         telemetry["elapsed_s"] = time.time() - start
 
-        # structured log for observability
+        # strukturált napló az átláthatóságért
         logger.info({"event": "rag_query", "run_id": run_id, "telemetry": telemetry})
 
-        # routing decision: if no_hit, the caller should fallback
+        # útválasztási döntés: ha no_hit, a hívónak vissza kell lépnie
         return telemetry

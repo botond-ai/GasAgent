@@ -1,13 +1,12 @@
 from fastapi.testclient import TestClient
 from app.main import app
 import os
-
+ 
 
 def test_admin_add_and_reindex(monkeypatch):
     client = TestClient(app)
-    # set expected admin token
+    # állítsuk be a várt admin tokent
     os.environ["ADMIN_TOKEN"] = "testtoken"
-
     payload = {
         "doc_id": "admin-doc",
         "title": "Admin Doc",
@@ -23,7 +22,7 @@ def test_admin_add_and_reindex(monkeypatch):
     data = r.json()
     assert data["success"]
 
-    # persisted file should exist in DATA_DIR/rag_documents
+    # a tartósított fájlnak léteznie kell a DATA_DIR/rag_documents alatt
     from pathlib import Path
     dd = Path(".") / "rag_documents" / "admin-doc.json"
     assert dd.exists(), f"expected persisted doc at {dd}"
@@ -33,7 +32,6 @@ def test_admin_add_and_reindex(monkeypatch):
     data2 = r2.json()
     assert data2["success"]
 
-    # unauthorized
+    # jogosulatlan kérés
     r3 = client.post("/admin/rag/add", json=payload, headers={"token": "bad"})
     assert r3.status_code == 401
-

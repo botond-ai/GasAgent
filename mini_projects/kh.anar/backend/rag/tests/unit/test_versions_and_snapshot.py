@@ -12,14 +12,14 @@ def test_versions_and_snapshot(tmp_path):
 
     versions = ds.list_versions("vdoc")
     assert versions
-    # snapshot: create tar.gz
+    # pillanatkép: tar.gz létrehozása
     snap_name = tmp_path / "snapshot_test.tar.gz"
     import tarfile
     with tarfile.open(snap_name, "w:gz") as tf:
         tf.add(ds.base, arcname=ds.base.name)
     assert snap_name.exists()
 
-    # revert to first version (find the filename)
+    # visszaállás az első verzióra (keressük meg a fájlnevet)
     verdir = tmp_path / "rag_documents" / "versions" / "vdoc"
     files = sorted([f.name for f in verdir.glob("*.json")])
     assert files

@@ -5,7 +5,7 @@ from app.main import app
 def test_chat_api_with_canary(monkeypatch):
     client = TestClient(app)
 
-    # monkeypatch the agent to return rag telemetry so we don't depend on external models
+    # monkeypatch: az ügynök adjon vissza RAG telemetriát, hogy ne függjünk külső modellektől
     def fake_run(state):
         state["rag_context"] = [{"id": "doc-canary:0", "document": "CANARY_TOKEN document content", "metadata": {"doc_id": "doc-canary", "title": "Canary"}}]
         state["rag_telemetry"] = {"run_id": "r1", "decision": "hit", "topk": state["rag_context"], "elapsed_s": 0.01}

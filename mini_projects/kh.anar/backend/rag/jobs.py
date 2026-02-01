@@ -1,12 +1,12 @@
-"""Background job manager for reindexing with status tracking
+"""Háttérfeladat-kezelő újraindexeléshez állapotkövetéssel.
 
-Design:
-- Uses ThreadPoolExecutor to run reindex jobs in background (simple and reliable
-  for demo). Jobs tracked in-memory with status and result metadata.
+Tervezés:
+- ThreadPoolExecutor futtatja a reindex feladatokat háttérben (egyszerű és megbízható
+  demóhoz). A feladatok memóriában tárolódnak státusszal és eredmény metaadatokkal.
 - API: start_reindex(callable) -> job_id, get_status(job_id) -> dict
 
-Note: this is intentionally small; for production consider a proper job
-queue (Redis/DB + worker processes).
+Megjegyzés: szándékosan kicsi; élesben érdemes valódi feladatsort használni
+(Redis/DB + worker folyamatok).
 """
 from concurrent.futures import ThreadPoolExecutor, Future
 from typing import Callable, Dict, Any
@@ -62,5 +62,5 @@ class ReindexJobManager:
         return info
 
 
-# singleton manager for the app
+# singleton manager az alkalmazáshoz
 manager = ReindexJobManager()

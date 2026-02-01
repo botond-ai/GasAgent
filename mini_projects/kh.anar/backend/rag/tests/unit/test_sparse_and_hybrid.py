@@ -18,7 +18,7 @@ class DummyDense:
         self.calls = []
 
     def query(self, embedding, k=5, filters=None):
-        # return deterministic scores
+        # determinisztikus pontszámokat ad vissza
         return [{"id": "d1:0", "score_vector": 0.9, "document": "the quick brown fox"}, {"id": "d2:0", "score_vector": 0.2, "document": "slow green turtle"}]
 
 
@@ -31,5 +31,5 @@ def test_hybrid_merge():
     out = hr.retrieve(emb, "quick fox", k=2)
     assert out["decision"] == "hit"
     assert len(out["topk"]) >= 1
-    # top should be d1:0
+    # a csúcstalálat a d1:0 kell legyen
     assert out["topk"][0]["id"] == "d1:0"

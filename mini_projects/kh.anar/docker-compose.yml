@@ -1,6 +1,65 @@
-version: "3.9"
-
 services:
+  # MCP Servers
+  mcp-memory:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.mcp-memory
+    container_name: kh-anar-mcp-memory
+    ports:
+      - "3100:3100"
+    environment:
+      - PORT=3100
+    volumes:
+      - ./data/mcp/memory:/app/data/memory
+    networks:
+      - kh-anar-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3100/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  mcp-brave:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.mcp-brave
+    container_name: kh-anar-mcp-brave
+    ports:
+      - "3101:3101"
+    environment:
+      - PORT=3101
+      - BRAVE_API_KEY=${BRAVE_API_KEY}
+    networks:
+      - kh-anar-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3101/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  mcp-filesystem:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.mcp-filesystem
+    container_name: kh-anar-mcp-filesystem
+    ports:
+      - "3102:3102"
+    environment:
+      - PORT=3102
+    volumes:
+      - ./docs:/app/docs
+      - ./data:/app/data
+    networks:
+      - kh-anar-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3102/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
   backend:
     build: ./backend
     ports:
@@ -9,9 +68,21 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - DATA_DIR=/app/data
       - ADMIN_TOKEN=${ADMIN_TOKEN:-changeme}
+      - MCP_MEMORY_URL=http://mcp-memory:3100
+      - MCP_BRAVE_URL=http://mcp-brave:3101
+      - MCP_FILESYSTEM_URL=http://mcp-filesystem:3102
     volumes:
       - ./data:/app/data
       - ./docs:/app/docs
+    networks:
+      - kh-anar-network
+    depends_on:
+      mcp-memory:
+        condition: service_healthy
+      mcp-brave:
+        condition: service_healthy
+      mcp-filesystem:
+        condition: service_healthy
 
   frontend:
     build: ./frontend
@@ -21,3 +92,10 @@ services:
       - VITE_API_URL=http://backend:8000/api
     depends_on:
       - backend
+    networks:
+      - kh-anar-network
+
+networks:
+  kh-anar-network:
+    name: kh-anar-network
+    driver: bridge

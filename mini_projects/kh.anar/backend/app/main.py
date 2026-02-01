@@ -10,15 +10,15 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan manager for startup/shutdown hooks.
+    """Alkalmazás-életciklus kezelő az indulási/leállási hook-okhoz.
     
-    On startup:
-    - Initialize KB indexer if configured
-    - Run incremental KB ingestion if enabled
+    Induláskor:
+    - Inicializálja a tudástár indexelőt, ha konfigurálva van
+    - Futtatja az inkrementális tudástár-betöltést, ha engedélyezett
     
-    Design note:
-    - Lifespan ensures KB is indexed before accepting requests.
-    - For production, consider making this async/background to avoid blocking startup.
+    Tervezési megjegyzés:
+    - Az életciklus gondoskodik róla, hogy a tudástár indexelve legyen a kérések előtt.
+    - Éles környezetben érdemes aszinkron/háttérben futtatni, hogy ne blokkolja az indulást.
     """
     from rag.config import default_config
     from rag.ingestion.kb_indexer import KBIndexer
@@ -31,7 +31,7 @@ async def lifespan(app: FastAPI):
     if default_config.ingest_on_startup:
         logger.info("KB ingest_on_startup enabled; initializing indexer")
         try:
-            # Import shared RAG instances
+            # Megosztott RAG példányok importálása
             from app.services.rag_instance import dense_retriever, sparse_retriever, embedder
             version_store = VersionStore(Path(default_config.kb_version_store))
             
@@ -52,14 +52,14 @@ async def lifespan(app: FastAPI):
     
     yield
     
-    # Shutdown: cleanup if needed
+    # Leállítás: szükség esetén takarítás
     logger.info("Application shutting down")
 
 
 def create_app() -> FastAPI:
     app = FastAPI(title="KnowledgeRouter API", version="0.1.0", lifespan=lifespan)
     app.include_router(router, prefix="/api")
-    # Register admin routes under /admin prefix
+    # Az admin útvonalak regisztrálása az /admin előtag alatt
     from .api import admin as admin_router
     app.include_router(admin_router.router, prefix="/admin")
 

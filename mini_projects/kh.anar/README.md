@@ -10,15 +10,31 @@ Minimal LangGraph-orchestrated chat foundation for the AI Internal Knowledge Rou
 ## Stack
 - Backend: FastAPI, LangGraph, LangChain OpenAI
 - Frontend: React (Vite) + UIkit
+- MCP Servers: Memory, Brave Search, Filesystem (FastAPI-based)
 - Deployment: Docker, docker-compose
 
 ## Setup
-1) Copy `.env.example` to `.env` and set `OPENAI_API_KEY`.
+1) Copy `.env.example` to `.env` and set:
+   - `OPENAI_API_KEY` (required)
+   - `BRAVE_API_KEY` (required for web search)
+   
 2) From `mini_projects/kh.anar` run:
    ```bash
    docker-compose up --build
    ```
+   
+   This starts:
+   - 3 MCP servers (Memory:3100, Brave:3101, Filesystem:3102)
+   - Backend API (port 8000)
+   - Frontend (port 4000)
+   
 3) Open http://localhost:4000 and start chatting.
+
+4) Run tests to verify MCP servers:
+   ```bash
+   python3 test_mcp_integration.py
+   ```
+   Expected: 25/25 tests passed ✓
 
 ## Behavior
 - Conversation and user profile stored as JSON under `data/`.

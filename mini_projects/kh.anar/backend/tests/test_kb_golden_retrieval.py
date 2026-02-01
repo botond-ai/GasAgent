@@ -1,6 +1,6 @@
-"""Golden retrieval test for KB ingestion
+"""Golden retrieval teszt a tudástár betöltéséhez.
 
-Tests that specific queries retrieve expected documents (Recall@k).
+Ellenőrzi, hogy a konkrét lekérdezések a várt dokumentumokat adják vissza (Recall@k).
 """
 import pytest
 from pathlib import Path
@@ -14,7 +14,7 @@ from rag.retrieval.hybrid import HybridRetriever
 
 
 class FakeDenseRetriever:
-    """Deterministic fake that scores based on keyword match."""
+    """Determinista ál-kereső, ami kulcsszóegyezés alapján pontoz."""
     def __init__(self, config, embedder=None):
         self.storage = {}
         self.embedder = embedder
@@ -33,10 +33,10 @@ class FakeDenseRetriever:
             del self.storage[k]
     
     def query(self, embedding, k=5, filters=None):
-        # Score based on embedding sum (hash embedder uses word count)
+        # Pontszám az embedding összeg alapján (a hash beágyazó szódb számot használ)
         results = []
         for cid, data in self.storage.items():
-            # Higher embedding sum => more words => higher score (simplified)
+            # Nagyobb embedding összeg => több szó => magasabb pont (egyszerűsítve)
             score = sum(embedding) / 1000.0
             results.append({
                 "id": cid,
@@ -62,7 +62,7 @@ class FakeSparseRetriever:
             del self.storage[k]
     
     def query(self, query, k=5, filter_ids=None):
-        # Score based on keyword overlap
+        # Pontszám kulcsszó átfedés alapján
         query_words = set(query.lower().split())
         results = []
         for cid, data in self.storage.items():
@@ -79,19 +79,19 @@ class FakeSparseRetriever:
 
 
 def test_golden_retrieval():
-    """Golden retrieval test: specific queries should return expected docs.
+    """Golden retrieval teszt: konkrét lekérdezéseknek a várt doksikat kell visszaadniuk.
     
-    Test dataset:
-    - 3 documents with distinct topics
-    - 10 golden queries mapped to expected doc_id
-    - Assert top-1 or top-3 contains expected doc
+    Tesztadat:
+    - 3 dokumentum eltérő témákkal
+    - 10 golden lekérdezés a várt doc_id-vel
+    - Bizonyítsuk, hogy a top-1 vagy top-3 tartalmazza a várt dokumentumot
     """
     with tempfile.TemporaryDirectory() as tmpdir:
         kb_dir = Path(tmpdir) / "kb-data"
         kb_dir.mkdir()
         version_store_path = Path(tmpdir) / "versions.json"
         
-        # Create test documents with distinct topics
+        # Teszt dokumentumok létrehozása eltérő témákkal
         (kb_dir / "python_guide.txt").write_text(
             "Python is a high-level programming language. "
             "It supports multiple programming paradigms including object-oriented and functional. "
@@ -129,7 +129,7 @@ def test_golden_retrieval():
         
         indexer.ingest_incremental()
         
-        # Golden queries and expected doc_ids
+        # Golden lekérdezések és a várt doc_id-k
         golden_cases = [
             ("Python programming language", "python_guide.txt"),
             ("web development with Python", "python_guide.txt"),
@@ -149,21 +149,21 @@ def test_golden_retrieval():
         recall_at_3 = 0
         
         for query, expected_doc_id in golden_cases:
-            # Embed query
+            # Lekérdezés beágyazása
             query_emb = embedder.embed_text(query)
             
-            # Hybrid retrieval
+            # Hibrid visszakeresés
             result = hybrid.retrieve(query_emb, query, k=3)
             
-            # Extract doc_ids from results (hybrid returns dict with "hits" key)
+            # doc_id-k kinyerése az eredményekből (a hibrid "hits" kulccsal tér vissza)
             hits = result.get("hits", [])
             retrieved_doc_ids = [r["metadata"]["doc_id"] for r in hits]
             
-            # Check recall@1
+            # recall@1 ellenőrzése
             if retrieved_doc_ids and retrieved_doc_ids[0] == expected_doc_id:
                 recall_at_1 += 1
             
-            # Check recall@3
+            # recall@3 ellenőrzése
             if expected_doc_id in retrieved_doc_ids:
                 recall_at_3 += 1
         
@@ -173,8 +173,8 @@ def test_golden_retrieval():
         
         print(f"Recall@1: {recall_1:.2%}, Recall@3: {recall_3:.2%}")
         
-        # Assert reasonable recall thresholds
-        # Note: Using HashEmbedder (deterministic but not semantic), so thresholds are lower
-        # With proper semantic embeddings (sentence-transformers), expect >90% recall
+        # Ésszerű recall küszöbök ellenőrzése
+        # Megjegyzés: HashEmbeddert használunk (determinisztikus, nem szemantikus), ezért alacsonyabbak a küszöbök
+        # Megfelelő szemantikus embeddinggel (sentence-transformers) >90% recall várható
         assert recall_1 >= 0.5, f"Recall@1 too low: {recall_1:.2%}"
         assert recall_3 >= 0.7, f"Recall@3 too low: {recall_3:.2%}"

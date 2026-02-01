@@ -1,15 +1,15 @@
-"""Citation mapper
+"""Hivatkozás-leképező
 
-Given retrieval hits and the final answer, map which chunks were used
-as citations. This is kept separate for testability.
+A visszakeresett találatok és a végső válasz alapján megmondja, mely darabok
+szerepeltek hivatkozásként. A tesztelhetőség kedvéért külön modulban marad.
 """
 from typing import List, Dict
 
 
 def map_citations(answer_text: str, hits: List[Dict]):
-    # naive implementation: mark any hit whose chunk text or doc title appears
-    # in answer_text. More sophisticated approaches could use n-gram overlap or
-    # model-based attribution; we keep it simple and deterministic for tests.
+    # naiv megvalósítás: bármely találatot megjelölünk, ha a darab szövege vagy a dokumentum címe
+    # szerepel az answer_text-ben. Összetettebb megoldás lehetne n-gram átfedés vagy
+    # modellalapú hozzárendelés; itt egyszerűen és determinisztikusan tartjuk a tesztekhez.
     cited = []
     for h in hits:
         if h.get("document") and (h["document"][:100] in answer_text or (h.get("metadata", {}).get("title") or "") in answer_text):

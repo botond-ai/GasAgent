@@ -9,5 +9,5 @@ const mountAdmin = () => {
   }
 };
 
-// expose for manual mounting in dev or tests
+// manuális mountolás kitetéle fejlesztéshez vagy tesztekhez
 export default mountAdmin;

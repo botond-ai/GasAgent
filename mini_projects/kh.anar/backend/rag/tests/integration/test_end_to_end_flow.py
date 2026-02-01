@@ -20,7 +20,7 @@ def test_end_to_end_chain():
 
     telemetry = service.route_and_retrieve("secret phrase", {})
     assert telemetry["decision"] == "hit"
-    # synthesize an answer that includes topk[0].document
+    # készítsünk egy választ, ami tartalmazza a topk[0].document értéket
     answer = f"Found in docs: {telemetry['topk'][0]['document']}"
     cited = map_citations(answer, telemetry['topk'])
     assert cited

@@ -19,7 +19,7 @@ class FakeDenseSimple:
             self.storage[c["id"]] = c
 
     def query(self, embedding, k=5, filters=None):
-        # returns canary at top if exists
+        # a kanárit adja legelőre, ha létezik
         res = []
         for _id, c in self.storage.items():
             score = 0.9 if "CANARY_TOKEN" in c["text"] else 0.1
@@ -43,12 +43,12 @@ def test_agent_kb_first_behavior():
     agent = AgentOrchestrator(rag_service=rag_service)
     state = {"user_id": "u1", "session_id": "s1", "query": "Where is CANARY_TOKEN?", "history": []}
 
-    # Run the workflow synchronously (the graph invocation is async)
+    # A munkafolyamat szinkron futtatása (a graf hívása aszinkron)
     import asyncio
 
     async def run_and_check():
         out = await agent.run(state)
-        # after route_query, rag_context should be set
+        # a route_query után a rag_context-nek be kell állítva lennie
         assert "rag_telemetry" in out
         assert out["rag_telemetry"]["decision"] == "hit"
         assert out["rag_context"]

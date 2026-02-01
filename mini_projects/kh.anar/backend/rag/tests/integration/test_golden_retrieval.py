@@ -10,7 +10,7 @@ def test_golden_retrieval_20_canaries():
     embedder = HashEmbedder()
     ing = Ingester(dense, sparse, embedder, None)
 
-    # create 20 canary docs
+    # 20 kanári dokumentum létrehozása
     for i in range(20):
         token = f"CANARY_{i}"
         doc = Document(doc_id=f"doc{i}", title=f"Doc {i}", source="tests", doc_type="note", version="1", text=f"This document contains {token} for retrieval testing.")
@@ -19,7 +19,7 @@ def test_golden_retrieval_20_canaries():
     class Cfg: k = 5; threshold = 0.2; w_dense = 0.7; w_sparse = 0.3
     hr = HybridRetriever(dense, sparse, Cfg())
 
-    # test each token is retrieved in top-k
+    # ellenőrizzük, hogy minden token a top-k között legyen
     failures = []
     for i in range(20):
         q = f"which doc has CANARY_{i}"

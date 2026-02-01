@@ -1,0 +1,51 @@
+version: '3.8'
+
+services:
+  # Memory MCP Server
+  mcp-memory:
+    image: mcp/memory-server:latest
+    container_name: kh-anar-mcp-memory
+    ports:
+      - "3100:3100"
+    environment:
+      - PORT=3100
+      - STORAGE_PATH=/data/memory
+    volumes:
+      - ./data/mcp/memory:/data/memory
+    restart: unless-stopped
+    networks:
+      - kh-anar-network
+
+  # Brave Search MCP Server
+  mcp-brave:
+    image: mcp/brave-search:latest
+    container_name: kh-anar-mcp-brave
+    ports:
+      - "3101:3101"
+    environment:
+      - PORT=3101
+      - BRAVE_API_KEY=${BRAVE_API_KEY}
+    restart: unless-stopped
+    networks:
+      - kh-anar-network
+
+  # Filesystem MCP Server
+  mcp-filesystem:
+    image: mcp/filesystem:latest
+    container_name: kh-anar-mcp-filesystem
+    ports:
+      - "3102:3102"
+    environment:
+      - PORT=3102
+      - ALLOWED_PATHS=/workspace
+    volumes:
+      - ./docs:/workspace/docs
+      - ./data:/workspace/data
+    restart: unless-stopped
+    networks:
+      - kh-anar-network
+
+networks:
+  kh-anar-network:
+    name: kh-anar-network
+    external: false
