@@ -195,7 +195,7 @@ jobs:
   notify:
     name: 📢 Notify
     runs-on: ubuntu-latest
-    needs: [health-check]
+    needs: [test, security-scan, deploy, health-check]
     if: always()
     
     steps:
@@ -218,10 +218,8 @@ jobs:
           echo "ℹ️ **Render Dashboard:** https://dashboard.render.com" >> $GITHUB_STEP_SUMMARY
 
       - name: Send Slack notification (optional)
-        if: secrets.SLACK_WEBHOOK_URL != ''
+        if: false  # Slack webhook disabled
         uses: slackapi/slack-github-action@v1
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
         with:
           payload: |
             {
@@ -261,3 +259,4 @@ jobs:
 # - PostgreSQL: 90 nap lejárat
 # - 750 óra/hó (1 service = 1 hónap)
 # - 512 MB RAM/service
+

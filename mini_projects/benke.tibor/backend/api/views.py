@@ -11,8 +11,24 @@ from rest_framework import status
 from rest_framework.request import Request
 
 from domain.models import QueryRequest
-from infrastructure.error_handling import APICallError, check_token_limit, estimate_tokens
-from infrastructure.prometheus_metrics import MetricsCollector
+try:
+    from infrastructure.error_handling import APICallError, check_token_limit, estimate_tokens
+    from infrastructure.prometheus_metrics import MetricsCollector
+    from infrastructure.redis_client import redis_cache
+    from infrastructure.google_drive_client import GoogleDriveClient
+    from infrastructure.atlassian_client import AtlassianClient
+    from infrastructure.openai_clients import OpenAIEmbeddings
+    from infrastructure.document_parser import DocumentParser
+    from infrastructure.prometheus_metrics import MetricsCollector as PrometheusMetrics
+except ImportError as e:
+    # Graceful fallback if modules are not available (deployment without all dependencies)
+    logging.warning(f"Some infrastructure modules not available: {e}")
+    redis_cache = None
+    GoogleDriveClient = None
+    AtlassianClient = None
+    OpenAIEmbeddings = None
+    DocumentParser = None
+    PrometheusMetrics = None
 
 logger = logging.getLogger(__name__)
 class QueryAPIView(APIView):
