@@ -147,3 +147,5 @@ Kategorizálandók/újak:
 - langgraph node hívásonként legyen trace (objektumok, route-ok, hívások) + megjelenítés debug panelen
 - felesleges domainek törlése a projektből
 - RAG.md generálás
+- beszédstílus megértése, alkalmazása
+- szenzitív adatok kinyerése/maszkolása
