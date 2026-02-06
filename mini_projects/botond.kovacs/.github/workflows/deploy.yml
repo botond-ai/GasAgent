@@ -10,8 +10,8 @@ env:
   ECR_REPOSITORY: ai-agent-app
   ECS_CLUSTER: ai-agent-tutorial-cluster
   ECS_SERVICE: ai-agent-tutorial-service
-  TERRAFORM_DIR: terraform
-  TERRAFORM_BOOTSTRAP_DIR: terraform-bootstrap
+  TERRAFORM_DIR: mini_projects/botond.kovacs/terraform
+  TERRAFORM_BOOTSTRAP_DIR: mini_projects/botond.kovacs/terraform-bootstrap
 
 permissions:
   id-token: write  # Required for OIDC authentication
@@ -143,7 +143,7 @@ jobs:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -f mini_projects/botond.kovacs/docker/Dockerfile mini_projects/botond.kovacs
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -f docker/Dockerfile .
           docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
       - name: Push image to Amazon ECR
         env:
