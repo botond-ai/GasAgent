@@ -4,20 +4,22 @@ The CLI is a thin layer that interacts with the user and delegates
 work to `EmbeddingApp` and `RAGAgent` which follow dependency injection principles.
 Includes support for LangGraph workflow orchestration and metrics monitoring.
 """
+
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import List, Tuple, Optional, TYPE_CHECKING
-import uuid
-import textwrap
 import json
+import textwrap
+import uuid
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, List, Optional, Tuple
 
 from .embeddings import EmbeddingService
-from .vector_store import VectorStore
-from .rag_agent import RAGAgent
 from .google_calendar import CalendarService
-from .tool_clients import GeolocationClient, WeatherClient, CryptoClient, ForexClient
 from .metrics import MetricCollector
+from .rag_agent import RAGAgent
+from .tool_clients import (CryptoClient, ForexClient, GeolocationClient,
+                           WeatherClient)
+from .vector_store import VectorStore
 
 if TYPE_CHECKING:
     from .langgraph_workflow import MeetingAssistantWorkflow
@@ -36,11 +38,15 @@ class EmbeddingApp:
     Depends on abstractions: `EmbeddingService` and `VectorStore`.
     """
 
-    def __init__(self, emb_service: EmbeddingService, vector_store: VectorStore) -> None:
+    def __init__(
+        self, emb_service: EmbeddingService, vector_store: VectorStore
+    ) -> None:
         self.emb = emb_service
         self.store = vector_store
 
-    def process_query(self, text: str, k: int = 3, mode: str = "hybrid", alpha: float = 0.5) -> Tuple[str, List[Neighbor]]:
+    def process_query(
+        self, text: str, k: int = 3, mode: str = "hybrid", alpha: float = 0.5
+    ) -> Tuple[str, List[Neighbor]]:
         """Embed the text, add to vector store, run similarity search.
 
         Returns the stored id and a list of neighbors.
@@ -51,11 +57,17 @@ class EmbeddingApp:
         self.store.add(uid, text, embedding)
         # Choose search method
         if mode == "hybrid" and hasattr(self.store, "hybrid_search"):
-            results = self.store.hybrid_search(embedding, query_text=text, k=k, alpha=alpha)
-            neighbors: List[Neighbor] = [Neighbor(id=r[0], distance=r[1], text=r[2]) for r in results]
+            results = self.store.hybrid_search(
+                embedding, query_text=text, k=k, alpha=alpha
+            )
+            neighbors: List[Neighbor] = [
+                Neighbor(id=r[0], distance=r[1], text=r[2]) for r in results
+            ]
         elif mode == "bm25" and hasattr(self.store, "hybrid_search"):
             # bm25-only: alpha=0
-            results = self.store.hybrid_search(embedding, query_text=text, k=k, alpha=0.0)
+            results = self.store.hybrid_search(
+                embedding, query_text=text, k=k, alpha=0.0
+            )
             neighbors = [Neighbor(id=r[0], distance=r[1], text=r[2]) for r in results]
         else:
             results = self.store.similarity_search(embedding, k=k)
@@ -117,7 +129,7 @@ class CLI:
             return
 
         for i, n in enumerate(neighbors, start=1):
-            print(f"{i}. (score={n.distance:.6f}) \"{n.text}\"")
+            print(f'{i}. (score={n.distance:.6f}) "{n.text}"')
 
     def _print_rag_response(
         self, uid: str, neighbors: List[Neighbor], response: str
@@ -130,7 +142,9 @@ class CLI:
         else:
             for i, n in enumerate(neighbors, start=1):
                 print(f"[{i}] (relevance: {n.distance:.6f})")
-                print(f"    {n.text[:200]}..." if len(n.text) > 200 else f"    {n.text}")
+                print(
+                    f"    {n.text[:200]}..." if len(n.text) > 200 else f"    {n.text}"
+                )
 
         print("\n--- Generated Response ---")
         print(response)
@@ -146,10 +160,10 @@ class CLI:
             print(f"\n[{i}] {event.get('title', 'Untitled')}")
             print(f"    Start: {event.get('start', 'N/A')}")
             print(f"    End: {event.get('end', 'N/A')}")
-            if event.get('location'):
+            if event.get("location"):
                 print(f"    Location: {event.get('location')}")
-            if event.get('description'):
-                desc = event.get('description')[:100]
+            if event.get("description"):
+                desc = event.get("description")[:100]
                 print(f"    Description: {desc}...")
 
     def _print_geolocation(self, location_data: dict) -> None:
@@ -163,11 +177,13 @@ class CLI:
         print(f"Country: {location_data.get('country')}")
         print(f"Region: {location_data.get('region')}")
         print(f"City: {location_data.get('city')}")
-        print(f"Coordinates: {location_data.get('latitude')}, {location_data.get('longitude')}")
+        print(
+            f"Coordinates: {location_data.get('latitude')}, {location_data.get('longitude')}"
+        )
         print(f"Timezone: {location_data.get('timezone')}")
-        if location_data.get('isp'):
+        if location_data.get("isp"):
             print(f"ISP: {location_data.get('isp')}")
-        if location_data.get('organization'):
+        if location_data.get("organization"):
             print(f"Organization: {location_data.get('organization')}")
 
     def _print_weather(self, weather_data: dict) -> None:
@@ -193,10 +209,16 @@ class CLI:
             return
 
         print(f"\n--- {crypto_data.get('symbol').upper()} Price ---")
-        print(f"Price: {crypto_data.get('price')} {crypto_data.get('currency').upper()}")
+        print(
+            f"Price: {crypto_data.get('price')} {crypto_data.get('currency').upper()}"
+        )
         print(f"24h Change: {crypto_data.get('change_24h')}%")
-        print(f"Market Cap: {crypto_data.get('market_cap')} {crypto_data.get('currency').upper()}")
-        print(f"24h Volume: {crypto_data.get('volume_24h')} {crypto_data.get('currency').upper()}")
+        print(
+            f"Market Cap: {crypto_data.get('market_cap')} {crypto_data.get('currency').upper()}"
+        )
+        print(
+            f"24h Volume: {crypto_data.get('volume_24h')} {crypto_data.get('currency').upper()}"
+        )
         print(f"Updated: {crypto_data.get('timestamp')}")
 
     def _print_forex_rate(self, forex_data: dict) -> None:
@@ -207,7 +229,9 @@ class CLI:
 
         print(f"\n--- Exchange Rate ---")
         print(f"{forex_data.get('base')} → {forex_data.get('target')}")
-        print(f"Rate: 1 {forex_data.get('base')} = {forex_data.get('rate')} {forex_data.get('target')}")
+        print(
+            f"Rate: 1 {forex_data.get('base')} = {forex_data.get('rate')} {forex_data.get('target')}"
+        )
         print(f"Date: {forex_data.get('timestamp')}")
 
     def _print_metrics_summary(self, summary) -> None:
@@ -217,19 +241,21 @@ class CLI:
         print(f"Total Tokens In: {summary.total_tokens_in:,}")
         print(f"Total Tokens Out: {summary.total_tokens_out:,}")
         print(f"Total Cost: ${summary.total_cost_usd:.6f}")
-        
-        print(f"\nError Rate: {summary.error_rate:.2f}% ({summary.total_errors} errors)")
-        
+
+        print(
+            f"\nError Rate: {summary.error_rate:.2f}% ({summary.total_errors} errors)"
+        )
+
         print(f"\nLatency Statistics (milliseconds):")
         print(f"  p95: {summary.latency_p95_ms:.2f}ms")
         print(f"  p50 (median): {summary.latency_p50_ms:.2f}ms")
         print(f"  Mean: {summary.latency_mean_ms:.2f}ms")
-        
+
         if summary.agent_execution_latency_mean_ms > 0:
             print(f"\nAgent Execution Latency (milliseconds):")
             print(f"  p95: {summary.agent_execution_latency_p95_ms:.2f}ms")
             print(f"  Mean: {summary.agent_execution_latency_mean_ms:.2f}ms")
-        
+
         # Breakdown by operation type
         if summary.by_operation:
             print(f"\nBreakdown by Operation:")
@@ -240,7 +266,7 @@ class CLI:
                 print(f"    Tokens Out: {stats['tokens_out']:,}")
                 print(f"    Cost: ${stats['cost_usd']:.6f}")
                 print(f"    Latency p95: {stats.get('latency_p95_ms', 0):.2f}ms")
-        
+
         # Breakdown by model
         if summary.by_model:
             print(f"\nBreakdown by Model:")
@@ -317,13 +343,20 @@ class CLI:
                 cal_cmd = text.split(maxsplit=1)[1].strip().lower()
                 try:
                     if cal_cmd == "events":
-                        events = self.calendar_service.get_upcoming_events(max_results=5)
+                        events = self.calendar_service.get_upcoming_events(
+                            max_results=5
+                        )
                         self._print_calendar_events(events)
                     elif cal_cmd == "today":
                         from datetime import datetime, timedelta
+
                         today = datetime.now().strftime("%Y-%m-%d")
-                        tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
-                        events = self.calendar_service.get_events_by_date(today, tomorrow)
+                        tomorrow = (datetime.now() + timedelta(days=1)).strftime(
+                            "%Y-%m-%d"
+                        )
+                        events = self.calendar_service.get_events_by_date(
+                            today, tomorrow
+                        )
                         print(f"Events for today ({today}):")
                         self._print_calendar_events(events)
                     elif cal_cmd.startswith("range "):
@@ -331,13 +364,17 @@ class CLI:
                         if len(parts) >= 3:
                             start_date = parts[1]
                             end_date = parts[2]
-                            events = self.calendar_service.get_events_by_date(start_date, end_date)
+                            events = self.calendar_service.get_events_by_date(
+                                start_date, end_date
+                            )
                             print(f"Events from {start_date} to {end_date}:")
                             self._print_calendar_events(events)
                         else:
                             print("Usage: /calendar range YYYY-MM-DD YYYY-MM-DD")
                     else:
-                        print("Calendar commands: /calendar events, /calendar today, /calendar range START END")
+                        print(
+                            "Calendar commands: /calendar events, /calendar today, /calendar range START END"
+                        )
                 except Exception as exc:
                     print(f"Calendar error: {exc}")
                 continue
@@ -349,7 +386,9 @@ class CLI:
 
                 try:
                     ip_address = text.split(maxsplit=1)[1].strip()
-                    location_data = self.geolocation_client.get_location_from_ip(ip_address)
+                    location_data = self.geolocation_client.get_location_from_ip(
+                        ip_address
+                    )
                     self._print_geolocation(location_data)
                 except Exception as exc:
                     print(f"Geolocation error: {exc}")
@@ -408,22 +447,24 @@ class CLI:
                     user_request = text.split(maxsplit=1)[1].strip()
                     print("\n--- Starting LangGraph Workflow ---")
                     result = self.workflow.run(user_request)
-                    
+
                     # Print workflow results
                     print("\nWorkflow Results:")
-                    print(f"Steps Executed: {result['executed_steps']}/{len(result['execution_plan'])}")
-                    
-                    if result['meeting_summary']:
+                    print(
+                        f"Steps Executed: {result['executed_steps']}/{len(result['execution_plan'])}"
+                    )
+
+                    if result["meeting_summary"]:
                         print(f"\nMeeting Summary:\n{result['meeting_summary']}")
-                    
-                    if result['final_answer']:
+
+                    if result["final_answer"]:
                         print(f"\nFinal Answer:\n{result['final_answer']}")
-                    
-                    if result['errors']:
+
+                    if result["errors"]:
                         print("\nWarnings/Errors:")
-                        for error in result['errors']:
+                        for error in result["errors"]:
                             print(f"  ⚠ {error}")
-                            
+
                 except Exception as exc:
                     print(f"Workflow error: {exc}")
                 continue
@@ -436,7 +477,7 @@ class CLI:
                 try:
                     cmd_parts = text.split(maxsplit=1)
                     cmd = cmd_parts[1].strip() if len(cmd_parts) > 1 else ""
-                    
+
                     if cmd == "export":
                         filepath = "./metrics_export.json"
                         self.metrics_collector.export(filepath)
@@ -458,7 +499,9 @@ class CLI:
             else:
                 self._print_results(uid, neighbors)
 
-    def process_directory(self, data_dir: str, k: int = 3, mode: str = "hybrid", alpha: float = 0.5) -> None:
+    def process_directory(
+        self, data_dir: str, k: int = 3, mode: str = "hybrid", alpha: float = 0.5
+    ) -> None:
         """Process all text/markdown files in `data_dir`: embed, store and run search.
 
         This is a batch mode alternative to the interactive CLI. It reads files
@@ -475,7 +518,9 @@ class CLI:
             print(f"No .md or .txt files found in {data_dir}")
             return
 
-        print(f"Processing {len(files)} files from {data_dir} (mode={mode}, k={k}, alpha={alpha})")
+        print(
+            f"Processing {len(files)} files from {data_dir} (mode={mode}, k={k}, alpha={alpha})"
+        )
         for fname in files:
             path = os.path.join(data_dir, fname)
             try:
@@ -489,6 +534,8 @@ class CLI:
                 print(f"Skipping empty file: {path}")
                 continue
 
-            uid, neighbors = self.app.process_query(content, k=k, mode=mode, alpha=alpha)
+            uid, neighbors = self.app.process_query(
+                content, k=k, mode=mode, alpha=alpha
+            )
             print("\nFile:", fname)
             self._print_results(uid, neighbors)

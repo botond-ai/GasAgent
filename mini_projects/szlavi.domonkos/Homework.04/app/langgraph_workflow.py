@@ -3,27 +3,29 @@
 Orchestrates a multi-step agent workflow with plan generation, tool routing,
 execution, and summary generation using LangGraph state management.
 """
+
 from __future__ import annotations
 
-import logging
 import json
-from typing import Any, Dict, List, Optional, Tuple, Annotated
+import logging
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Annotated, Any, Dict, List, Optional, Tuple
 
-from langgraph.graph import StateGraph, END
 import openai
+from langgraph.graph import END, StateGraph
 
-from .vector_store import VectorStore
-from .rag_agent import RAGAgent
 from .google_calendar import GoogleCalendarService
+from .rag_agent import RAGAgent
 from .tool_clients import IPAPIGeolocationClient
+from .vector_store import VectorStore
 
 logger = logging.getLogger(__name__)
 
 
 class ToolType(str, Enum):
     """Available tool types."""
+
     GOOGLE_CALENDAR = "google_calendar"
     IP_GEOLOCATION = "ip_geolocation"
     RAG_SEARCH = "rag_search"
@@ -33,6 +35,7 @@ class ToolType(str, Enum):
 @dataclass
 class ExecutionStep:
     """Represents a single execution step in the workflow."""
+
     step_id: int
     action: str
     tool: ToolType
@@ -44,6 +47,7 @@ class ExecutionStep:
 @dataclass
 class WorkflowState:
     """State object for LangGraph workflow."""
+
     user_input: str
     execution_plan: List[ExecutionStep] = field(default_factory=list)
     current_step_index: int = 0
@@ -183,14 +187,24 @@ class MeetingAssistantWorkflow:
         - None (if it's just information gathering)
         """
         current_step = state.execution_plan[state.current_step_index]
-        logger.info("Tool router: processing step %d - action=%s", current_step.step_id, current_step.action)
+        logger.info(
+            "Tool router: processing step %d - action=%s",
+            current_step.step_id,
+            current_step.action,
+        )
 
         # Determine tool based on step action
         if "calendar" in current_step.action.lower():
             current_step.tool = ToolType.GOOGLE_CALENDAR
-        elif "location" in current_step.action.lower() or "ip" in current_step.action.lower():
+        elif (
+            "location" in current_step.action.lower()
+            or "ip" in current_step.action.lower()
+        ):
             current_step.tool = ToolType.IP_GEOLOCATION
-        elif "search" in current_step.action.lower() or "retrieve" in current_step.action.lower():
+        elif (
+            "search" in current_step.action.lower()
+            or "retrieve" in current_step.action.lower()
+        ):
             current_step.tool = ToolType.RAG_SEARCH
         else:
             current_step.tool = ToolType.NONE
@@ -205,7 +219,9 @@ class MeetingAssistantWorkflow:
         current_step = state.execution_plan[state.current_step_index]
         current_step.status = "in_progress"
 
-        logger.info("Executing action: %s with tool: %s", current_step.action, current_step.tool)
+        logger.info(
+            "Executing action: %s with tool: %s", current_step.action, current_step.tool
+        )
 
         try:
             if current_step.tool == ToolType.GOOGLE_CALENDAR:
@@ -243,7 +259,9 @@ class MeetingAssistantWorkflow:
         if current_step.status == "completed":
             obs = f"Step {current_step.step_id} ({current_step.action}) completed. Result: {current_step.result}"
         else:
-            obs = f"Step {current_step.step_id} ({current_step.action}) failed with error"
+            obs = (
+                f"Step {current_step.step_id} ({current_step.action}) failed with error"
+            )
 
         state.observations.append(obs)
 
@@ -428,7 +446,11 @@ Keep it concise but complete."""
                 )
                 steps.append(step)
 
-            return steps if steps else [ExecutionStep(1, "Default action", ToolType.NONE, {})]
+            return (
+                steps
+                if steps
+                else [ExecutionStep(1, "Default action", ToolType.NONE, {})]
+            )
 
         except (json.JSONDecodeError, KeyError, TypeError) as e:
             logger.warning("Could not parse execution plan: %s", str(e))
@@ -476,7 +498,9 @@ Keep it concise but complete."""
         ip_address = step.parameters.get("ip", None)
 
         try:
-            result = self.geolocation_client.get_location_from_ip(ip_address or "8.8.8.8")
+            result = self.geolocation_client.get_location_from_ip(
+                ip_address or "8.8.8.8"
+            )
             if result:
                 return {"status": "success", "location": result}
             else:
@@ -514,7 +538,11 @@ Keep it concise but complete."""
 
         lines.append(f"\nExecution Plan ({len(state.execution_plan)} steps):")
         for step in state.execution_plan:
-            status_icon = "✓" if step.status == "completed" else "✗" if step.status == "failed" else "⏳"
+            status_icon = (
+                "✓"
+                if step.status == "completed"
+                else "✗" if step.status == "failed" else "⏳"
+            )
             lines.append(
                 f"  {status_icon} Step {step.step_id}: {step.action} ({step.tool.value}) - {step.status}"
             )

@@ -13,25 +13,29 @@ Tool clients (geolocation, weather, crypto, forex) are auto-initialized if avail
 LangGraph workflow orchestrates multi-step agent operations.
 AI metrics monitoring tracks API calls, tokens, costs, and latency.
 """
+
 from __future__ import annotations
 
 import logging
-import sys
 import os
+import sys
 
+from .cli import CLI
 from .config import load_config
 from .embeddings import OpenAIEmbeddingService
-from .vector_store import ChromaVectorStore
-from .cli import CLI
-from .rag_agent import RAGAgent
 from .google_calendar import GoogleCalendarService
-from .tool_clients import IPAPIGeolocationClient, OpenWeatherMapClient, CoinGeckoClient, ExchangeRateAPIClient
 from .langgraph_workflow import MeetingAssistantWorkflow
 from .metrics import create_metrics_collector
+from .rag_agent import RAGAgent
+from .tool_clients import (CoinGeckoClient, ExchangeRateAPIClient,
+                           IPAPIGeolocationClient, OpenWeatherMapClient)
+from .vector_store import ChromaVectorStore
 
 
 def main(argv: list[str] | None = None) -> int:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s"
+    )
 
     # Load configuration (reads .env)
     try:
@@ -50,11 +54,12 @@ def main(argv: list[str] | None = None) -> int:
         model=cfg.embedding_model,
         metrics_collector=metrics_collector,
     )
-    
+
     # Create metrics middleware for vector store
     from .metrics import MetricsMiddleware
+
     metrics_middleware = MetricsMiddleware(metrics_collector)
-    
+
     vector_store = ChromaVectorStore(
         persist_dir=cfg.chroma_persist_dir,
         metrics_middleware=metrics_middleware,
@@ -77,7 +82,9 @@ def main(argv: list[str] | None = None) -> int:
     # Optionally instantiate Google Calendar service
     calendar_service = None
     try:
-        if cfg.google_calendar_credentials_file and os.path.exists(cfg.google_calendar_credentials_file):
+        if cfg.google_calendar_credentials_file and os.path.exists(
+            cfg.google_calendar_credentials_file
+        ):
             calendar_service = GoogleCalendarService(
                 credentials_file=cfg.google_calendar_credentials_file,
                 token_file=cfg.google_calendar_token_file,
@@ -169,4 +176,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main(sys.argv[1:]))
-

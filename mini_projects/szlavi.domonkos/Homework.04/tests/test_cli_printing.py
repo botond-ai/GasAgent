@@ -18,7 +18,10 @@ class _DummyStore:
 
 def test_print_results(capsys):
     cli = CLI(emb_service=_DummyEmb(), vector_store=_DummyStore())
-    neighbors = [Neighbor(id="id1", distance=0.0, text="the same"), Neighbor(id="id2", distance=0.5, text="similar 1")]
+    neighbors = [
+        Neighbor(id="id1", distance=0.0, text="the same"),
+        Neighbor(id="id2", distance=0.5, text="similar 1"),
+    ]
     cli._print_results("myid", neighbors)
     out = capsys.readouterr().out
     assert "Stored prompt id:" in out
