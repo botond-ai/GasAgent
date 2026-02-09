@@ -1,16 +1,13 @@
 """Tests for external tool clients (geolocation, weather, crypto, forex)."""
+
 from __future__ import annotations
 
-import pytest
-from unittest.mock import Mock, patch, MagicMock
-import requests
+from unittest.mock import MagicMock, Mock, patch
 
-from app.tool_clients import (
-    IPAPIGeolocationClient,
-    OpenWeatherMapClient,
-    CoinGeckoClient,
-    ExchangeRateAPIClient,
-)
+import pytest
+import requests
+from app.tool_clients import (CoinGeckoClient, ExchangeRateAPIClient,
+                              IPAPIGeolocationClient, OpenWeatherMapClient)
 
 
 class TestIPAPIGeolocationClient:

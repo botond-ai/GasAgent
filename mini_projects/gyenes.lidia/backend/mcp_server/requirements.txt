@@ -1,0 +1,10 @@
+# MCP Server Requirements
+
+# MCP SDK
+mcp>=0.1.0
+
+# Note: Other dependencies (OpenAI, Qdrant, PostgreSQL, etc.)
+# are shared with the main backend and must be installed there.
+#
+# When running MCP server standalone, ensure backend dependencies are available:
+#  - See ../requirements.txt for full list

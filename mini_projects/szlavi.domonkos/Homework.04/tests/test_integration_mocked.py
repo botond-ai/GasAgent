@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import builtins
-from typing import List, Dict, Any
-import pytest
+from typing import Any, Dict, List
 
 import app.embeddings as embeddings_mod
 import app.vector_store as vs_mod
+import pytest
 from app.cli import EmbeddingApp
 
 
@@ -73,17 +73,45 @@ def patch_openai_and_chroma(monkeypatch):
     def fake_create(model, input):
         return {"data": [{"embedding": fake_vector}]}
 
-    monkeypatch.setattr(embeddings_mod, "openai", type("O", (), {"Embedding": type("E", (), {"create": staticmethod(fake_create)}), "api_key": None}))
+    monkeypatch.setattr(
+        embeddings_mod,
+        "openai",
+        type(
+            "O",
+            (),
+            {
+                "Embedding": type("E", (), {"create": staticmethod(fake_create)}),
+                "api_key": None,
+            },
+        ),
+    )
 
     # Patch chromadb.Client to return FakeClient
-    monkeypatch.setattr(vs_mod, "chromadb", type("C", (), {"Client": lambda settings: FakeClient(), "config": vs_mod.chromadb.config if hasattr(vs_mod.chromadb, 'config') else None}))
+    monkeypatch.setattr(
+        vs_mod,
+        "chromadb",
+        type(
+            "C",
+            (),
+            {
+                "Client": lambda settings: FakeClient(),
+                "config": (
+                    vs_mod.chromadb.config
+                    if hasattr(vs_mod.chromadb, "config")
+                    else None
+                ),
+            },
+        ),
+    )
 
     yield
 
 
 def test_integration_process_query(monkeypatch):
     cfg_api_key = "sk-test"
-    emb_srv = embeddings_mod.OpenAIEmbeddingService(api_key=cfg_api_key, model="text-embedding-3-small")
+    emb_srv = embeddings_mod.OpenAIEmbeddingService(
+        api_key=cfg_api_key, model="text-embedding-3-small"
+    )
 
     # ChromaVectorStore will use FakeClient via monkeypatch in fixture
     store = vs_mod.ChromaVectorStore(persist_dir="./chroma_db_test")

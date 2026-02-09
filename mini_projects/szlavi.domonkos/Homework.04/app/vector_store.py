@@ -3,17 +3,22 @@
 Provides a minimal VectorStore interface and a Chroma-backed concrete
 implementation that persists embeddings on disk.
 """
+
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from typing import List, Tuple, Optional
-import uuid
 import logging
+import math
+import time
+import uuid
+from abc import ABC, abstractmethod
+from typing import TYPE_CHECKING, List, Optional, Tuple
 
 import chromadb
 from chromadb.config import Settings
 from rank_bm25 import BM25Okapi
-import math
+
+if TYPE_CHECKING:
+    from .metrics import MetricsMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -24,11 +29,15 @@ class VectorStore(ABC):
         """Add a vector with metadata to the store."""
 
     @abstractmethod
-    def similarity_search(self, embedding: List[float], k: int = 3) -> List[Tuple[str, float, str]]:
+    def similarity_search(
+        self, embedding: List[float], k: int = 3
+    ) -> List[Tuple[str, float, str]]:
         """Return top-k (id, distance, text) tuples ordered by distance ascending."""
 
     @abstractmethod
-    def hybrid_search(self, embedding: List[float], query_text: str, k: int = 3, alpha: float = 0.5) -> List[Tuple[str, float, str]]:
+    def hybrid_search(
+        self, embedding: List[float], query_text: str, k: int = 3, alpha: float = 0.5
+    ) -> List[Tuple[str, float, str]]:
         """Hybrid search combining semantic similarity and BM25 ranking.
 
         alpha: weighting for semantic score (0..1). BM25 weight = 1-alpha.
@@ -37,10 +46,18 @@ class VectorStore(ABC):
 
 
 class ChromaVectorStore(VectorStore):
-    def __init__(self, persist_dir: str = "./chroma_db", collection_name: str = "prompts") -> None:
-        settings = Settings(chroma_db_impl="duckdb+parquet", persist_directory=persist_dir)
+    def __init__(
+        self,
+        persist_dir: str = "./chroma_db",
+        collection_name: str = "prompts",
+        metrics_middleware: Optional[MetricsMiddleware] = None,
+    ) -> None:
+        settings = Settings(
+            chroma_db_impl="duckdb+parquet", persist_directory=persist_dir
+        )
         self.client = chromadb.Client(settings)
         self.collection = self.client.get_or_create_collection(name=collection_name)
+        self.metrics_middleware = metrics_middleware
         # Load existing documents for BM25 and keep tokenized docs for incremental updates
         self._ids: List[str] = []
         self._docs: List[str] = []
@@ -49,7 +66,9 @@ class ChromaVectorStore(VectorStore):
         try:
             all_data = self.collection.get(include=["ids", "documents"]) or {}
             ids = all_data.get("ids", [[]])[0] if all_data.get("ids") else []
-            docs = all_data.get("documents", [[]])[0] if all_data.get("documents") else []
+            docs = (
+                all_data.get("documents", [[]])[0] if all_data.get("documents") else []
+            )
             if ids and docs:
                 self._ids = ids
                 self._docs = docs
@@ -87,11 +106,19 @@ class ChromaVectorStore(VectorStore):
         except Exception as exc:
             logger.error("Failed to add vector to Chroma: %s", exc)
 
-    def similarity_search(self, embedding: List[float], k: int = 3) -> List[Tuple[str, float, str]]:
+    def similarity_search(
+        self, embedding: List[float], k: int = 3
+    ) -> List[Tuple[str, float, str]]:
         if not embedding:
             return []
+
+        start_time = time.time()
         try:
-            result = self.collection.query(query_embeddings=[embedding], n_results=k, include=["documents", "distances", "ids"])
+            result = self.collection.query(
+                query_embeddings=[embedding],
+                n_results=k,
+                include=["documents", "distances", "ids"],
+            )
             docs = result.get("documents", [[]])[0]
             distances = result.get("distances", [[]])[0]
             ids = result.get("ids", [[]])[0]
@@ -100,12 +127,34 @@ class ChromaVectorStore(VectorStore):
             for ident, dist, doc in zip(ids, distances, docs):
                 hits.append((ident, float(dist), doc))
 
+            # Record vector DB load metric
+            if self.metrics_middleware:
+                latency_ms = (time.time() - start_time) * 1000
+                self.metrics_middleware.record_vector_db_load(
+                    documents_loaded=len(hits),
+                    latency_ms=latency_ms,
+                    success=True,
+                )
+
             return hits
         except Exception as exc:
             logger.error("Chroma similarity search failed: %s", exc)
+
+            # Record failed vector DB load metric
+            if self.metrics_middleware:
+                latency_ms = (time.time() - start_time) * 1000
+                self.metrics_middleware.record_vector_db_load(
+                    documents_loaded=0,
+                    latency_ms=latency_ms,
+                    success=False,
+                    error_message=str(exc),
+                )
+
             return []
 
-    def hybrid_search(self, embedding: List[float], query_text: str, k: int = 3, alpha: float = 0.5) -> List[Tuple[str, float, str]]:
+    def hybrid_search(
+        self, embedding: List[float], query_text: str, k: int = 3, alpha: float = 0.5
+    ) -> List[Tuple[str, float, str]]:
         """Combine semantic scores (from chroma distances) with BM25 scores.
 
         Strategy: get semantic distances for all documents, convert to semantic scores,
@@ -115,10 +164,15 @@ class ChromaVectorStore(VectorStore):
         if not self._docs:
             return []
 
+        start_time = time.time()
         try:
             # Get semantic distances for all docs
             total_docs = len(self._ids)
-            sem_result = self.collection.query(query_embeddings=[embedding], n_results=total_docs, include=["ids", "documents", "distances"])
+            sem_result = self.collection.query(
+                query_embeddings=[embedding],
+                n_results=total_docs,
+                include=["ids", "documents", "distances"],
+            )
             sem_ids = sem_result.get("ids", [[]])[0]
             sem_docs = sem_result.get("documents", [[]])[0]
             sem_distances = sem_result.get("distances", [[]])[0]
@@ -142,7 +196,9 @@ class ChromaVectorStore(VectorStore):
 
             # Normalize BM25 and semantic scores
             # Create maps id -> bm25
-            id_to_bm25 = {ident: float(score) for ident, score in zip(self._ids, bm25_raw)}
+            id_to_bm25 = {
+                ident: float(score) for ident, score in zip(self._ids, bm25_raw)
+            }
 
             max_bm25 = max(bm25_raw) if bm25_raw else 0.0
             max_sem = max(sem_scores.values()) if sem_scores else 0.0
@@ -160,7 +216,29 @@ class ChromaVectorStore(VectorStore):
 
             # Sort by combined score descending
             combined_list.sort(key=lambda x: x[1], reverse=True)
-            return combined_list[:k]
+            result = combined_list[:k]
+
+            # Record vector DB load metric
+            if self.metrics_middleware:
+                latency_ms = (time.time() - start_time) * 1000
+                self.metrics_middleware.record_vector_db_load(
+                    documents_loaded=len(result),
+                    latency_ms=latency_ms,
+                    success=True,
+                )
+
+            return result
         except Exception as exc:
             logger.error("Hybrid search failed: %s", exc)
+
+            # Record failed vector DB load metric
+            if self.metrics_middleware:
+                latency_ms = (time.time() - start_time) * 1000
+                self.metrics_middleware.record_vector_db_load(
+                    documents_loaded=0,
+                    latency_ms=latency_ms,
+                    success=False,
+                    error_message=str(exc),
+                )
+
             return []
