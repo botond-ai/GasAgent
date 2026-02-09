@@ -3,16 +3,17 @@
 Follows a small EmbeddingService interface (ABC) so implementations
 can be swapped without changing application logic.
 """
+
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from typing import List, Optional
 import logging
 import time
+from abc import ABC, abstractmethod
+from typing import List, Optional
 
 import openai
 
-from .metrics import MetricsMiddleware, MetricCollector
+from .metrics import MetricCollector, MetricsMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -41,10 +42,10 @@ class OpenAIEmbeddingService(EmbeddingService):
         try:
             # Count tokens (rough estimate: 1 token ≈ 4 characters)
             tokens_in = len(text) // 4
-            
+
             resp = openai.Embedding.create(model=self.model, input=text)
             embedding = resp["data"][0]["embedding"]
-            
+
             # Record metrics if collector is available
             if self.metrics_middleware:
                 latency_ms = (time.time() - start_time) * 1000
@@ -54,11 +55,11 @@ class OpenAIEmbeddingService(EmbeddingService):
                     latency_ms=latency_ms,
                     success=True,
                 )
-            
+
             return embedding
         except Exception as exc:  # keep broad to avoid breaking the CLI
             logger.error("Embedding generation failed: %s", exc)
-            
+
             # Record failed metric if collector is available
             if self.metrics_middleware:
                 latency_ms = (time.time() - start_time) * 1000
@@ -70,5 +71,5 @@ class OpenAIEmbeddingService(EmbeddingService):
                     success=False,
                     error_message=str(exc),
                 )
-            
+
             return []

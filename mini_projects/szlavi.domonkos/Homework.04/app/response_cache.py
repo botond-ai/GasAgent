@@ -3,13 +3,14 @@
 Caches LLM-generated responses based on query and retrieved documents
 to reduce redundant API calls and costs.
 """
+
 from __future__ import annotations
 
 import hashlib
 import json
 import logging
-from typing import Optional, List, Tuple
 from pathlib import Path
+from typing import List, Optional, Tuple
 
 logger = logging.getLogger(__name__)
 
