@@ -3,16 +3,17 @@
 Combines retrieved documents with an LLM to generate context-aware responses.
 Supports optional response caching to reduce API costs.
 """
+
 from __future__ import annotations
 
-from typing import List, Tuple, Optional
 import logging
 import time
+from typing import List, Optional, Tuple
 
 import openai
 
+from .metrics import MetricCollector, MetricsMiddleware
 from .response_cache import ResponseCache
-from .metrics import MetricsMiddleware, MetricCollector
 
 logger = logging.getLogger(__name__)
 
@@ -52,10 +53,10 @@ class RAGAgent:
 
     def _count_tokens(self, text: str) -> int:
         """Estimate token count (rough approximation: 1 token ≈ 4 characters).
-        
+
         Args:
             text: Text to count tokens for.
-        
+
         Returns:
             Estimated token count.
         """
@@ -74,7 +75,7 @@ class RAGAgent:
             Generated response text.
         """
         start_time = time.time()
-        
+
         # Extract doc texts for cache key
         doc_texts = [text for _, _, text in retrieved_docs]
 
@@ -111,7 +112,7 @@ Please answer the question based on the context provided above."""
                 max_tokens=self.max_tokens,
             )
             answer = response["choices"][0]["message"]["content"].strip()
-            
+
             # Record metrics if collector is available
             if self.metrics_middleware:
                 latency_ms = (time.time() - start_time) * 1000
@@ -124,14 +125,14 @@ Please answer the question based on the context provided above."""
                     latency_ms=latency_ms,
                     success=True,
                 )
-            
+
             # Cache the response
             if self.cache:
                 self.cache.set(query, doc_texts, answer)
             return answer
         except Exception as exc:
             logger.error("LLM generation failed: %s", exc)
-            
+
             # Record failed metric if collector is available
             if self.metrics_middleware:
                 latency_ms = (time.time() - start_time) * 1000
@@ -144,5 +145,5 @@ Please answer the question based on the context provided above."""
                     success=False,
                     error_message=str(exc),
                 )
-            
+
             return f"Error generating response: {exc}"

@@ -3,14 +3,12 @@
 Tests the multi-step agent orchestration including plan generation,
 tool routing, execution, and summary generation.
 """
-import pytest
+
 from unittest.mock import MagicMock, patch
-from app.langgraph_workflow import (
-    MeetingAssistantWorkflow,
-    WorkflowState,
-    ExecutionStep,
-    ToolType,
-)
+
+import pytest
+from app.langgraph_workflow import (ExecutionStep, MeetingAssistantWorkflow,
+                                    ToolType, WorkflowState)
 
 
 @pytest.fixture
@@ -21,7 +19,7 @@ def mock_services():
     rag_agent = MagicMock()
     calendar_service = MagicMock()
     geolocation_client = MagicMock()
-    
+
     return {
         "api_key": api_key,
         "vector_store": vector_store,
@@ -88,7 +86,7 @@ class TestWorkflowState:
         """Test workflow state with execution steps."""
         step1 = ExecutionStep(1, "Action 1", ToolType.RAG_SEARCH, {})
         step2 = ExecutionStep(2, "Action 2", ToolType.GOOGLE_CALENDAR, {})
-        
+
         state = WorkflowState(
             user_input="Test",
             execution_plan=[step1, step2],
@@ -100,7 +98,7 @@ class TestWorkflowState:
 class TestPlanGeneration:
     """Test plan node functionality."""
 
-    @patch('app.langgraph_workflow.openai.ChatCompletion.create')
+    @patch("app.langgraph_workflow.openai.ChatCompletion.create")
     def test_plan_node_generates_steps(self, mock_llm, workflow, mock_services):
         """Test that plan node generates execution steps."""
         # Mock LLM response
@@ -114,15 +112,15 @@ class TestPlanGeneration:
                 }
             ]
         }"""
-        
+
         # Mock vector store search
         mock_services["vector_store"].search.return_value = [
             ("doc1", 0.95, "Test document"),
         ]
-        
+
         state = WorkflowState(user_input="Find test documents")
         result = workflow.plan_node(state)
-        
+
         assert len(result.execution_plan) > 0
         assert result.execution_plan[0].tool == ToolType.RAG_SEARCH
 
@@ -138,7 +136,7 @@ class TestToolRouter:
             execution_plan=[step],
             current_step_index=0,
         )
-        
+
         result = workflow.tool_router(state)
         assert result.execution_plan[0].tool == ToolType.GOOGLE_CALENDAR
 
@@ -150,7 +148,7 @@ class TestToolRouter:
             execution_plan=[step],
             current_step_index=0,
         )
-        
+
         result = workflow.tool_router(state)
         assert result.execution_plan[0].tool == ToolType.IP_GEOLOCATION
 
@@ -162,7 +160,7 @@ class TestToolRouter:
             execution_plan=[step],
             current_step_index=0,
         )
-        
+
         result = workflow.tool_router(state)
         assert result.execution_plan[0].tool == ToolType.RAG_SEARCH
 
@@ -175,7 +173,7 @@ class TestActionExecution:
         mock_services["vector_store"].search.return_value = [
             ("doc1", 0.95, "Test result"),
         ]
-        
+
         step = ExecutionStep(
             1,
             "Search",
@@ -187,7 +185,7 @@ class TestActionExecution:
             execution_plan=[step],
             current_step_index=0,
         )
-        
+
         result = workflow.action_node(state)
         assert result.execution_plan[0].status == "completed"
         assert result.execution_plan[0].result is not None
@@ -197,7 +195,7 @@ class TestActionExecution:
         mock_services["calendar_service"].get_upcoming_events.return_value = [
             {"title": "Meeting", "start": "2026-01-20T10:00:00Z"},
         ]
-        
+
         step = ExecutionStep(
             1,
             "Get calendar events",
@@ -209,7 +207,7 @@ class TestActionExecution:
             execution_plan=[step],
             current_step_index=0,
         )
-        
+
         result = workflow.action_node(state)
         assert result.execution_plan[0].status == "completed"
 
@@ -219,7 +217,7 @@ class TestActionExecution:
             "country": "US",
             "city": "Mountain View",
         }
-        
+
         step = ExecutionStep(
             1,
             "Look up IP",
@@ -231,7 +229,7 @@ class TestActionExecution:
             execution_plan=[step],
             current_step_index=0,
         )
-        
+
         result = workflow.action_node(state)
         assert result.execution_plan[0].status == "completed"
 
@@ -254,7 +252,7 @@ class TestObservationNode:
             execution_plan=[step],
             current_step_index=0,
         )
-        
+
         result = workflow.observation_node(state)
         assert result.current_step_index == 1
         assert len(result.executed_steps) == 1
@@ -268,26 +266,26 @@ class TestExecutorLoop:
         """Test executor loop decides to continue."""
         step1 = ExecutionStep(1, "Action 1", ToolType.RAG_SEARCH, {})
         step2 = ExecutionStep(2, "Action 2", ToolType.GOOGLE_CALENDAR, {})
-        
+
         state = WorkflowState(
             user_input="test",
             execution_plan=[step1, step2],
             current_step_index=0,
         )
-        
+
         decision = workflow._should_continue_execution(state)
         assert decision == "continue"
 
     def test_executor_loop_should_finish(self, workflow):
         """Test executor loop decides to finish."""
         step = ExecutionStep(1, "Action", ToolType.RAG_SEARCH, {})
-        
+
         state = WorkflowState(
             user_input="test",
             execution_plan=[step],
             current_step_index=1,
         )
-        
+
         decision = workflow._should_continue_execution(state)
         assert decision == "done"
 
@@ -295,18 +293,18 @@ class TestExecutorLoop:
 class TestSummaryGeneration:
     """Test summary node functionality."""
 
-    @patch('app.langgraph_workflow.openai.ChatCompletion.create')
+    @patch("app.langgraph_workflow.openai.ChatCompletion.create")
     def test_summary_node_generates_summary(self, mock_llm, workflow):
         """Test summary node generates a meeting summary."""
         mock_llm.return_value.choices[0].message.content = "Test summary"
-        
+
         step = ExecutionStep(1, "Search", ToolType.RAG_SEARCH, {}, status="completed")
         state = WorkflowState(
             user_input="test",
             execution_plan=[step],
             executed_steps=[step],
         )
-        
+
         result = workflow.summary_node(state)
         assert result.meeting_summary == "Test summary"
 
@@ -316,14 +314,16 @@ class TestFinalAnswerGeneration:
 
     def test_final_answer_node_creates_report(self, workflow):
         """Test final answer node creates comprehensive report."""
-        step = ExecutionStep(1, "Test action", ToolType.RAG_SEARCH, {}, status="completed")
+        step = ExecutionStep(
+            1, "Test action", ToolType.RAG_SEARCH, {}, status="completed"
+        )
         state = WorkflowState(
             user_input="Test request",
             execution_plan=[step],
             executed_steps=[step],
             meeting_summary="Test summary",
         )
-        
+
         result = workflow.final_answer_node(state)
         assert result.final_answer is not None
         assert "Test request" in result.final_answer
@@ -351,7 +351,7 @@ class TestPlanParsing:
                 }
             ]
         }"""
-        
+
         steps = workflow._parse_execution_plan(plan_text)
         assert len(steps) == 2
         assert steps[0].tool == ToolType.RAG_SEARCH
@@ -360,7 +360,7 @@ class TestPlanParsing:
     def test_parse_malformed_plan_returns_default(self, workflow):
         """Test parsing malformed plan returns default step."""
         plan_text = "This is not valid JSON"
-        
+
         steps = workflow._parse_execution_plan(plan_text)
         assert len(steps) == 1
         assert steps[0].action == "Default search action"
@@ -369,7 +369,7 @@ class TestPlanParsing:
 class TestWorkflowIntegration:
     """Integration tests for the complete workflow."""
 
-    @patch('app.langgraph_workflow.openai.ChatCompletion.create')
+    @patch("app.langgraph_workflow.openai.ChatCompletion.create")
     def test_workflow_run_end_to_end(self, mock_llm, workflow, mock_services):
         """Test complete workflow execution."""
         # Mock LLM responses
@@ -386,19 +386,21 @@ class TestWorkflowIntegration:
                 ]
             }"""))]),
             # Summary generation response
-            MagicMock(choices=[MagicMock(message=MagicMock(content="Generated summary"))]),
+            MagicMock(
+                choices=[MagicMock(message=MagicMock(content="Generated summary"))]
+            ),
         ]
-        
+
         # Mock vector store
         mock_services["vector_store"].search.return_value = [
             ("doc1", 0.95, "Test document"),
         ]
-        
+
         result = workflow.run("Test user request")
-        
-        assert result['user_input'] == "Test user request"
-        assert result['executed_steps'] >= 0
-        assert result['final_answer'] is not None
+
+        assert result["user_input"] == "Test user request"
+        assert result["executed_steps"] >= 0
+        assert result["final_answer"] is not None
 
 
 if __name__ == "__main__":

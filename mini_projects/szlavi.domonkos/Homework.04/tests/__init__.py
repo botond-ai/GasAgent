@@ -1,12 +1,12 @@
 """Tests for RAG agent and response caching."""
+
 from __future__ import annotations
 
+import json
 import tempfile
 from pathlib import Path
-import json
 
 import pytest
-
 from app.rag_agent import RAGAgent
 from app.response_cache import ResponseCache
 
@@ -107,7 +107,13 @@ def test_cache_integration_with_rag(monkeypatch):
         }
 
     monkeypatch.setattr(
-        rag_mod, "openai", type("O", (), {"ChatCompletion": type("CC", (), {"create": staticmethod(fake_create)})})
+        rag_mod,
+        "openai",
+        type(
+            "O",
+            (),
+            {"ChatCompletion": type("CC", (), {"create": staticmethod(fake_create)})},
+        ),
     )
 
     with tempfile.TemporaryDirectory() as tmpdir:

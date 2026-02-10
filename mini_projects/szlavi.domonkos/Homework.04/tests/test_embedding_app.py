@@ -1,10 +1,9 @@
 from __future__ import annotations
 
-from typing import List, Tuple
 import uuid
+from typing import List, Tuple
 
 import pytest
-
 from app.cli import EmbeddingApp
 from app.embeddings import EmbeddingService
 from app.vector_store import VectorStore
@@ -26,7 +25,9 @@ class FakeVectorStore(VectorStore):
     def add(self, id: str, text: str, embedding: List[float]) -> None:
         self.added.append((id, text, embedding))
 
-    def similarity_search(self, embedding: List[float], k: int = 3) -> List[Tuple[str, float, str]]:
+    def similarity_search(
+        self, embedding: List[float], k: int = 3
+    ) -> List[Tuple[str, float, str]]:
         # Return pre-seeded results truncated to k
         return self.next_results[:k]
 

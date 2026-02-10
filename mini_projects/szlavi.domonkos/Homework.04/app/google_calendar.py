@@ -3,16 +3,17 @@
 Provides a GoogleCalendarService interface and concrete implementation
 for retrieving and managing Google Calendar events.
 """
+
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from typing import List, Dict, Any, Optional
 import logging
+from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
+from typing import Any, Dict, List, Optional
 
 from google.auth.transport.requests import Request
-from google.oauth2.service_account import Credentials
 from google.oauth2.credentials import Credentials as UserCredentials
+from google.oauth2.service_account import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -20,7 +21,7 @@ from googleapiclient.errors import HttpError
 logger = logging.getLogger(__name__)
 
 # Google Calendar API scopes
-SCOPES = ['https://www.googleapis.com/auth/calendar.readonly']
+SCOPES = ["https://www.googleapis.com/auth/calendar.readonly"]
 
 
 class CalendarService(ABC):
@@ -29,11 +30,15 @@ class CalendarService(ABC):
         """Retrieve upcoming calendar events."""
 
     @abstractmethod
-    def get_events_by_date(self, start_date: str, end_date: str) -> List[Dict[str, Any]]:
+    def get_events_by_date(
+        self, start_date: str, end_date: str
+    ) -> List[Dict[str, Any]]:
         """Retrieve events within a date range (YYYY-MM-DD format)."""
 
     @abstractmethod
-    def create_event(self, title: str, description: str, start_time: str, end_time: str) -> Optional[Dict[str, Any]]:
+    def create_event(
+        self, title: str, description: str, start_time: str, end_time: str
+    ) -> Optional[Dict[str, Any]]:
         """Create a new calendar event."""
 
 
@@ -55,32 +60,34 @@ class GoogleCalendarService(CalendarService):
     def _authenticate(self) -> None:
         """Authenticate with Google Calendar API using OAuth2."""
         try:
-            import pickle
             import os
+            import pickle
 
             # Try to load existing token
             if os.path.exists(self.token_file):
-                with open(self.token_file, 'rb') as token_fh:
+                with open(self.token_file, "rb") as token_fh:
                     creds = pickle.load(token_fh)
                     if creds and creds.valid:
-                        self.service = build('calendar', 'v3', credentials=creds)
+                        self.service = build("calendar", "v3", credentials=creds)
                         logger.info("Loaded cached Google Calendar credentials")
                         return
                     elif creds and creds.expired and creds.refresh_token:
                         creds.refresh(Request())
-                        self.service = build('calendar', 'v3', credentials=creds)
+                        self.service = build("calendar", "v3", credentials=creds)
                         logger.info("Refreshed Google Calendar credentials")
                         return
 
             # Perform new OAuth2 flow
-            flow = InstalledAppFlow.from_client_secrets_file(self.credentials_file, SCOPES)
+            flow = InstalledAppFlow.from_client_secrets_file(
+                self.credentials_file, SCOPES
+            )
             creds = flow.run_local_server(port=0)
 
             # Save token for future use
-            with open(self.token_file, 'wb') as token_fh:
+            with open(self.token_file, "wb") as token_fh:
                 pickle.dump(creds, token_fh)
 
-            self.service = build('calendar', 'v3', credentials=creds)
+            self.service = build("calendar", "v3", credentials=creds)
             logger.info("Google Calendar service authenticated")
         except Exception as exc:
             logger.error("Google Calendar authentication failed: %s", exc)
@@ -93,33 +100,43 @@ class GoogleCalendarService(CalendarService):
             return []
 
         try:
-            now = datetime.utcnow().isoformat() + 'Z'
-            events_result = self.service.events().list(
-                calendarId='primary',
-                timeMin=now,
-                maxResults=max_results,
-                singleEvents=True,
-                orderBy='startTime'
-            ).execute()
+            now = datetime.utcnow().isoformat() + "Z"
+            events_result = (
+                self.service.events()
+                .list(
+                    calendarId="primary",
+                    timeMin=now,
+                    maxResults=max_results,
+                    singleEvents=True,
+                    orderBy="startTime",
+                )
+                .execute()
+            )
 
-            events = events_result.get('items', [])
+            events = events_result.get("items", [])
             formatted_events = []
             for event in events:
-                formatted_events.append({
-                    'id': event.get('id'),
-                    'title': event.get('summary', 'Untitled'),
-                    'description': event.get('description', ''),
-                    'start': event['start'].get('dateTime', event['start'].get('date')),
-                    'end': event['end'].get('dateTime', event['end'].get('date')),
-                    'organizer': event.get('organizer', {}).get('email', 'Unknown'),
-                    'location': event.get('location', ''),
-                })
+                formatted_events.append(
+                    {
+                        "id": event.get("id"),
+                        "title": event.get("summary", "Untitled"),
+                        "description": event.get("description", ""),
+                        "start": event["start"].get(
+                            "dateTime", event["start"].get("date")
+                        ),
+                        "end": event["end"].get("dateTime", event["end"].get("date")),
+                        "organizer": event.get("organizer", {}).get("email", "Unknown"),
+                        "location": event.get("location", ""),
+                    }
+                )
             return formatted_events
         except HttpError as exc:
             logger.error("Error retrieving calendar events: %s", exc)
             return []
 
-    def get_events_by_date(self, start_date: str, end_date: str) -> List[Dict[str, Any]]:
+    def get_events_by_date(
+        self, start_date: str, end_date: str
+    ) -> List[Dict[str, Any]]:
         """Retrieve events within a date range (YYYY-MM-DD format)."""
         if not self.service:
             logger.error("Google Calendar service not initialized")
@@ -130,32 +147,42 @@ class GoogleCalendarService(CalendarService):
             start_datetime = f"{start_date}T00:00:00Z"
             end_datetime = f"{end_date}T23:59:59Z"
 
-            events_result = self.service.events().list(
-                calendarId='primary',
-                timeMin=start_datetime,
-                timeMax=end_datetime,
-                singleEvents=True,
-                orderBy='startTime'
-            ).execute()
+            events_result = (
+                self.service.events()
+                .list(
+                    calendarId="primary",
+                    timeMin=start_datetime,
+                    timeMax=end_datetime,
+                    singleEvents=True,
+                    orderBy="startTime",
+                )
+                .execute()
+            )
 
-            events = events_result.get('items', [])
+            events = events_result.get("items", [])
             formatted_events = []
             for event in events:
-                formatted_events.append({
-                    'id': event.get('id'),
-                    'title': event.get('summary', 'Untitled'),
-                    'description': event.get('description', ''),
-                    'start': event['start'].get('dateTime', event['start'].get('date')),
-                    'end': event['end'].get('dateTime', event['end'].get('date')),
-                    'organizer': event.get('organizer', {}).get('email', 'Unknown'),
-                    'location': event.get('location', ''),
-                })
+                formatted_events.append(
+                    {
+                        "id": event.get("id"),
+                        "title": event.get("summary", "Untitled"),
+                        "description": event.get("description", ""),
+                        "start": event["start"].get(
+                            "dateTime", event["start"].get("date")
+                        ),
+                        "end": event["end"].get("dateTime", event["end"].get("date")),
+                        "organizer": event.get("organizer", {}).get("email", "Unknown"),
+                        "location": event.get("location", ""),
+                    }
+                )
             return formatted_events
         except HttpError as exc:
             logger.error("Error retrieving calendar events: %s", exc)
             return []
 
-    def create_event(self, title: str, description: str, start_time: str, end_time: str) -> Optional[Dict[str, Any]]:
+    def create_event(
+        self, title: str, description: str, start_time: str, end_time: str
+    ) -> Optional[Dict[str, Any]]:
         """Create a new calendar event.
 
         Args:
@@ -173,14 +200,16 @@ class GoogleCalendarService(CalendarService):
 
         try:
             event = {
-                'summary': title,
-                'description': description,
-                'start': {'dateTime': start_time, 'timeZone': 'UTC'},
-                'end': {'dateTime': end_time, 'timeZone': 'UTC'},
+                "summary": title,
+                "description": description,
+                "start": {"dateTime": start_time, "timeZone": "UTC"},
+                "end": {"dateTime": end_time, "timeZone": "UTC"},
             }
 
-            created_event = self.service.events().insert(calendarId='primary', body=event).execute()
-            logger.info("Event created: %s", created_event.get('id'))
+            created_event = (
+                self.service.events().insert(calendarId="primary", body=event).execute()
+            )
+            logger.info("Event created: %s", created_event.get("id"))
             return created_event
         except HttpError as exc:
             logger.error("Error creating calendar event: %s", exc)
