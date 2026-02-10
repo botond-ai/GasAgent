@@ -9,7 +9,7 @@ ENV/
 .env
 .venv
 *.log
-data/
+# data/
 .pytest_cache/
 .coverage
 htmlcov/

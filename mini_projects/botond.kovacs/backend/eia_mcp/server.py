@@ -111,15 +111,37 @@ class EIAMCPServer:
             }
     
     def _query_prices(self, args: Dict[str, Any]) -> Dict[str, Any]:
-        """Query natural gas prices"""
-        # Mock implementation - replace with actual EIA API calls if needed
-        return {
-            "series": args.get("series"),
-            "data": [
-                {"date": "2023-01-01", "value": 3.50},
-                {"date": "2023-01-02", "value": 3.55}
-            ]
+        """Query natural gas prices from EIA API"""
+        api_key = self.api_key or os.environ.get("EIA_API_KEY", "")
+        start = args.get("start")
+        end = args.get("end")
+        url = "https://api.eia.gov/v2/seriesid/NG.RNGWHHD.D"
+        params = {
+            "api_key": api_key
         }
+        if start:
+            params["start"] = start
+        if end:
+            params["end"] = end
+        try:
+            resp = requests.get(url, params=params, timeout=30)
+            resp.raise_for_status()
+            data = resp.json()
+            # Szűrés dátum szerint
+            if start or end:
+                filtered = []
+                for row in data.get("response", {}).get("data", []):
+                    date = row.get("period") or row.get("date")
+                    if date:
+                        if start and date < start:
+                            continue
+                        if end and date > end:
+                            continue
+                        filtered.append(row)
+                data["response"]["data"] = filtered
+            return data
+        except Exception as e:
+            return {"error": str(e)}
     
     def _query_storage(self, args: Dict[str, Any]) -> Dict[str, Any]:
         """Query natural gas storage"""

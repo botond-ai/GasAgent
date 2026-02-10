@@ -7,11 +7,12 @@ on:
 
 env:
   AWS_REGION: eu-central-1
-  ECR_REPOSITORY: ai-agent-app
-  ECS_CLUSTER: ai-agent-tutorial-cluster
-  ECS_SERVICE: ai-agent-tutorial-service
-  TERRAFORM_DIR: mini_projects/botond.kovacs/terraform
-  TERRAFORM_BOOTSTRAP_DIR: mini_projects/botond.kovacs/terraform-bootstrap
+  ECR_REPOSITORY: gasagent2-app
+  ECS_CLUSTER: GasAgent2-cluster
+  ECS_SERVICE: GasAgent2-service
+  TERRAFORM_DIR: terraform
+  TERRAFORM_BOOTSTRAP_DIR: terraform-bootstrap
+ 
 
 permissions:
   id-token: write  # Required for OIDC authentication
@@ -62,12 +63,17 @@ jobs:
       - name: Configure AWS Credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws:iam::021580456215:role/terraform-github-deployer
+          role-to-assume: arn:aws:iam::640706953781:role/terraform-github-deployer
           aws-region: ${{ env.AWS_REGION }}
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.6.0
+      - name: Debug - List existing ALBs
+        run: |
+          echo "=== Existing Application Load Balancers ==="
+          aws elbv2 describe-load-balancers --region ${{ env.AWS_REGION }} --output table || true
+          echo "=========================================="
       - name: Debug - Verify AWS Identity
         run: |
           echo "=== AWS Caller Identity ==="
@@ -86,10 +92,10 @@ jobs:
       - name: Safety Check - Verify Remote State Backend Exists
         run: |
           echo "🔍 Checking if remote state backend infrastructure exists..."
-          if aws s3api head-bucket --bucket terraform-state-021580456215-ai-agent-infra 2>/dev/null; then
+          if aws s3api head-bucket --bucket terraform-state-640706953781-gasagent2 2>/dev/null; then
             echo "✅ S3 bucket exists"
           else
-            echo "❌ ERROR: S3 bucket 'terraform-state-021580456215-ai-agent-infra' does not exist!"
+            echo "❌ ERROR: S3 bucket 'terraform-state-640706953781-gasagent2' does not exist!"
             echo ""
             echo "Please run the bootstrap job first:"
             echo "1. Go to Actions tab"
@@ -109,31 +115,34 @@ jobs:
         working-directory: ${{ env.TERRAFORM_DIR }}
         run: |
           terraform init -reconfigure \
-            -backend-config="bucket=terraform-state-021580456215-ai-agent-infra" \
+            -backend-config="bucket=terraform-state-640706953781-gasagent2" \
             -backend-config="key=cost-optimization/terraform.tfstate" \
             -backend-config="region=eu-central-1" \
             -backend-config="dynamodb_table=terraform-state-lock" \
             -backend-config="encrypt=true"
-      - name: Import Existing Resources (if any)
+      - name: Remove ALB resources from Terraform state (TEMPORARY)
         working-directory: ${{ env.TERRAFORM_DIR }}
         run: |
-          chmod +x import_resources.sh
-          ./import_resources.sh || echo "Some imports failed, continuing with plan..."
-        continue-on-error: true
+          terraform state rm aws_lb.main || true
+          terraform state rm aws_lb_target_group.main || true
+          terraform state rm aws_lb_listener.main || true
       - name: Terraform Refresh
         working-directory: ${{ env.TERRAFORM_DIR }}
-        run: terraform refresh
+        run: terraform refresh -lock=false
         env:
           TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          TF_VAR_eia_api_key: ${{ secrets.EIA_API_KEY }}
       - name: Terraform Plan
         working-directory: ${{ env.TERRAFORM_DIR }}
         env:
           TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
-        run: terraform plan -out=tfplan
+          TF_VAR_eia_api_key: ${{ secrets.EIA_API_KEY }}
+        run: terraform plan -out=tfplan -lock=false
       - name: Terraform Apply
         working-directory: ${{ env.TERRAFORM_DIR }}
         env:
           TF_VAR_openai_api_key: ${{ secrets.OPENAI_API_KEY }}
+          TF_VAR_eia_api_key: ${{ secrets.EIA_API_KEY }}
         run: terraform apply -auto-approve tfplan
       - name: Login to Amazon ECR
         id: login-ecr
@@ -143,7 +152,7 @@ jobs:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -f docker/Dockerfile .
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -f backend/Dockerfile backend
           docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
       - name: Push image to Amazon ECR
         env:
